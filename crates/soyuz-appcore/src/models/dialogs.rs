@@ -393,13 +393,18 @@ impl Drop for PromptModel {
 // ---------------------------------------------------------------------------------
 
 pub enum ConfirmKind {
-    Delete { paths: Vec<PathBuf>, mode: DeleteMode },
+    Delete {
+        paths: Vec<PathBuf>,
+        mode: DeleteMode,
+    },
     Purge(Vec<TrashItem>),
     EmptyTrash(usize),
+    /// Forget `n` entries of the operation history (and their Undo).
+    ClearHistory(usize),
 }
 
 /// Move to trash (when `general.confirm_delete`), permanent delete (Shift+Delete),
-/// secure wipe, permanent delete of trashed items and "Empty trash".
+/// secure wipe, permanent delete of trashed items, "Empty trash" and "Clear history".
 pub struct DeleteConfirmModel {
     pub kind: ConfirmKind,
     pub title: String,
@@ -442,12 +447,20 @@ impl DeleteConfirmModel {
         }
     }
 
-    /// Display names of the items (empty for "Empty trash").
+    pub fn clear_history(n: usize) -> Self {
+        DeleteConfirmModel {
+            kind: ConfirmKind::ClearHistory(n),
+            title: tr!("dialogs-clear-history-title").into(),
+            done: false,
+        }
+    }
+
+    /// Display names of the items (empty for "Empty trash" and "Clear history").
     pub fn names(&self) -> Vec<String> {
         match &self.kind {
             ConfirmKind::Delete { paths, .. } => paths.iter().map(|p| soyuz_core::entry::display_name(p)).collect(),
             ConfirmKind::Purge(items) => items.iter().map(|i| soyuz_core::entry::display_name(&i.original)).collect(),
-            ConfirmKind::EmptyTrash(_) => Vec::new(),
+            ConfirmKind::EmptyTrash(_) | ConfirmKind::ClearHistory(_) => Vec::new(),
         }
     }
 
@@ -472,6 +485,9 @@ impl DeleteConfirmModel {
             ConfirmKind::EmptyTrash(n) => {
                 (tr!("dialogs-delete-empty-body", count = *n), tr!("dialogs-delete-empty-confirm"), true)
             }
+            ConfirmKind::ClearHistory(n) => {
+                (tr!("dialogs-clear-history-body", count = *n), tr!("dialogs-clear-history-confirm"), true)
+            }
         }
     }
 
@@ -484,6 +500,7 @@ impl DeleteConfirmModel {
             ConfirmKind::Delete { paths, mode } => FileOpCmd::Delete { paths, mode },
             ConfirmKind::Purge(items) => FileOpCmd::TrashPurge(items),
             ConfirmKind::EmptyTrash(_) => FileOpCmd::EmptyTrash,
+            ConfirmKind::ClearHistory(_) => FileOpCmd::ClearHistory,
         };
         Some(Cmd::FileOp(cmd))
     }
@@ -941,6 +958,10 @@ mod tests {
         let mut m = DeleteConfirmModel::empty_trash(3);
         assert!(m.names().is_empty());
         assert!(matches!(m.confirm(), Some(Cmd::FileOp(FileOpCmd::EmptyTrash))));
+
+        let mut m = DeleteConfirmModel::clear_history(7);
+        assert!(m.names().is_empty() && !m.to_trash() && m.texts().2);
+        assert!(matches!(m.confirm(), Some(Cmd::FileOp(FileOpCmd::ClearHistory))));
     }
 
     #[test]

@@ -14,6 +14,7 @@ panels-tab-jobs = Jobs
 panels-tab-jobs-pending = Jobs · { $count }
 panels-tab-history = History
 panels-clear-finished = Clear finished
+panels-clear-history = Clear history
 panels-cancel-all = Cancel all
 panels-resume-all = Resume all
 panels-pause-all = Pause all

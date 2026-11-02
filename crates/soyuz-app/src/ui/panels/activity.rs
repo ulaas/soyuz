@@ -217,6 +217,20 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
                 jobs_rows::apply_toolbar(&mut app.core, b);
             }
         }
+    } else {
+        // History: forget the finished operations (asks first; their Undo goes too).
+        let r = Rect::from_min_size(pos2(bar.right() - 28.0, bar.top() + 1.0), vec2(28.0, 28.0));
+        let any = !app.core.fileops.jobs.history().is_empty();
+        if icon_button(
+            &mut ui.new_child(UiBuilder::new().max_rect(r).id_salt("soyuz.act.bar.clear_history")),
+            ph::BROOM,
+            tr!("panels-clear-history"),
+            any,
+        )
+        .clicked()
+        {
+            app.core.cmds.push(crate::cmd::Cmd::FileOp(crate::ops::fileops::FileOpCmd::ConfirmClearHistory));
+        }
     }
     ui.add_space(4.0);
     match app.core.fileops.activity.tab {

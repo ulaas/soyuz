@@ -168,6 +168,7 @@ ops-drop-onto-folder = Kopyalamak için dosyaları bir klasör görünümüne b�
 ops-nothing-to-undo = Bu oturumda geri alınacak bir şey yok
 ops-still-undoing = Bu işlem hâlâ geri alınıyor
 ops-nothing-to-redo = Yinelenecek bir şey yok
+ops-history-empty = Geçmiş zaten boş
 ops-not-available = Şu anda kullanılamıyor
 
 ## Sürükle ve bırak

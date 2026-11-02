@@ -64,7 +64,7 @@ impl Default for General {
             start_location: "home".into(),
             open_folders_in: OpenFoldersIn::SameTab,
             single_click_open: false,
-            confirm_delete: true,
+            confirm_delete: false,
             confirm_permanent_delete: true,
             show_hidden: false,
             honour_dot_hidden: true,

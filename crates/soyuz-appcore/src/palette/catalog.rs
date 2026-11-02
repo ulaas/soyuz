@@ -408,6 +408,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::JobsCancelAll => (IconId::Stop, ""),
         A::JobsClearFinished => (IconId::Broom, ""),
         A::JobsShowHistory => (IconId::ClockCounterClockwise, ""),
+        A::JobsClearHistory => (IconId::Broom, "forget activity undo"),
     }
 }
 

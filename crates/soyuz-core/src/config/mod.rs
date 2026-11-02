@@ -258,7 +258,7 @@ mod tests {
         let l = parse_str("[general]\nshow_hidden = true\nsize_style = \"decimal\"\n").unwrap();
         assert!(l.config.general.show_hidden);
         assert_eq!(l.config.general.size_style, SizeStyle::Decimal);
-        assert!(l.config.general.confirm_delete, "untouched keys keep defaults");
+        assert!(l.config.general.confirm_permanent_delete, "untouched keys keep defaults");
         assert_eq!(l.config.columns.details[0], Column::Name);
     }
 

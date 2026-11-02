@@ -115,7 +115,7 @@ mode (status bar or palette) adds tick boxes for mouse and touch users.
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | copy / cut / paste — works with other apps' file clipboard too |
 | `F5` / `F6` | copy / move to the other pane |
 | `F2` | rename in place (`Ctrl+Shift+R` batch rename with live preview, regex and counters) |
-| `Del` / `Shift+Del` | trash / delete permanently (confirmations are configurable) |
+| `Del` / `Shift+Del` | trash (no question: `Ctrl+Z` brings it back) / delete permanently (asks first; both configurable) |
 | `Ctrl+Shift+N` / `Ctrl+Alt+N` | new folder / new file |
 | `Alt+Enter` | properties: attributes, times, permissions, checksums, details |
 | `Space` | Quick Look; arrows move to the next item while it is open |
@@ -218,7 +218,8 @@ date, which is newer / larger) and offers *Replace*, *Keep both*, *Skip* and mor
 
 `Ctrl+Z` / `Ctrl+Y` undo and redo copies, moves, renames, trashing, new items and
 attribute changes. *History* in the activity panel lists past operations with undo, redo
-and *Retry failed*.
+and *Retry failed*; its broom button (or *Clear job history* in the palette) forgets them
+after asking. Your files stay as they are, but those operations can no longer be undone.
 
 ## Panels: preview, terminal, activity, shelf
 
@@ -874,7 +875,7 @@ tab: P or Space pauses / resumes, C or Del cancels (removes a finished job), Ent
 answers a job's postponed question, L shows the job's errors and log, M opens its menu
 (priority, move up / down, start now), Shift+P / Shift+S / Shift+C pause / resume /
 cancel all, X clears finished jobs. Tab (or ← / →) switches to *History*, where U
-undoes (or redoes) and R retries failed items. The panel's height is
+undoes (or redoes), R retries failed items and X asks to clear the history. The panel's height is
 `[tui] jobs_rows`.
 
 ![The jobs panel with a copy in progress and a finished copy](../site/assets/shots/tui-jobs.svg)

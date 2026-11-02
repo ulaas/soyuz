@@ -44,7 +44,32 @@ pub const MIGRATIONS: &[Migration] = &[
         describe: "media: [preview] video_ffmpeg is [preview] video, ffmpeg_path is gone ([media] section)",
         apply: media_v3,
     },
+    Migration {
+        from: 3,
+        describe: "general: moving to the trash no longer asks first (confirm_delete = false)",
+        apply: trash_confirm_v4,
+    },
 ];
+
+/// v3 → v4: Delete moves to the trash without asking (it can be undone; permanent deletes
+/// still ask). Saved configs carry every key, so the old default `confirm_delete = true`
+/// is indistinguishable from a choice and is turned off; it stays a setting.
+fn trash_confirm_v4(doc: &mut DocumentMut) -> Result<(), String> {
+    let Some(general) = doc.get_mut("general").and_then(|g| g.as_table_like_mut()) else { return Ok(()) };
+    let Some(item) = general.get_mut("confirm_delete") else { return Ok(()) };
+    if !item.is_bool() {
+        return Err("`[general] confirm_delete` must be true or false".into());
+    }
+    if item.as_bool() == Some(true) {
+        // Keep the key's decor (comments) by editing the value in place.
+        if let Some(v) = item.as_value_mut() {
+            let decor = v.decor().clone();
+            *v = toml_edit::Value::from(false);
+            *v.decor_mut() = decor;
+        }
+    }
+    Ok(())
+}
 
 /// The schema 1 default `[sidebar] sections`.
 const SIDEBAR_V1_DEFAULT: [&str; 8] = ["favorites", "smart", "devices", "cloud", "tags", "network", "trash", "tree"];
@@ -408,6 +433,28 @@ mod tests {
             migrate_text_with("schema = 2\n[general]\nshow_hidden = true\n", MIGRATIONS, 3).unwrap().unwrap();
         assert!(!out.contains("[preview]"), "{out}");
         assert!(migrate_text_with("schema = 2\n[preview]\nvideo_ffmpeg = \"yes\"\n", MIGRATIONS, 3).is_err());
+    }
+
+    #[test]
+    fn trash_confirm_v4_turns_the_trash_prompt_off() {
+        let text = "schema = 3\n[general]\nconfirm_delete = true # trash\nconfirm_permanent_delete = true\n";
+        let (out, from) = migrate_text_with(text, MIGRATIONS, 4).unwrap().unwrap();
+        assert_eq!(from, 3);
+        assert!(out.contains("schema = 4"), "{out}");
+        assert!(out.contains("confirm_delete = false # trash"), "comment kept: {out}");
+        assert!(out.contains("confirm_permanent_delete = true"), "{out}");
+        let l = super::super::parse_str(&out).unwrap();
+        assert!(!l.config.general.confirm_delete && l.config.general.confirm_permanent_delete);
+        assert_eq!(migrate_text_with(&out, MIGRATIONS, 4).unwrap(), None, "done once");
+        // Already off, missing, or no [general]: nothing to do.
+        let (out, _) =
+            migrate_text_with("schema = 3\n[general]\nconfirm_delete = false\n", MIGRATIONS, 4).unwrap().unwrap();
+        assert!(out.contains("confirm_delete = false"), "{out}");
+        let (out, _) =
+            migrate_text_with("schema = 3\n[general]\nshow_hidden = true\n", MIGRATIONS, 4).unwrap().unwrap();
+        assert!(!out.contains("confirm_delete"), "{out}");
+        assert!(migrate_text_with("schema = 3\n", MIGRATIONS, 4).unwrap().is_some());
+        assert!(migrate_text_with("schema = 3\n[general]\nconfirm_delete = 1\n", MIGRATIONS, 4).is_err());
     }
 
     #[test]

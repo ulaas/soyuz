@@ -74,6 +74,9 @@ dialogs-delete-wipe-confirm = Güvenli sil
 dialogs-delete-purge-body = Bu öğeler Çöp Kutusu'ndan kalıcı olarak kaldırılacak.
 dialogs-delete-empty-body = Çöp Kutusu'ndaki { $count } öğenin tümü kalıcı olarak silinecek.
 dialogs-delete-empty-confirm = Çöp Kutusu'nu boşalt
+dialogs-clear-history-title = İşlem geçmişi temizlensin mi?
+dialogs-clear-history-body = Tamamlanan { $count } işlem unutulacak ve artık geri alınamayacak. Dosyalarınız değişmez.
+dialogs-clear-history-confirm = Geçmişi temizle
 dialogs-delete-and-more = ve { $count } öğe daha
 
 ## Quit while jobs run

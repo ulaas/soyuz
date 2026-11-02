@@ -427,6 +427,8 @@ action-jobs-clear-finished = Biten işleri temizle
 action-jobs-clear-finished-desc = Biten işleri listeden kaldır
 action-jobs-show-history = İş geçmişini göster
 action-jobs-show-history-desc = Tamamlanan işlemlere göz at ve geri al
+action-jobs-clear-history = İş geçmişini temizle
+action-jobs-clear-history-desc = Tamamlanan işlemleri unut (önce sorar; artık geri alınamazlar)
 
 ## Parameterised
 action-open-bookmark-desc = Yapılandırılmış bir yer işaretine git

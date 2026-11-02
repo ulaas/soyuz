@@ -94,6 +94,12 @@ dialogs-delete-empty-body = { $count ->
    *[other] All { $count } items in the trash will be deleted permanently.
 }
 dialogs-delete-empty-confirm = Empty trash
+dialogs-clear-history-title = Clear the operation history?
+dialogs-clear-history-body = { $count ->
+    [one] { $count } finished operation will be forgotten and can no longer be undone. Your files are not changed.
+   *[other] { $count } finished operations will be forgotten and can no longer be undone. Your files are not changed.
+}
+dialogs-clear-history-confirm = Clear history
 # More names than the list shows.
 dialogs-delete-and-more = and { $count } more
 

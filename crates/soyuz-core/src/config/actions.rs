@@ -135,6 +135,8 @@ define_actions! {
     ],
     Jobs: [
         JobsPauseAll, JobsResumeAll, JobsCancelAll, JobsClearFinished, JobsShowHistory,
+        // Forget the operation history (asks first: the entries' Undo goes with them).
+        JobsClearHistory,
     ],
 }
 

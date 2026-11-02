@@ -14,6 +14,7 @@ panels-tab-jobs = İşler
 panels-tab-jobs-pending = İşler · { $count }
 panels-tab-history = Geçmiş
 panels-clear-finished = Bitenleri temizle
+panels-clear-history = Geçmişi temizle
 panels-cancel-all = Tümünü iptal et
 panels-resume-all = Tümünü sürdür
 panels-pause-all = Tümünü duraklat

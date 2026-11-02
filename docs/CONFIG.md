@@ -87,7 +87,7 @@ written as a list of quoted values is an enumeration: use one of them.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `schema` | integer | `3` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
+| `schema` | integer | `4` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
 
 ## `[general]`
 
@@ -96,7 +96,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `start_location` | string | `"home"` | `"home"` \| `"last"` \| `"<path>"`. |
 | `open_folders_in` | `"same_tab"` \| `"new_tab"` | `"same_tab"` | Open folders in the `same_tab` or a `new_tab`. |
 | `single_click_open` | boolean | `false` | Open files and folders with a single click instead of a double click. |
-| `confirm_delete` | boolean | `true` | Confirm moving to trash. |
+| `confirm_delete` | boolean | `false` | Ask before moving to the trash (off: Delete trashes at once; it can be undone). |
 | `confirm_permanent_delete` | boolean | `true` | Confirm before deleting permanently (Shift+Del). |
 | `show_hidden` | boolean | `false` | Show hidden files and folders (also toggled with Ctrl+H). |
 | `honour_dot_hidden` | boolean | `true` | Also hide the names listed in a folder's `.hidden` file (the GNOME / KDE convention). |

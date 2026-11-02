@@ -220,6 +220,35 @@ fn history_persistence_round_trip() {
 }
 
 #[test]
+fn clear_history_forgets_entries_and_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let hist_path = dir.path().join("history.jsonl");
+    let mk = || EngineConfig {
+        sample_interval: Duration::from_millis(50),
+        history_path: Some(hist_path.clone()),
+        ..EngineConfig::default()
+    };
+    let e = JobEngine::new(mk(), Arc::new(FakeProbe::default()), Arc::new(|| {}));
+    for name in ["d1", "d2"] {
+        let id = e.submit(JobSpec::new(JobKind::Create { path: dir.path().join(name), kind: CreateKind::Dir }));
+        wait_for(Duration::from_secs(10), || e.snapshot(id).filter(|s| s.state.is_terminal()));
+    }
+    assert_eq!(e.history().len(), 2);
+    assert_eq!(e.clear_history(), 2);
+    assert!(e.history().is_empty());
+    assert_eq!(e.clear_history(), 0, "nothing left");
+    // Written in the background.
+    wait_for(Duration::from_secs(10), || {
+        std::fs::read_to_string(&hist_path).ok().filter(|t| t.trim().is_empty()).map(|_| ())
+    });
+    assert!(dir.path().join("d1").is_dir(), "the files stay");
+    e.shutdown(Duration::from_secs(1));
+    let e = JobEngine::new(mk(), Arc::new(FakeProbe::default()), Arc::new(|| {}));
+    assert!(e.history().is_empty(), "still empty after a restart");
+    e.shutdown(Duration::from_secs(1));
+}
+
+#[test]
 fn history_limit_trims_oldest() {
     let h = H::with(|c| c.history_limit = 2);
     for n in ["a", "b", "c"] {

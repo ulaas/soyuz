@@ -13,7 +13,7 @@ use crate::time::DateFormat;
 use super::keys::KeyPreset;
 
 /// Current schema version written by [`save_pretty`](super::save_pretty).
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -88,7 +88,7 @@ pub struct General {
     pub open_folders_in: OpenFoldersIn,
     /// Open files and folders with a single click instead of a double click.
     pub single_click_open: bool,
-    /// Confirm moving to trash.
+    /// Ask before moving to the trash (off: Delete trashes at once; it can be undone).
     pub confirm_delete: bool,
     /// Confirm before deleting permanently (Shift+Del).
     pub confirm_permanent_delete: bool,

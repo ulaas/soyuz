@@ -186,6 +186,7 @@ ops-drop-onto-folder = Drop files onto a folder view to copy them there
 ops-nothing-to-undo = Nothing to undo in this session
 ops-still-undoing = That operation is still being undone
 ops-nothing-to-redo = Nothing to redo
+ops-history-empty = The history is already empty
 ops-not-available = Not available right now
 
 ## Drag and drop. $target: the drop target's name (quoted folder name).

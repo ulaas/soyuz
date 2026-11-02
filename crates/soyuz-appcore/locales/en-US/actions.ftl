@@ -428,6 +428,8 @@ action-jobs-clear-finished = Clear finished jobs
 action-jobs-clear-finished-desc = Remove finished jobs from the list
 action-jobs-show-history = Show job history
 action-jobs-show-history-desc = Browse completed operations and undo
+action-jobs-clear-history = Clear job history
+action-jobs-clear-history-desc = Forget finished operations (asks first; they can no longer be undone)
 
 ## Parameterised
 action-open-bookmark-desc = Navigate to a configured bookmark

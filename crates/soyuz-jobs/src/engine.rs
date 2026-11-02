@@ -1170,6 +1170,32 @@ impl JobEngine {
         self.inner.state.lock().history.clone()
     }
 
+    /// Forget the job history (entries whose undo / redo is still running stay) and
+    /// rewrite `history.jsonl` on a background thread; returns how many entries went.
+    /// The files themselves are untouched; only the record of the operations (and with
+    /// it their Undo) is gone.
+    pub fn clear_history(&self) -> usize {
+        let removed = self.inner.update(|st, ev| {
+            let busy: Vec<HistoryId> = st.history.iter().map(|h| h.id).filter(|id| history_busy(st, *id)).collect();
+            let before = st.history.len();
+            st.history.retain(|h| busy.contains(&h.id));
+            let removed = before - st.history.len();
+            if removed > 0 {
+                ev.push(JobEvent::HistoryChanged);
+            }
+            removed
+        });
+        if removed > 0 && self.inner.cfg.history_path.is_some() {
+            let inner = self.inner.clone();
+            let spawned =
+                std::thread::Builder::new().name("soyuz-jobs-history".into()).spawn(move || inner.persist_history());
+            if let Err(e) = spawned {
+                log::warn!("soyuz-jobs: cannot spawn the history writer: {e}");
+            }
+        }
+        removed
+    }
+
     /// Submit a job that reverses history entry `h`. `None` if the entry is unknown,
     /// already undone, not undoable, or an undo/redo of it is in flight.
     pub fn undo(&self, h: HistoryId) -> Option<JobId> {

@@ -89,6 +89,10 @@ pub enum FileOpCmd {
     CancelJob(JobId),
     /// Ask, then empty the trash.
     ConfirmEmptyTrash,
+    /// Ask, then forget the operation history (the activity panel's History tab).
+    ConfirmClearHistory,
+    /// Confirmed: forget the operation history.
+    ClearHistory,
     /// Confirmed "Empty trash".
     EmptyTrash,
     /// Ask, then delete trashed items permanently.
@@ -176,6 +180,7 @@ pub fn handles(a: &Action) -> bool {
             | A::JobsCancelAll
             | A::JobsClearFinished
             | A::JobsShowHistory
+            | A::JobsClearHistory
     )
 }
 
@@ -362,6 +367,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
             app.ui.bottom.open_activity();
             app.fileops.activity.tab = ActivityTab::History;
         }
+        A::JobsClearHistory => confirm_clear_history(app),
         _ => {}
     }
 }
@@ -531,6 +537,22 @@ fn delete(app: &mut AppCore, paths: Vec<PathBuf>, mode: DeleteMode) {
     app.fileops.jobs.submit(spec, JobMeta::new(op, &paths, None));
 }
 
+/// Ask before forgetting the operation history ("nothing to clear" when it is empty).
+fn confirm_clear_history(app: &mut AppCore) {
+    let n = app.fileops.jobs.history().len();
+    if n == 0 {
+        app.ui.toasts.push(Toast::info(tr!("ops-history-empty")));
+    } else {
+        app.dialogs.push(DeleteConfirmModel::clear_history(n));
+    }
+}
+
+/// Forget the operation history (confirmed). The files are untouched.
+fn clear_history(app: &mut AppCore) {
+    app.fileops.jobs.engine().clear_history();
+    app.fileops.undo_stack.clear();
+}
+
 fn restore(app: &mut AppCore, items: Vec<TrashItem>) {
     let paths: Vec<PathBuf> = items.iter().map(|i| i.original.clone()).collect();
     let spec = app.fileops.jobs.spec(JobKind::RestoreTrash { items, to: None });
@@ -639,6 +661,8 @@ pub fn apply(app: &mut AppCore, cmd: FileOpCmd, _host: &dyn Host) {
             let spec = app.fileops.jobs.spec(JobKind::EmptyTrash);
             app.fileops.jobs.submit(spec, JobMeta::new(OpKind::EmptyTrash, &[], None));
         }
+        FileOpCmd::ConfirmClearHistory => confirm_clear_history(app),
+        FileOpCmd::ClearHistory => clear_history(app),
         FileOpCmd::ConfirmEmptyTrash => {
             app.dialogs.push(DeleteConfirmModel::empty_trash(app.fileops.trash.items().len()));
         }

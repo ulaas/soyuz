@@ -200,9 +200,15 @@ pub fn press(app: &mut App, index: usize, b: RowButton) {
     }
 }
 
-/// Press toolbar button `b` (jobs tab, when it applies).
+/// Press toolbar button `b` (jobs tab, when it applies). On the history tab "clear" (X)
+/// asks to forget the history.
 pub fn press_all(app: &mut App, b: ToolbarButton) {
     if crate::view::jobs::history_tab(&app.core) {
+        if b == ToolbarButton::ClearFinished {
+            app.core
+                .cmds
+                .push(soyuz_appcore::cmd::Cmd::FileOp(soyuz_appcore::ops::fileops::FileOpCmd::ConfirmClearHistory));
+        }
         return;
     }
     if jobs_rows::toolbar(&app.core).iter().any(|&(x, on)| x == b && on) {
