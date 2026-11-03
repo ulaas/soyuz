@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.5.9" date="2026-11-03" type="development">
+      <description>
+        <p>Text and code previews use the Hack font at a larger size and follow the code font
+          size setting. The activity history can be cleared, and Delete moves files to the
+          trash without asking (it can be undone). The window no longer freezes when a job
+          with thousands of items finishes.</p>
+      </description>
+    </release>
     <release version="0.5.8" date="2026-10-31" type="development">
       <description>
         <p>The 0.5.7 changes, built: that release's build stopped on a test that only failed
