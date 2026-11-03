@@ -521,8 +521,8 @@ fn folder_notes(
 
 fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<StyledLine>>, widest: usize, truncated: bool) {
     let p = palette(ui.ctx());
-    let font = FontId::monospace(12.0);
-    let row_h = 18.0;
+    let (font, row_h) = gfx::preview_code_font(ui.ctx());
+    let num_font = FontId::new(font.size - 1.0, font.family.clone());
     let char_w = ui.ctx().fonts_mut(|f| f.glyph_width(&font, '0'));
     let n = lines.len() + usize::from(truncated);
     let digits = n.to_string().len().max(2);
@@ -553,10 +553,10 @@ fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<StyledLine>>, widest: usiz
                     pos2(r.left() + gutter - 8.0, r.center().y),
                     Align2::RIGHT_CENTER,
                     (i + 1).to_string(),
-                    font.clone(),
+                    num_font.clone(),
                     p.text_tertiary.gamma_multiply(0.8),
                 );
-                let galley = ui.painter().layout_job(gfx::layout_job(&lines[i]));
+                let galley = ui.painter().layout_job(gfx::layout_job_mono(&lines[i], &font));
                 ui.painter().galley(
                     pos2(r.left() + gutter + 12.0, r.center().y - galley.size().y / 2.0),
                     galley,

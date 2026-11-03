@@ -38,7 +38,7 @@ dialogs-about-memory-line = küçük resimler { $thumbs } ({ $thumb_count }) · 
 dialogs-about-process-windows = özel { $private } · çalışma kümesi { $working_set }
 dialogs-about-process-unix = anonim { $anonymous } · yerleşik { $resident }
 dialogs-about-process-unknown = kullanılamıyor
-dialogs-about-license = MIT Lisansı ile dağıtılır. Yazı tipleri: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL). Simgeler: Phosphor (MIT).
+dialogs-about-license = MIT Lisansı ile dağıtılır. Yazı tipleri: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL), Hack (MIT / Bitstream Vera). Simgeler: Phosphor (MIT).
 dialogs-about-copy-info = Bilgileri kopyala
 
 ## Keyboard shortcuts

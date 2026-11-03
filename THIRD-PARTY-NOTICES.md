@@ -18,7 +18,8 @@ SIL Open Font License, Version 1.1 (full text in the appendix below).
 | JetBrains Mono | Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) |
 | Source Code Pro | © 2023 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. Source is a trademark of Adobe in the United States and/or other countries. |
 
-Fonts bundled by the egui toolkit (`epaint_default_fonts`):
+Fonts bundled by the egui toolkit (`epaint_default_fonts`; Hack is also the default code
+and text-preview font):
 
 | Font | Licence |
 |---|---|

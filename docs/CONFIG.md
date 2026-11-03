@@ -87,7 +87,7 @@ written as a list of quoted values is an enumeration: use one of them.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `schema` | integer | `4` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
+| `schema` | integer | `5` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
 
 ## `[general]`
 
@@ -167,7 +167,7 @@ One role's font.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `family` | string | `"Inter"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.ui_semibold]`
@@ -177,7 +177,7 @@ One role's font.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `family` | string | `""` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.terminal]`
@@ -187,7 +187,7 @@ One role's font.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.code]`
@@ -196,8 +196,8 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
+| `family` | string | `"Hack"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.hex]`
@@ -207,7 +207,7 @@ One role's font.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.numbers]`
@@ -217,7 +217,7 @@ One role's font.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `family` | string | `""` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[theme]`

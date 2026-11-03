@@ -710,11 +710,11 @@ Search the settings with `Ctrl+F` inside the window.
   ```
 
   Anything a pack leaves out keeps the built-in glyph.
-- *Fonts*: one font per role — interface (Inter), headings (its semibold face), terminal,
-  code editor and hex view (Cascadia Mono), numbers (the interface font). Soyuz ships ten
-  screen fonts that need no installation: Inter, IBM Plex Sans and Noto Sans (each with a
-  SemiBold face for headings), and Cascadia Mono, JetBrains Mono, IBM Plex Mono and Source
-  Code Pro for monospace text. The family field suggests these first (marked *Embedded*),
+- *Fonts*: one font per role — interface (Inter), headings (its semibold face), terminal
+  and hex view (Cascadia Mono), code and text previews plus the text editor (Hack), numbers
+  (the interface font). Soyuz ships eleven screen fonts that need no installation: Inter,
+  IBM Plex Sans and Noto Sans (each with a SemiBold face for headings), and Cascadia Mono,
+  Hack, JetBrains Mono, IBM Plex Mono and Source Code Pro for monospace text. The family field suggests these first (marked *Embedded*),
   then your installed fonts such as Segoe UI or Consolas. The *Embedded* switch ignores
   installed fonts. Each role also has a size offset, a live preview and a notice when a
   font is not installed. Under *Rendering*: hinting, hinting strength (*Crisp* is the

@@ -40,6 +40,8 @@ eframe = { version = "=0.37.0", default-features = false, features = ["accesskit
 egui = "=0.37.0"
 # Colour glyphs (COLR / sbix / CBDT emoji fonts), drawn through vello_cpu (`[appearance] color_emoji`).
 epaint = { version = "=0.37.0", default-features = false, features = ["color_fonts"] }
+# Hack Regular (the embedded code font) from egui's own font crate: same bytes, no second copy.
+epaint_default_fonts = "=0.37.0"
 egui_extras = { version = "=0.37.0", features = ["image", "svg", "file", "syntect"] }
 # SVG icon-pack pictures (same version egui_extras' `svg` feature uses).
 resvg = { version = "0.45.1", default-features = false }

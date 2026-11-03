@@ -129,7 +129,7 @@ static INTER_VAR_OPTICAL: Optical = Optical { caption: INTER_VAR_CAPTION, displa
 
 /// Every embedded font, in Settings order (index = [`Embedded`]). See
 /// `assets/fonts/README.md` for versions, sources and checksums.
-pub static EMBEDDED: [EmbeddedFont; 12] = [
+pub static EMBEDDED: [EmbeddedFont; 13] = [
     face("Inter", "Inter", false, Some(Embedded::INTER_SEMIBOLD), font!("inter/Inter-Regular.ttf")),
     face("Inter SemiBold", "Inter", false, None, font!("inter/Inter-SemiBold.ttf")),
     instance(
@@ -155,6 +155,8 @@ pub static EMBEDDED: [EmbeddedFont; 12] = [
     face("Noto Sans", "Noto Sans", false, Some(Embedded(7)), font!("noto-sans/NotoSans-Regular.ttf")),
     face("Noto Sans SemiBold", "Noto Sans", false, None, font!("noto-sans/NotoSans-SemiBold.ttf")),
     face("Cascadia Mono", "Cascadia Mono", true, None, font!("cascadia-mono/CascadiaMono-Regular.ttf")),
+    // egui's own copy (Hack 3.003, MIT + Bitstream Vera licence): no second copy in the binary.
+    face("Hack", "Hack", true, None, epaint_default_fonts::HACK_REGULAR),
     face("JetBrains Mono", "JetBrains Mono", true, None, font!("jetbrains-mono/JetBrainsMono-Regular.ttf")),
     face("IBM Plex Mono", "IBM Plex Mono", true, None, font!("ibm-plex-mono/IBMPlexMono-Regular.ttf")),
     face("Source Code Pro", "Source Code Pro", true, None, font!("source-code-pro/SourceCodePro-Regular.ttf")),
@@ -170,7 +172,8 @@ impl Embedded {
     pub const INTER_VARIABLE: Embedded = Embedded(2);
     pub const INTER_VARIABLE_SEMIBOLD: Embedded = Embedded(3);
     pub const CASCADIA_MONO: Embedded = Embedded(8);
-    pub const JETBRAINS_MONO: Embedded = Embedded(9);
+    pub const HACK: Embedded = Embedded(9);
+    pub const JETBRAINS_MONO: Embedded = Embedded(10);
 
     /// Every embedded font.
     pub fn all() -> impl Iterator<Item = Embedded> {
@@ -227,9 +230,11 @@ impl Embedded {
     }
 
     /// The embedded font a role falls back to: the default family of the role when it is
-    /// embedded (it is by default), else Inter / Inter SemiBold / Cascadia Mono.
+    /// embedded (it is by default), else Inter / Inter SemiBold / Hack / Cascadia Mono.
     pub fn for_role(role: FontRoleKind) -> Embedded {
-        let (default, builtin) = if role.is_mono() {
+        let (default, builtin) = if role == FontRoleKind::Code {
+            (Fonts::DEFAULT_CODE, Embedded::HACK)
+        } else if role.is_mono() {
             (Fonts::DEFAULT_MONO, Embedded::CASCADIA_MONO)
         } else {
             (Fonts::DEFAULT_UI, Embedded::INTER)
@@ -296,9 +301,10 @@ pub fn candidates(fonts: &Fonts, role: FontRoleKind) -> Vec<String> {
     let first = |default: &str| if configured.is_empty() { default.to_string() } else { configured.clone() };
     let mut v = match role {
         FontRoleKind::Ui => vec![first(Fonts::DEFAULT_UI)],
-        // A missing monospace font falls back to the embedded Cascadia Mono.
+        // A missing monospace font falls back to the role's embedded default (Hack for
+        // code, Cascadia Mono for the terminal and hex view).
         FontRoleKind::Terminal | FontRoleKind::Code | FontRoleKind::Hex => {
-            vec![first(Fonts::DEFAULT_MONO), "Cascadia Mono".into()]
+            vec![first(Fonts::default_mono(role)), Embedded::for_role(role).font().name.into()]
         }
         // Derived from the ui font when empty (see `resolve`).
         FontRoleKind::UiSemibold | FontRoleKind::Numbers => {
@@ -477,6 +483,13 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<B
         })
         .collect();
     let roles = &roles[..];
+    // egui's default set carries Hack under the same key: use the embedded face, with
+    // the configured hinting, wherever either is used.
+    for e in Embedded::all() {
+        if let Some(data) = defs.font_data.get_mut(e.key()) {
+            *data = instance(e.bytes(), e.font().coords).into();
+        }
+    }
     let add_embedded = |defs: &mut FontDefinitions, e: Embedded| {
         defs.font_data.entry(e.key().into()).or_insert_with(|| instance(e.bytes(), e.font().coords).into());
     };
@@ -516,6 +529,8 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<B
             list.push("phosphor".into());
             list.extend(prop_defaults.iter().cloned());
         }
+        let mut seen = std::collections::HashSet::new();
+        list.retain(|k| seen.insert(k.clone()));
         defs.families.insert(family(r.role), list);
     }
     // Small text and large headings: the ui / heading lists, led by the optical-size
@@ -768,15 +783,20 @@ mod tests {
             assert_eq!(r.len(), 6);
             assert_eq!(src(&r, FontRoleKind::Ui), Source::Embedded(Embedded::INTER), "embedded wins over installed");
             assert_eq!(src(&r, FontRoleKind::UiSemibold), Source::Embedded(Embedded::INTER_SEMIBOLD));
-            for role in [FontRoleKind::Terminal, FontRoleKind::Code, FontRoleKind::Hex] {
+            for role in [FontRoleKind::Terminal, FontRoleKind::Hex] {
                 assert_eq!(src(&r, role), Source::Embedded(Embedded::CASCADIA_MONO));
             }
+            assert_eq!(src(&r, FontRoleKind::Code), Source::Embedded(Embedded::HACK), "previews / editor: Hack");
             assert_eq!(src(&r, FontRoleKind::Numbers), src(&r, FontRoleKind::Ui), "numbers follow the ui font");
             assert!(r.iter().all(|x| x.notice.is_none()));
         }
         assert_eq!(Embedded::for_role(FontRoleKind::Ui), Embedded::INTER);
         assert_eq!(Embedded::for_role(FontRoleKind::UiSemibold), Embedded::INTER_SEMIBOLD);
         assert_eq!(Embedded::for_role(FontRoleKind::Hex), Embedded::CASCADIA_MONO);
+        assert_eq!(Embedded::for_role(FontRoleKind::Code), Embedded::HACK);
+        assert_eq!(Embedded::HACK.font().name, Fonts::DEFAULT_CODE);
+        assert_eq!(Embedded::CASCADIA_MONO.font().name, Fonts::DEFAULT_MONO);
+        assert_eq!(Embedded::JETBRAINS_MONO.font().name, "JetBrains Mono");
     }
 
     #[test]
@@ -787,10 +807,11 @@ mod tests {
         assert!(matches!(src(&r, FontRoleKind::Ui), Source::System { .. }));
         assert_eq!(name(&src(&r, FontRoleKind::UiSemibold)), "Segoe UI Semibold");
         assert_eq!(name(&src(&r, FontRoleKind::Terminal)), "Consolas");
-        // No Consolas: the embedded Cascadia Mono, with a notice.
+        // No Consolas: the role's embedded default (Hack for code), with a notice.
         let loc = fake_locate(&["Segoe UI"]);
         let r = resolve(&system_fonts(), &loc, &|_, _| false);
-        assert_eq!(src(&r, FontRoleKind::Code), Source::Embedded(Embedded::CASCADIA_MONO));
+        assert_eq!(src(&r, FontRoleKind::Code), Source::Embedded(Embedded::HACK));
+        assert_eq!(src(&r, FontRoleKind::Terminal), Source::Embedded(Embedded::CASCADIA_MONO));
         let t = r.iter().find(|x| x.role == FontRoleKind::Terminal).unwrap();
         assert!(t.notice.as_deref().unwrap().contains("Consolas is not installed"));
         // Semibold missing: no variable font, so the regular face, with a notice.
@@ -860,9 +881,10 @@ mod tests {
         assert_eq!(name(&src(&r, FontRoleKind::Numbers)), "Consolas");
         assert_eq!(name(&src(&r, FontRoleKind::Hex)), "IBM Plex Mono", "a named embedded font");
         assert_eq!(src(&r, FontRoleKind::Terminal), Source::Embedded(Embedded::CASCADIA_MONO));
-        assert_eq!(candidates(&f, FontRoleKind::Code), ["Fira Code", "Cascadia Mono"]);
-        f.code.family = "cascadia mono".into();
-        assert_eq!(candidates(&f, FontRoleKind::Code), ["cascadia mono"], "deduplicated");
+        assert_eq!(candidates(&f, FontRoleKind::Code), ["Fira Code", "Hack"]);
+        assert_eq!(candidates(&f, FontRoleKind::Terminal), ["Fira Code", "Cascadia Mono"]);
+        f.code.family = "hack".into();
+        assert_eq!(candidates(&f, FontRoleKind::Code), ["hack"], "deduplicated");
     }
 
     #[test]
@@ -871,7 +893,8 @@ mod tests {
         let prop = &f.families[&FontFamily::Proportional];
         assert_eq!(prop[0], "Inter");
         assert_eq!(prop[1], "phosphor");
-        assert_eq!(f.families[&FontFamily::Monospace][0], "Cascadia Mono");
+        assert_eq!(f.families[&FontFamily::Monospace][0], "Hack");
+        assert_eq!(f.families[&FontFamily::Monospace].iter().filter(|k| *k == "Hack").count(), 1, "egui's Hack once");
         assert_eq!(f.families[&FontFamily::Name(TERMINAL.into())][0], "Cascadia Mono");
         assert_eq!(f.families[&FontFamily::Name(HEX.into())][0], "Cascadia Mono");
         assert_eq!(f.families[&FontFamily::Name(NUMBERS.into())][0], "Inter");
@@ -935,7 +958,7 @@ mod tests {
         assert_eq!(prop[2], "phosphor");
         let mono = &defs.families[&FontFamily::Monospace];
         assert_eq!(&defs.families[&FontFamily::Name(TERMINAL.into())][0], &mono[0], "one Consolas for every mono role");
-        assert_eq!(mono[1], "Cascadia Mono", "then the embedded fallback");
+        assert_eq!(mono[1], "Hack", "then the embedded fallback");
         assert_eq!(defs.families[&FontFamily::Name(ICONS.into())][0], "phosphor");
         assert_eq!(defs.font_data.keys().filter(|k| k.starts_with("sys:")).count(), 3);
         // Unreadable file: the embedded fallback takes the first slot.

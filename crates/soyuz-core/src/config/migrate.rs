@@ -49,7 +49,38 @@ pub const MIGRATIONS: &[Migration] = &[
         describe: "general: moving to the trash no longer asks first (confirm_delete = false)",
         apply: trash_confirm_v4,
     },
+    Migration {
+        from: 4,
+        describe: "fonts: the code font (text previews, editor) defaults to Hack instead of Cascadia Mono",
+        apply: code_font_v5,
+    },
 ];
+
+/// v4 → v5: the code role (text / code previews, the editor, other monospace text)
+/// defaults to the embedded Hack. Saved configs carry every key, so a `[fonts.code]
+/// family` still at the old default `"Cascadia Mono"` becomes `"Hack"`; the terminal and
+/// hex view keep Cascadia Mono, and a picked font stays.
+fn code_font_v5(doc: &mut DocumentMut) -> Result<(), String> {
+    let Some(code) = doc
+        .get_mut("fonts")
+        .and_then(|f| f.as_table_like_mut())
+        .and_then(|f| f.get_mut("code"))
+        .and_then(|c| c.as_table_like_mut())
+    else {
+        return Ok(());
+    };
+    let Some(item) = code.get_mut("family") else { return Ok(()) };
+    let Some(v) = item.as_value_mut() else { return Err("`[fonts.code] family` must be a string".into()) };
+    let Some(family) = v.as_str() else { return Err("`[fonts.code] family` must be a string".into()) };
+    let norm = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
+    if norm(family) == norm("Cascadia Mono") {
+        // Keep the key's decor (comments) by editing the value in place.
+        let decor = v.decor().clone();
+        *v = toml_edit::Value::from("Hack");
+        *v.decor_mut() = decor;
+    }
+    Ok(())
+}
 
 /// v3 → v4: Delete moves to the trash without asking (it can be undone; permanent deletes
 /// still ask). Saved configs carry every key, so the old default `confirm_delete = true`
@@ -455,6 +486,70 @@ mod tests {
         assert!(!out.contains("confirm_delete"), "{out}");
         assert!(migrate_text_with("schema = 3\n", MIGRATIONS, 4).unwrap().is_some());
         assert!(migrate_text_with("schema = 3\n[general]\nconfirm_delete = 1\n", MIGRATIONS, 4).is_err());
+    }
+
+    #[test]
+    fn code_font_v5_moves_the_old_default_to_hack() {
+        let text = "schema = 4
+[fonts.terminal]
+family = \"Cascadia Mono\"
+                    [fonts.code]
+family = \"Cascadia Mono\" # mono
+size_offset = 1.0
+";
+        let (out, from) = migrate_text_with(text, MIGRATIONS, 5).unwrap().unwrap();
+        assert_eq!(from, 4);
+        assert!(out.contains("schema = 5"), "{out}");
+        assert!(out.contains("family = \"Hack\" # mono"), "comment kept: {out}");
+        let l = super::super::parse_str(&out).unwrap();
+        assert_eq!(l.config.fonts.code.family, "Hack");
+        assert_eq!(l.config.fonts.code.size_offset, 1.0);
+        assert_eq!(l.config.fonts.terminal.family, "Cascadia Mono", "the terminal keeps its font");
+        assert_eq!(migrate_text_with(&out, MIGRATIONS, 5).unwrap(), None, "done once");
+        // A picked font, no [fonts.code] or no [fonts]: nothing to do.
+        let (out, _) = migrate_text_with(
+            "schema = 4
+[fonts.code]
+family = \"Consolas\"
+",
+            MIGRATIONS,
+            5,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(out.contains("family = \"Consolas\""), "{out}");
+        let (out, _) = migrate_text_with(
+            "schema = 4
+[fonts]
+hinting = true
+",
+            MIGRATIONS,
+            5,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!out.contains("Hack"), "{out}");
+        assert!(
+            migrate_text_with(
+                "schema = 4
+",
+                MIGRATIONS,
+                5
+            )
+            .unwrap()
+            .is_some()
+        );
+        assert!(
+            migrate_text_with(
+                "schema = 4
+[fonts.code]
+family = 1
+",
+                MIGRATIONS,
+                5
+            )
+            .is_err()
+        );
     }
 
     #[test]

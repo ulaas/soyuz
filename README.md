@@ -222,6 +222,6 @@ Please report vulnerabilities privately — see [.github/SECURITY.md](.github/SE
 ## License
 
 [MIT](LICENSE). Bundled fonts (Inter, IBM Plex Sans / Mono, Noto Sans, Cascadia Mono,
-JetBrains Mono, Source Code Pro) are under the SIL Open Font License 1.1, Phosphor icons
-under MIT; every third-party component and its licence is listed in
+JetBrains Mono, Source Code Pro) are under the SIL Open Font License 1.1, Hack under the MIT
+and Bitstream Vera licences, Phosphor icons under MIT; every third-party component and its licence is listed in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

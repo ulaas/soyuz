@@ -88,8 +88,7 @@ pub fn show(ui: &mut Ui, rect: Rect, view: &mut DiffView, a: &EntryInfo, b: &Ent
         message(ui, body, tr!("views-diff-none"), tr!("views-diff-none-sub"), &p);
         return;
     }
-    let row_h = 18.0;
-    let font = FontId::monospace(12.0);
+    let (font, row_h) = crate::ui::gfx::preview_code_font(ui.ctx());
     let char_w = ui.ctx().fonts_mut(|f| f.glyph_width(&font, '0'));
     let mut c = ui.new_child(UiBuilder::new().max_rect(body));
     c.set_clip_rect(body.intersect(ui.clip_rect()));

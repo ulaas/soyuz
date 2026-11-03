@@ -51,7 +51,7 @@ fn roles() -> [RoleInfo; 6] {
             kind: FontRoleKind::Code,
             label: tr!("settings-fonts-code"),
             desc: tr!("settings-fonts-code-desc"),
-            hint: Fonts::DEFAULT_MONO,
+            hint: Fonts::DEFAULT_CODE,
             sample: "fn main() { let x = 0x1F; /* 0O 1lI */ println!(\"{x}\"); }",
         },
         RoleInfo {
@@ -320,6 +320,7 @@ mod tests {
             mono,
             [
                 "Cascadia Mono*",
+                "Hack*",
                 "JetBrains Mono*",
                 "IBM Plex Mono*",
                 "Source Code Pro*",

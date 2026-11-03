@@ -6802,6 +6802,7 @@ dependencies = [
  "egui-phosphor",
  "egui_extras",
  "epaint",
+ "epaint_default_fonts",
  "image",
  "log",
  "parking_lot",

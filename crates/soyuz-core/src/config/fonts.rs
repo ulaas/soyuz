@@ -2,10 +2,10 @@
 //! numbers), each with a family, an "embedded font only" switch and a size offset.
 //!
 //! A family is one of the fonts embedded in the app (Inter, IBM Plex Sans, Noto Sans,
-//! Cascadia Mono, JetBrains Mono, …; the defaults), an installed font's name as Windows
-//! lists it (`Segoe UI`, `Consolas`, `Segoe UI Semibold`), or a `.ttf` / `.otf` / `.ttc`
-//! path. The app always appends the role's embedded default (Inter / Inter SemiBold /
-//! Cascadia Mono) after it, so a missing font falls back gracefully.
+//! Cascadia Mono, Hack, JetBrains Mono, …; the defaults), an installed font's name as
+//! Windows lists it (`Segoe UI`, `Consolas`, `Segoe UI Semibold`), or a `.ttf` / `.otf` /
+//! `.ttc` path. The app always appends the role's embedded default (Inter / Inter SemiBold /
+//! Cascadia Mono / Hack) after it, so a missing font falls back gracefully.
 //!
 //! Compatibility: the older `[appearance] font` / `mono_font` keys are still read. A
 //! non-default value moves into `[fonts] ui` (resp. `terminal`, `code` and `hex`) when
@@ -68,7 +68,8 @@ pub struct FontRole {
     /// their default.
     pub family: String,
     /// Only embedded fonts: the one `family` names when it is embedded, else the role's
-    /// embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts.
+    /// embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads
+    /// system fonts.
     pub embedded: bool,
     /// Points added to the role's text size (−4 … +8).
     pub size_offset: f32,
@@ -135,7 +136,7 @@ impl Default for Fonts {
             ui: FontRole::named(Fonts::DEFAULT_UI),
             ui_semibold: FontRole::named(""),
             terminal: FontRole::named(Fonts::DEFAULT_MONO),
-            code: FontRole::named(Fonts::DEFAULT_MONO),
+            code: FontRole::named(Fonts::DEFAULT_CODE),
             hex: FontRole::named(Fonts::DEFAULT_MONO),
             numbers: FontRole::named(""),
             hinting: true,
@@ -150,8 +151,17 @@ impl Default for Fonts {
 impl Fonts {
     /// Default interface family (embedded: drawn well by egui's grayscale renderer).
     pub const DEFAULT_UI: &'static str = "Inter";
-    /// Default monospace family for the terminal, editor and hex view (embedded).
+    /// Default monospace family for the terminal and hex view (embedded).
     pub const DEFAULT_MONO: &'static str = "Cascadia Mono";
+    /// Default family of the code role: text and code previews, the text editor and other
+    /// monospace text (embedded; Hack reads evenly at the 12–13 px of the previews).
+    pub const DEFAULT_CODE: &'static str = "Hack";
+
+    /// The default family of a monospace role ([`Self::DEFAULT_CODE`] for code,
+    /// [`Self::DEFAULT_MONO`] otherwise).
+    pub fn default_mono(kind: FontRoleKind) -> &'static str {
+        if kind == FontRoleKind::Code { Fonts::DEFAULT_CODE } else { Fonts::DEFAULT_MONO }
+    }
     /// The `[appearance] font` / `mono_font` defaults of schema 1 (they meant "bundled").
     const LEGACY_UI: &'static str = "Inter";
     const LEGACY_MONO: &'static str = "JetBrains Mono";

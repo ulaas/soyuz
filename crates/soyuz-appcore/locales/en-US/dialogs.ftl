@@ -43,7 +43,7 @@ dialogs-about-memory-line = thumbnails { $thumbs } ({ $thumb_count }) · preview
 dialogs-about-process-windows = private { $private } · working set { $working_set }
 dialogs-about-process-unix = anonymous { $anonymous } · resident { $resident }
 dialogs-about-process-unknown = not available
-dialogs-about-license = Licensed under the MIT License. Fonts: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL). Icons: Phosphor (MIT).
+dialogs-about-license = Licensed under the MIT License. Fonts: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL), Hack (MIT / Bitstream Vera). Icons: Phosphor (MIT).
 dialogs-about-copy-info = Copy info
 
 ## Keyboard shortcuts

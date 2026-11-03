@@ -3,13 +3,15 @@
 These fonts are compiled into the binary (`include_bytes!` in `src/theme/fonts.rs`, table
 `EMBEDDED`). Each one can be picked for any font role in `[fonts]` / Settings → Fonts; the
 defaults are **Inter** (interface, numbers), **Inter SemiBold** (headings) and
-**Cascadia Mono** (terminal, code editor, hex view). They are screen fonts that egui's
+**Cascadia Mono** (terminal, hex view) and **Hack** (code and text previews, text editor). They are screen fonts that egui's
 grayscale anti-aliasing draws well at 100 % scaling, and they cover Latin, Latin Extended
 and Turkish (`ı İ ş ğ ç ö ü`; checked by the `embedded_fonts_cover_turkish_and_parse` test).
 
 All files are the unmodified TTFs (static, plus the one variable Inter) from the official upstream releases (no subsetting:
-several of these licenses reserve the font name for modified versions). All are licensed
-under the SIL Open Font License 1.1; the license file sits next to each font.
+several of these licenses reserve the font name for modified versions). All files in this folder
+are licensed under the SIL Open Font License 1.1; the license file sits next to each font.
+Hack is not in this folder: it is egui's built-in monospace font (MIT + Bitstream Vera
+License), reused from `epaint_default_fonts` instead of a second copy.
 
 | File | Family, version | Source (official release) | SHA-256 | License |
 |---|---|---|---|---|
@@ -23,6 +25,7 @@ under the SIL Open Font License 1.1; the license file sits next to each font.
 | `cascadia-mono/CascadiaMono-Regular.ttf` | Cascadia Mono 2407.024 | <https://github.com/microsoft/cascadia-code/releases/tag/v2407.24> (`CascadiaCode-2407.24.zip`, `ttf/static/`) | `06520d032ec274fa5040b22c6f4a1d829081b24ba40b2da56dae89bf10c7b481` | `cascadia-mono/LICENSE` (from the repository at tag `v2407.24`) |
 | `jetbrains-mono/JetBrainsMono-Regular.ttf` | JetBrains Mono 2.304 | <https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304> | `a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f` | `jetbrains-mono/OFL.txt` |
 | `ibm-plex-mono/IBMPlexMono-Regular.ttf` | IBM Plex Mono 2.005 | <https://github.com/IBM/plex/releases/tag/%40ibm%2Fplex-mono%402.5.0> (`ibm-plex-mono.zip`, `fonts/complete/ttf/`) | `7c6fbddca4b700be918f5f6183d9bd4464fa427fe435f0b480d77fe2bb8c5a43` | `ibm-plex-mono/LICENSE.txt` |
+| *(egui's copy)* `epaint_default_fonts::HACK_REGULAR` | Hack 3.003 | <https://github.com/source-foundry/Hack/releases/tag/v3.003> (`Hack-v3.003-ttf.zip`, `ttf/Hack-Regular.ttf`; byte-identical) | `15f55cc0c85a2988d2b4b3a8cdb5d77fdfbaf319e1bb5309d725db9818fb7125` | MIT + Bitstream Vera License (`THIRD-PARTY-NOTICES.md`) |
 | `source-code-pro/SourceCodePro-Regular.ttf` | Source Code Pro 2.042 | <https://github.com/adobe-fonts/source-code-pro/releases/tag/2.042R-u%2F1.062R-i%2F1.026R-vf> (`TTF-source-code-pro-2.042R-u_1.062R-i.zip`) | `74bd80d3e42a08517cd7e1108ba3d86f2da29ac0f3065be95e0357956ab9db37` | `source-code-pro/LICENSE.md` (from the repository at that tag) |
 
 Total: 4.02 MiB (3.18 MiB before the variable Inter; the first set, Inter Regular / SemiBold +
@@ -42,6 +45,10 @@ show every candidate in the real app at 13 and 14 px. In short:
 - **Cascadia Mono** has no ligatures (the terminal shows `!=` and `->` as typed, unlike
   JetBrains Mono), a compact line height like Consolas, unbroken box drawing and strokes
   heavy enough for grayscale anti-aliasing.
+- **Hack** draws text and code previews (owner request, 2026-11-03): at the previews' 13 px
+  its letters are evenly wide with solid stems under crisp hinting, where Cascadia Mono
+  narrows some letters unevenly. It is egui's built-in monospace font, so it costs no binary
+  size (`epaint_default_fonts::HACK_REGULAR`, the unmodified upstream 3.003 file).
 - **Source Sans 3** was dropped: with hinting on, egui's hinter draws the capital `İ` without
   its dot (`rejected-source-sans-3*.png`), which breaks Turkish text.
 - **Inter Medium / IBM Plex Sans Medium** were dropped: SemiBold headings separate better

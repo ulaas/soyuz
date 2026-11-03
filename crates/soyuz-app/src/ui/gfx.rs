@@ -111,6 +111,28 @@ pub fn layout_job(line: &StyledLine) -> LayoutJob {
     }
 }
 
+/// The font of text, code and diff previews: the code role (`[fonts.code]`, Hack by
+/// default) at 13 pt plus its size offset, and the row height that goes with it.
+pub fn preview_code_font(ctx: &egui::Context) -> (FontId, f32) {
+    let font = crate::theme::fonts::code(ctx, 13.0);
+    let row_h = (font.size * 1.5).round();
+    (font, row_h)
+}
+
+/// [`layout_job`] with every monospace run drawn in `mono` (see [`preview_code_font`])
+/// and upright: egui has no italic faces and slants the regular one, which smears small
+/// code text, so syntax themes' italic comments keep only their colour.
+pub fn layout_job_mono(line: &StyledLine, mono: &FontId) -> LayoutJob {
+    let mut job = layout_job(line);
+    for s in &mut job.sections {
+        if s.format.font_id.family == FontFamily::Monospace {
+            s.format.font_id = mono.clone();
+            s.format.italics = false;
+        }
+    }
+    job
+}
+
 /// Model triangles go straight into an egui mesh (white UV, flat colour per triangle).
 pub struct MeshSink(pub epaint::Mesh);
 
@@ -158,6 +180,10 @@ mod tests {
         want.append(" x", 0.0, fmt(Color32::WHITE, false));
         want.wrap.max_rows = 1;
         assert_eq!(layout_job(&line), want);
+        let mono = FontId::monospace(14.5);
+        let job = layout_job_mono(&line, &mono);
+        assert!(job.sections.iter().all(|s| s.format.font_id == mono && !s.format.italics));
+        assert_eq!(job.text, want.text);
     }
 
     #[test]
