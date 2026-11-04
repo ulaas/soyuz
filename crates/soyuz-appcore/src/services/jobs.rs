@@ -104,8 +104,9 @@ pub enum AfterJob {
     SelectAndRename { pane: PaneId, path: PathBuf },
     /// Put the cursor on `name` in `pane` (rename keeps the cursor on the item).
     Select { pane: PaneId, name: String },
-    /// Clear the internal clipboard (a cut was pasted).
-    ClearClipboard,
+    /// Clear the internal clipboard (a cut was pasted), if it still holds the set of
+    /// this generation (`Clipboard::generation`).
+    ClearClipboard { generation: u64 },
 }
 
 /// Who started a job other than the user directly (a badge on its activity card).

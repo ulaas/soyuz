@@ -206,7 +206,8 @@ pub fn open_cmd(path: &Path, app: AppInfo) -> Cmd {
 pub fn choice_cmds(path: &Path, app: AppInfo, always: bool) -> Vec<Cmd> {
     let mut cmds = Vec::new();
     if let Some(ext) = ext_of(path) {
-        cmds.push(Cmd::RememberOpenWith { ext, app: app.clone(), always });
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        cmds.push(Cmd::RememberOpenWith { name, ext, app: Box::new(app.clone()), always });
     }
     cmds.push(open_cmd(path, app));
     cmds
@@ -295,10 +296,10 @@ pub fn preselect(cfg: &OpenSection, path: &Path, apps: &[AppInfo]) -> Preselect 
     out
 }
 
-/// Keep a choice (`Cmd::RememberOpenWith`): the last-used application for `ext` (with
-/// `remember_choice`), and `app` as its default (`always`) or no default. Saved like any
-/// settings change (nothing is written when nothing changed).
-pub fn remember(core: &mut AppCore, host: &dyn Host, ext: &str, app: &AppInfo, always: bool) {
+/// Keep a choice made for the file `name` (`Cmd::RememberOpenWith`): the last-used
+/// application for `ext` (with `remember_choice`), and `app` as its default (`always`) or
+/// no default. Saved like any settings change (nothing is written when nothing changed).
+pub fn remember(core: &mut AppCore, host: &dyn Host, name: &str, ext: &str, app: &AppInfo, always: bool) {
     let rule = rule_of(app);
     crate::models::settings::update_config(core, host, |c| {
         if c.open.remember_choice {
@@ -307,11 +308,12 @@ pub fn remember(core: &mut AppCore, host: &dyn Host, ext: &str, app: &AppInfo, a
                 c.open.remember_program(rule.clone());
             }
         }
-        let current = c.open.rule_for(ext).cloned();
+        // The rule that answers for this file, which may name a longer extension than `ext`.
+        let current = c.open.app_for(name).or_else(|| c.open.rule_for(ext)).cloned();
         match (always && can_be_default(app), current) {
             (true, Some(r)) if r.same_app(&rule) => {}
-            (true, _) => c.open.set_default(ext, Some(rule.clone())),
-            (false, Some(_)) => c.open.set_default(ext, None),
+            (true, _) => c.open.set_default_for(name, Some(rule.clone())),
+            (false, Some(_)) => c.open.set_default_for(name, None),
             (false, None) => {}
         }
     });

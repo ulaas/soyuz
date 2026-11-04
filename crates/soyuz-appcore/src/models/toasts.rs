@@ -2,6 +2,10 @@
 //! Each frontend draws them (`ui::toasts` for the GUI).
 
 use soyuz_core::config::Action;
+use soyuz_jobs::HistoryId;
+
+use crate::cmd::Cmd;
+use crate::ops::fileops::FileOpCmd;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToastKind {
@@ -18,6 +22,9 @@ pub struct Toast {
     pub body: Option<String>,
     /// Button label and the action it dispatches.
     pub action: Option<(String, Action)>,
+    /// The action button undoes this history entry, the operation the toast names, not
+    /// whatever finished last.
+    pub undoes: Option<HistoryId>,
     /// Seconds before auto-dismiss (`None` = sticky).
     pub duration: Option<f32>,
 }
@@ -29,7 +36,7 @@ impl Toast {
             ToastKind::Warning => Some(6.0),
             _ => Some(4.0),
         };
-        Toast { kind, title: title.into(), body: None, action: None, duration }
+        Toast { kind, title: title.into(), body: None, action: None, undoes: None, duration }
     }
 
     pub fn info(title: impl Into<String>) -> Self {
@@ -56,6 +63,22 @@ impl Toast {
     pub fn action(mut self, label: impl Into<String>, action: Action) -> Self {
         self.action = Some((label.into(), action));
         self
+    }
+
+    /// An Undo button for the history entry `entry`.
+    pub fn undo_button(mut self, label: impl Into<String>, entry: HistoryId) -> Self {
+        self.action = Some((label.into(), Action::Undo));
+        self.undoes = Some(entry);
+        self
+    }
+
+    /// The command of the action button.
+    pub fn command(&self) -> Option<Cmd> {
+        match (self.undoes, &self.action) {
+            (Some(h), _) => Some(Cmd::FileOp(FileOpCmd::UndoEntry(h))),
+            (None, Some((_, action))) => Some(Cmd::Action(action.clone())),
+            (None, None) => None,
+        }
     }
 
     pub fn sticky(mut self) -> Self {
@@ -145,6 +168,15 @@ mod tests {
         assert!(t.live.last().unwrap().remaining.is_none());
         t.dismiss(id);
         assert!(t.live.last().unwrap().closing.is_some());
+    }
+
+    #[test]
+    fn the_undo_button_targets_its_entry() {
+        let t = Toast::success("Copied").undo_button("Undo", HistoryId(7));
+        assert!(matches!(t.command(), Some(Cmd::FileOp(FileOpCmd::UndoEntry(HistoryId(7))))));
+        let t = Toast::warning("Failed").action("Details", Action::JobsShowHistory);
+        assert!(matches!(t.command(), Some(Cmd::Action(Action::JobsShowHistory))));
+        assert!(Toast::info("x").command().is_none());
     }
 
     #[test]

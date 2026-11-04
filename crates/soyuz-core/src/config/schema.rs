@@ -720,6 +720,23 @@ impl OpenSection {
         self.default_apps.iter().find(|r| r.extensions.iter().any(|e| Self::norm_key(e) == key))
     }
 
+    /// [`Self::set_default`] for the key of the file `name`, so that the choice also
+    /// reaches this file: a rule naming a longer extension of it (`tar.gz` for `x.tar.gz`,
+    /// choosing for `gz`) would otherwise keep answering [`Self::app_for`], so that
+    /// extension leaves its rule too.
+    pub fn set_default_for(&mut self, name: &str, app: Option<DefaultApp>) {
+        let key = Self::key_of(name);
+        let lower = name.to_lowercase();
+        for r in &mut self.default_apps {
+            r.extensions.retain(|e| {
+                let e = Self::norm_key(e);
+                e == key || e == Self::NO_EXTENSION || !lower.ends_with(&format!(".{e}"))
+            });
+        }
+        self.default_apps.retain(|r| !r.extensions.is_empty());
+        self.set_default(&key, app);
+    }
+
     /// Make `app` the default for `ext` (an extension or [`Self::NO_EXTENSION`]; `None`:
     /// no default, the system's applies). The extension leaves every other rule (a rule
     /// left without extensions goes); `app` joins a rule for the same application when
@@ -846,7 +863,8 @@ pub struct Jobs {
     pub copy_duplicates: DuplicatesPref,
     /// Finished jobs kept in the history (for undo / redo).
     pub history_limit: usize,
-    /// When a volume has no trash: `ask`, delete `permanent`ly or `skip`.
+    /// When a volume has no trash: `ask`, delete `permanent`ly (still asking while
+    /// `general.confirm_permanent_delete` is on) or `skip`.
     pub trash_unsupported: TrashUnsupportedPolicy,
     /// Open the activity panel when a job runs for more than a second.
     pub auto_open_activity: bool,

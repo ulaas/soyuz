@@ -202,7 +202,10 @@ fn sync_others(app: &mut AppCore, ti: usize, pi: usize, old: &Location, new: &Lo
             Some(SyncMove::Up { target, select }) => {
                 navigate(app, id, Location::Dir(target), NavOpts { push_history: true, select, ..Default::default() });
             }
-            Some(SyncMove::Probe(p)) => app.services.lister.probe(id, &p),
+            Some(SyncMove::Probe(p)) => {
+                let generation = app.ws.find_pane(id).map_or(0, |pane| pane.generation);
+                app.services.lister.probe(id, generation, &p);
+            }
             None => {}
         }
     }
@@ -593,6 +596,18 @@ pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
                 && p.generation == generation
             {
                 pane_listing(p, &mut app.services, chunk, done, err);
+                if let Some(w) = p.listing_warning.take() {
+                    let title = if w.kept_old { tr!("ops-relist-failed") } else { tr!("ops-listing-incomplete") };
+                    app.ui.toasts.push(Toast::warning(title).body(w.error.to_string()));
+                }
+                // Already gone when the pane got here (a session restored with the drive
+                // unplugged): no watcher reports that, so look for the nearest ancestor.
+                if done
+                    && let Location::Dir(dir) = &p.location
+                    && matches!(&p.status, ListingStatus::Failed(e) if e.kind == soyuz_core::FsErrorKind::NotFound)
+                {
+                    app.services.lister.resolve(pane, generation, dir);
+                }
             }
         }
         UiMsg::Patched { pane, generation, updated, removed } => {
@@ -623,8 +638,9 @@ pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
                 navigate(app, pane, location, NavOpts::default());
             }
         }
-        UiMsg::Probed { pane, location, exists } => {
-            if exists {
+        UiMsg::Probed { pane, generation, location, exists } => {
+            // A late answer from a slow drive must not move a pane the user has moved since.
+            if exists && app.ws.find_pane(pane).is_some_and(|p| p.generation == generation) {
                 navigate(app, pane, location, NavOpts { push_history: true, ..Default::default() });
             }
         }
@@ -856,8 +872,8 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
             let title = tr!("ops-open-with-failed", app = &info.name);
             spawn_launch(app, title, move || soyuz_fs::launch::open_with(&path, &info).map_err(|e| e.to_string()));
         }
-        Cmd::RememberOpenWith { ext, app: info, always } => {
-            crate::models::requests::open_with::remember(app, host, &ext, &info, always)
+        Cmd::RememberOpenWith { name, ext, app: info, always } => {
+            crate::models::requests::open_with::remember(app, host, &name, &ext, &info, always)
         }
         Cmd::HistoryJump { pane, back, n } => history_jump(app, pane, back, n),
         Cmd::FocusPane(id) => focus_pane(app, id),

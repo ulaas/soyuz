@@ -1,6 +1,7 @@
 //! Job history (`history.jsonl`, one JSON object per line; the engine is the only writer).
 //!
-//! Entries are created only when a journaled job reaches `Done`. Because undo/redo
+//! Entries are created when a journaled job reaches `Done`, and when it was cancelled or
+//! failed after producing records (`partial`: what it did can still be undone). Because undo/redo
 //! mutate existing entries (`undone`, `records`), the engine rewrites the whole file
 //! atomically (`soyuz_fs::write_atomic`) on every change instead of appending; the file
 //! stays valid JSONL at all times and is bounded by `EngineConfig::history_limit`.
@@ -38,6 +39,9 @@ pub struct HistoryEntry {
     /// Options of the original job (reused by redo / retry). `None` in old files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<JobOptions>,
+    /// The job was cancelled or failed: `records` is the part it finished.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub partial: bool,
     /// Created (or redone) by this engine instance, i.e. in this session. Not persisted:
     /// entries loaded from `history.jsonl` are `false` (the app's Ctrl+Z skips them).
     #[serde(skip)]
@@ -77,6 +81,11 @@ impl UndoStamp {
             size: (!dir).then_some(e.size),
             modified_ns: if dir { None } else { ns },
         })
+    }
+
+    /// The same object, however its content changed since.
+    pub fn same_object(&self, now: &UndoStamp) -> bool {
+        self.dev == now.dev && self.id == now.id
     }
 
     /// Same object, and (for files) same size and modification time.
@@ -155,6 +164,7 @@ mod tests {
             undoable: true,
             stamps: Vec::new(),
             options: None,
+            partial: false,
             this_session: true,
         }
     }

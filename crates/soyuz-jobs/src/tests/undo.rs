@@ -258,3 +258,52 @@ fn history_limit_trims_oldest() {
     let hist = h.engine.history();
     assert_eq!(hist.iter().map(|e| e.id.0).collect::<Vec<_>>(), vec![2, 3]);
 }
+
+#[test]
+fn undo_of_a_move_leaves_a_new_file_at_the_destination_alone() {
+    let h = H::new();
+    write(&h.p("s/report"), b"moved");
+    std::fs::create_dir_all(h.p("d")).unwrap();
+    let id = h.submit(JobKind::Move { sources: vec![h.p("s/report")], dest_dir: h.p("d"), rename_to: None });
+    h.ok(id);
+    // Another program puts a different file under that name.
+    std::fs::remove_file(h.p("d/report")).unwrap();
+    write(&h.p("d/report"), b"somebody else's");
+    let hid = h.engine.history()[0].id;
+    let u = h.engine.undo(hid).expect("undoable");
+    let s = settle(&h, u, true);
+    assert_eq!(s.items_failed, 1, "{s:?}");
+    assert_eq!(read(&h.p("d/report")), b"somebody else's");
+    assert!(!h.p("s/report").exists());
+    assert!(!h.engine.history()[0].undone);
+}
+
+#[test]
+fn undo_of_a_move_follows_a_file_edited_since() {
+    let h = H::new();
+    write(&h.p("s/report"), b"moved");
+    std::fs::create_dir_all(h.p("d")).unwrap();
+    let id = h.submit(JobKind::Move { sources: vec![h.p("s/report")], dest_dir: h.p("d"), rename_to: None });
+    h.ok(id);
+    use std::io::Write as _;
+    let mut f = std::fs::OpenOptions::new().append(true).open(h.p("d/report")).unwrap();
+    f.write_all(b" and edited").unwrap();
+    drop(f);
+    undo_ok(&h, 0);
+    assert_eq!(read(&h.p("s/report")), b"moved and edited");
+}
+
+#[test]
+fn undo_of_a_rename_checks_the_identity_too() {
+    let h = H::new();
+    write(&h.p("a"), b"1");
+    let id = h.submit(JobKind::Rename { pairs: vec![(h.p("a"), h.p("b"))] });
+    h.ok(id);
+    std::fs::remove_file(h.p("b")).unwrap();
+    write(&h.p("b"), b"other");
+    let hid = h.engine.history()[0].id;
+    let u = h.engine.undo(hid).expect("undoable");
+    assert_eq!(settle(&h, u, true).items_failed, 1);
+    assert_eq!(read(&h.p("b")), b"other");
+    assert!(!h.p("a").exists());
+}

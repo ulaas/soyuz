@@ -134,6 +134,8 @@ impl From<&EngineConfig> for QueueSettings {
     }
 }
 
+/// How long the scheduler waits for the device probes of queued jobs.
+const LANE_PROBE_BUDGET: Duration = Duration::from_millis(300);
 /// Number of speed samples kept for the graph.
 pub(crate) const SAMPLE_RING: usize = 120;
 /// EMA smoothing factor for `speed_bps`.
@@ -229,6 +231,8 @@ pub(crate) struct JobEntry {
     auto_remove: bool,
     undo_of: Option<HistoryId>,
     redo_of: Option<HistoryId>,
+    /// The history entry this job created or updated when it finished.
+    history: Option<HistoryId>,
 }
 
 impl JobEntry {
@@ -388,6 +392,7 @@ impl Inner {
                 auto_remove: false,
                 undo_of,
                 redo_of,
+                history: None,
             };
             let priority = entry.priority;
             st.jobs.insert(id, entry);
@@ -518,22 +523,30 @@ impl Inner {
                         history_changed = true;
                     }
                 }
-            } else if let JobState::Done(_) = final_state {
-                if let Some(h) = redo_of {
-                    if let Some(he) = st.history.iter_mut().find(|he| he.id == h) {
-                        he.undone = false;
-                        he.undoable = history::is_undoable(&records);
-                        he.records = records;
-                        he.stamps = stamps;
-                        he.summary = summary.clone();
-                        he.when = SystemTime::now();
-                        he.this_session = true;
-                        history_changed = true;
+            } else if let (JobState::Done(_), Some(h)) = (&final_state, redo_of) {
+                if let Some(he) = st.history.iter_mut().find(|he| he.id == h) {
+                    he.undone = false;
+                    he.undoable = history::is_undoable(&records);
+                    he.records = records;
+                    he.stamps = stamps;
+                    he.summary = summary.clone();
+                    he.when = SystemTime::now();
+                    he.this_session = true;
+                    he.partial = false;
+                    history_changed = true;
+                    if let Some(e) = st.jobs.get_mut(&id) {
+                        e.history = Some(h);
                     }
-                } else if let (Some(kind), true) = (job_kind, journal) {
+                }
+            } else if let (Some(kind), true) = (job_kind, journal) {
+                // A cancelled or failed job keeps what it finished: moved files stay
+                // findable and can be undone.
+                let done = matches!(final_state, JobState::Done(_));
+                if done || !records.is_empty() {
                     st.next_history += 1;
+                    let entry_id = HistoryId(st.next_history);
                     let entry = HistoryEntry {
-                        id: HistoryId(st.next_history),
+                        id: entry_id,
                         job: kind,
                         summary: summary.clone(),
                         when: SystemTime::now(),
@@ -542,6 +555,7 @@ impl Inner {
                         undone: false,
                         stamps,
                         options: Some(options),
+                        partial: !done,
                         this_session: true,
                     };
                     st.history.push(entry);
@@ -551,6 +565,9 @@ impl Inner {
                         st.history.drain(..drop_n);
                     }
                     history_changed = true;
+                    if let Some(e) = st.jobs.get_mut(&id) {
+                        e.history = Some(entry_id);
+                    }
                 }
             }
             if history_changed {
@@ -583,7 +600,10 @@ impl Inner {
 
     // ----- scheduler ------------------------------------------------------------------
 
-    /// Compute `PerDevice` lanes of queued jobs (probe I/O outside the lock).
+    /// Compute `PerDevice` lanes of queued jobs (probe I/O outside the lock), on a helper
+    /// thread: a dead network path can hold a probe in the kernel for a minute, and this
+    /// runs on the scheduler thread. Jobs not answered within [`LANE_PROBE_BUDGET`] run on
+    /// the global lane instead.
     fn compute_lanes(&self) {
         let todo: Vec<(JobId, Vec<PathBuf>)> = {
             let st = self.state.lock();
@@ -597,22 +617,38 @@ impl Inner {
         if todo.is_empty() {
             return;
         }
-        let computed: Vec<(JobId, Lane)> = todo
-            .into_iter()
-            .map(|(id, roots)| {
+        let ids: Vec<JobId> = todo.iter().map(|(id, _)| *id).collect();
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let probe = self.probe.clone();
+        let spawned = std::thread::Builder::new().name("soyuz-lane-probe".into()).spawn(move || {
+            for (id, roots) in todo {
                 let real: Vec<&PathBuf> = roots
                     .iter()
                     .filter(|r| !crate::job::is_synthetic_root(r) && !crate::job::is_remote_root(r))
                     .collect();
-                let src = real.first().map(|p| device_for(&*self.probe, p)).unwrap_or(DeviceId(0));
-                let dst = real.last().map(|p| device_for(&*self.probe, p)).unwrap_or(DeviceId(0));
-                (id, Lane::Devices(src, dst))
-            })
-            .collect();
+                let src = real.first().map(|p| device_for(&*probe, p)).unwrap_or(DeviceId(0));
+                let dst = real.last().map(|p| device_for(&*probe, p)).unwrap_or(DeviceId(0));
+                if tx.send((id, Lane::Devices(src, dst))).is_err() {
+                    return; // the scheduler stopped waiting
+                }
+            }
+        });
+        let mut computed: HashMap<JobId, Lane> = HashMap::new();
+        if spawned.is_ok() {
+            let deadline = Instant::now() + LANE_PROBE_BUDGET;
+            while computed.len() < ids.len() {
+                match rx.recv_deadline(deadline) {
+                    Ok((id, lane)) => {
+                        computed.insert(id, lane);
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
         let mut st = self.state.lock();
-        for (id, lane) in computed {
+        for id in ids {
             if let Some(e) = st.jobs.get_mut(&id) {
-                e.lane = LaneState::Known(Some(lane));
+                e.lane = LaneState::Known(Some(computed.get(&id).copied().unwrap_or(Lane::Global)));
             }
         }
     }
@@ -1263,6 +1299,14 @@ impl JobEngine {
             spec.options.conflict = Some(soyuz_core::ConflictResolution::Skip);
         }
         Some(self.submit(spec))
+    }
+
+    /// The history entry job `id` produced, while it can be undone (its completion toast's
+    /// Undo button).
+    pub fn undoable_history_of(&self, id: JobId) -> Option<HistoryId> {
+        let st = self.inner.state.lock();
+        let h = st.jobs.get(&id)?.history?;
+        st.history.iter().find(|he| he.id == h && he.undoable && !he.undone).map(|he| he.id)
     }
 
     /// `cancel_all` + join with timeout + flush history. Jobs submitted afterwards are

@@ -80,6 +80,9 @@ pub(crate) fn show_transfer(ui: &mut Ui, m: &mut TransferModel, ctx: &mut Dialog
     ui.label(RichText::new(m.message()).color(p.text_secondary));
     ui.add_space(6.0);
     field(ui, tr!("dialogs-transfer-dest"), &mut m.dest, tr!("dialogs-transfer-dest-hint"), &mut m.focus);
+    if let Some(e) = m.error() {
+        ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));
+    }
     let mut ok = false;
     let mut cancel = false;
     ui.add_space(8.0);

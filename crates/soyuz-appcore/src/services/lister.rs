@@ -26,7 +26,7 @@ enum Job {
     Stat { pane: PaneId, generation: u64, dir: PathBuf, paths: Vec<PathBuf> },
     Aux { path: PathBuf },
     Resolve { pane: PaneId, generation: u64, path: PathBuf },
-    Probe { pane: PaneId, path: PathBuf },
+    Probe { pane: PaneId, generation: u64, path: PathBuf },
 }
 
 /// Elastic worker pool: `base` workers up front, grown on demand up to `max` while all
@@ -124,9 +124,10 @@ impl Lister {
         self.aux.send(Job::Resolve { pane, generation, path: path.to_path_buf() });
     }
 
-    /// Check whether `path` is a directory (synchronized navigation).
-    pub fn probe(&self, pane: PaneId, path: &Path) {
-        self.aux.send(Job::Probe { pane, path: path.to_path_buf() });
+    /// Check whether `path` is a directory (synchronized navigation). The answer only
+    /// counts while the pane is still on `generation`.
+    pub fn probe(&self, pane: PaneId, generation: u64, path: &Path) {
+        self.aux.send(Job::Probe { pane, generation, path: path.to_path_buf() });
     }
 }
 
@@ -230,7 +231,10 @@ fn run(job: Job, postman: &Postman) {
                             (None, _) => removed.push(queried),
                         }
                     }
-                    Err(_) => removed.push(soyuz_core::entry::display_name(&p)),
+                    // Only a file that is really gone leaves the pane: a stalled share or
+                    // a denied stat says nothing about its existence.
+                    Err(e) if e.kind == FsErrorKind::NotFound => removed.push(soyuz_core::entry::display_name(&p)),
+                    Err(e) => log::warn!("cannot re-stat {}: {e}", p.display()),
                 }
             }
             // Old and new spelling of a case-only rename resolve to the same entry.
@@ -260,9 +264,9 @@ fn run(job: Job, postman: &Postman) {
             }
             postman.send(UiMsg::Resolved { pane, generation, location: Location::Computer });
         }
-        Job::Probe { pane, path } => {
+        Job::Probe { pane, generation, path } => {
             let exists = path.is_dir();
-            postman.send(UiMsg::Probed { pane, location: Location::Dir(path), exists });
+            postman.send(UiMsg::Probed { pane, generation, location: Location::Dir(path), exists });
         }
     }
 }

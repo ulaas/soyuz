@@ -383,6 +383,10 @@ impl HistoryRow {
             soyuz_core::time::format_time_at(h.when, &rel, now),
             names::summary_line(&h.summary)
         );
+        if h.partial {
+            sub.push_str(" \u{b7} ");
+            sub.push_str(tr!("panels-history-partial"));
+        }
         if !h.undoable && !h.undone {
             sub.push_str(" \u{b7} ");
             sub.push_str(tr!("panels-history-not-undoable"));
@@ -813,6 +817,7 @@ mod tests {
             undoable: true,
             stamps: Vec::new(),
             options: None,
+            partial: false,
             this_session: true,
         };
         let r = HistoryRow::new(&h, SystemTime::now());
@@ -826,6 +831,11 @@ mod tests {
         assert!(r.failed && r.sub.ends_with("can't be undone"), "{}", r.sub);
         h.undone = true;
         assert_eq!(HistoryRow::new(&h, SystemTime::now()).buttons[1], (RowButton::Redo, true));
+        h.undone = false;
+        h.undoable = true;
+        h.partial = true;
+        let r = HistoryRow::new(&h, SystemTime::now());
+        assert!(r.sub.ends_with(tr!("panels-history-partial")) && r.enabled(RowButton::Undo), "{}", r.sub);
     }
 
     #[test]

@@ -24,6 +24,8 @@ settings-reset-section-tooltip = Restore the defaults of this section
 # $section = section title.
 settings-reset-section-done = { $section } reset to defaults
 settings-save-failed = Couldn't save config.toml
+settings-save-refused = Settings not saved: config.toml has an error
+settings-save-refused-body = The file was left as it is. Fix it and your changes are saved then.
 
 ## Sections (sidebar title and the description under the page header)
 

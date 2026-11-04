@@ -25,7 +25,7 @@ pub enum UiMsg {
     /// Nearest existing ancestor of a pane's lost directory.
     Resolved { pane: PaneId, generation: u64, location: Location },
     /// Result of a "navigate if the directory exists" probe (synchronized navigation).
-    Probed { pane: PaneId, location: Location, exists: bool },
+    Probed { pane: PaneId, generation: u64, location: Location, exists: bool },
     /// Refreshed volume list (with free space where available).
     Volumes(Vec<VolumeInfo>),
     /// Cloud-storage folders detected in the background.

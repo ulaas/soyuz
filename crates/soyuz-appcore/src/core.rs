@@ -231,6 +231,7 @@ impl AppCore {
             std::sync::atomic::Ordering::Relaxed,
         );
         apply_core_settings(&config);
+        let baseline = config.clone();
         let (keymap, warnings) = crate::keys::build_keymap(&config);
         for w in warnings {
             log::warn!("{w}");
@@ -341,7 +342,7 @@ impl AppCore {
             editors: crate::editors::Editors::new(uploader.clone()),
             ai: crate::ai::AiState::new(wake.clone()),
             wake,
-            config_save: Default::default(),
+            config_save: crate::models::settings::ConfigSave { baseline: Some(baseline), ..Default::default() },
             frontend: Vec::new(),
             dialogs: Default::default(),
             workspaces: crate::models::workspaces::WorkspacesState::load(),
@@ -350,6 +351,10 @@ impl AppCore {
             uploader,
         };
         crate::models::workspaces::bind_hotkeys(&mut app);
+        if let Some(e) = &app.config_watch.load_error {
+            let toast = crate::services::config_watch::error_toast(e);
+            app.ui.toasts.push(toast);
+        }
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
         if let Some(s) = &session
             && app.config.workspace.restore_windows

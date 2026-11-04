@@ -326,6 +326,7 @@ mod tests {
             undoable: true,
             stamps: Vec::new(),
             options: None,
+            partial: false,
             this_session: true,
         };
         assert!(!is_verified(&h), "old entries without options");

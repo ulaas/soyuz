@@ -532,9 +532,9 @@ fn follow_window(app: &mut AppCore, moved: &[(u64, PathBuf)]) {
         && !same_dir(cur, dir)
     {
         // The existence check runs on the lister thread; it navigates when `dir` is a folder.
-        let pane = app.ws.pane().id;
+        let (pane, generation) = (app.ws.pane().id, app.ws.pane().generation);
         app.ui.terminal.last_pane_dir = Some((tab, dir.clone()));
-        app.services.lister.probe(pane, dir);
+        app.services.lister.probe(pane, generation, dir);
     }
     // Follow navigation: pane → shell.
     if app.config.terminal.follow_navigation

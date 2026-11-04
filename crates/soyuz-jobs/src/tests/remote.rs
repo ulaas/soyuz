@@ -10,7 +10,7 @@ use soyuz_vfs::RemoteEntry;
 use soyuz_vfs::fake::FakeProvider;
 
 use super::*;
-use crate::{JobPrompt, PromptResponse, RemoteOp};
+use crate::{JobPrompt, PromptResponse, RemoteOp, UndoRecord};
 
 fn server(name: &str) -> Arc<FakeProvider> {
     FakeProvider::new(name).install()
@@ -370,4 +370,46 @@ fn copy_out_of_an_archive_and_one_inside_it() {
     assert_eq!(std::fs::read(h.p("out2/top.txt")).unwrap(), b"top");
     assert_eq!(sum.items_failed, 1, "{sum:?}");
     assert!(soyuz_vfs::archive::provider(&zip).unwrap().stat("top.txt").is_ok());
+}
+
+/// Overwriting a local file with a download: the old file stays until the new one is
+/// complete, and goes to the trash (or is replaced, without a trash) only then.
+#[test]
+fn a_failed_download_leaves_the_file_it_would_replace() {
+    let h = H::new();
+    let fake = server("jobs-replace-fail");
+    fake.put("/a.txt", &data(1_000_000));
+    write(&h.p("d/a.txt"), b"precious");
+    fake.fail_after(400_000);
+    let mut spec = JobSpec::new(transfer(vec![uri("jobs-replace-fail", "/a.txt")], h.p("d"), false));
+    spec.options.conflict = Some(ConflictResolution::Overwrite);
+    spec.options.errors = Some(ErrorAction::Skip);
+    let id = h.engine.submit(spec);
+    let s = h.ok(id);
+    assert_eq!(s.items_failed, 1, "{s:?}");
+    assert_eq!(std::fs::read(h.p("d/a.txt")).unwrap(), b"precious");
+    // Nothing was given up for a transfer that did not finish.
+    assert!(
+        !h.engine
+            .history()
+            .iter()
+            .any(|e| e.records.iter().any(|r| matches!(r, UndoRecord::Irreversible(_) | UndoRecord::Trashed(_))))
+    );
+}
+
+#[test]
+fn a_finished_download_replaces_the_local_file() {
+    let h = H::new();
+    let fake = server("jobs-replace-ok");
+    fake.put("/a.txt", b"new content");
+    write(&h.p("d/a.txt"), b"old");
+    let mut spec = JobSpec::new(transfer(vec![uri("jobs-replace-ok", "/a.txt")], h.p("d"), false));
+    spec.options.conflict = Some(ConflictResolution::Overwrite);
+    let id = h.engine.submit(spec);
+    let s = h.ok(id);
+    assert_eq!(s.items_failed, 0, "{s:?}");
+    assert_eq!(std::fs::read(h.p("d/a.txt")).unwrap(), b"new content");
+    let left: Vec<_> = std::fs::read_dir(h.p("d")).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(left.len(), 1, "no staging file left: {left:?}");
+    assert!(!h.engine.history()[0].undoable, "the test volume has no trash: replaced for good");
 }
