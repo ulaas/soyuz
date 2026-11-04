@@ -13,8 +13,8 @@ pub use crate::models::smart::{SmartCmd, SmartFolder, SmartPrompt, SmartStore, a
 use crate::models::smart::{coverage_text, query_help, shown_name, validate};
 use crate::services::index::{self as ix};
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::dialogs::conflict::{Btn, button};
 use crate::ui::dialogs::{Dialog, DialogCtx};
+use crate::ui::widgets::{Btn, pill_button};
 use crate::ui::widgets::{NavRow, collapsible_header, menu_item, spinner};
 
 /// Show a dialog the core asked for ([`crate::models::frontend::FrontendCmd::Smart`]).
@@ -234,8 +234,8 @@ impl Dialog for SmartDialog {
         let mut cancel = false;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            ok = button(ui, tr!("common-save"), Btn::Primary).clicked();
-            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+            ok = pill_button(ui, None, tr!("common-save"), Btn::Primary).clicked();
+            cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
             if let Some(e) = &err
                 && !self.folder.name.is_empty()
             {
@@ -276,8 +276,8 @@ impl Dialog for ConfirmDelete {
         let mut cancel = false;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            ok = button(ui, tr!("common-delete"), Btn::Danger).clicked();
-            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+            ok = pill_button(ui, None, tr!("common-delete"), Btn::Danger).clicked();
+            cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ok {
             ctx.cmds.push(Cmd::Smart(SmartCmd::ConfirmDelete(self.index)));

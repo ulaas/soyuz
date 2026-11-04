@@ -22,6 +22,7 @@ ops-terminal-failed = Couldn't open a terminal
 # $name: folder name.
 ops-favorite-added = Added “{ $name }” to Favorites
 ops-view-applied = View applied to all folders
+ops-view-restored = Folder views restored
 
 ## Job titles (cards, toasts, history). $state: "active" (in progress) | "done".
 ## $what: “name” for one item, otherwise "1,204 items". $dest: folder path.

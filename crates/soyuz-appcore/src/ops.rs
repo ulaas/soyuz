@@ -908,7 +908,14 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
             s.favorites.retain(|f| f.path != path);
             s.favorites_customized = true;
         }
-        Cmd::AskHideSystemFolders => app.frontend.push(crate::models::system_folders::ask_hide()),
+        Cmd::AskHideSystemFolders => {
+            if app.frontend_kind == crate::core::FrontendKind::Tui {
+                app.frontend.push(crate::models::system_folders::ask_hide());
+            } else {
+                crate::models::settings::update_config(app, host, |c| c.sidebar.system_folders = false);
+                app.ui.toasts.push(crate::models::system_folders::hidden_toast());
+            }
+        }
         Cmd::ShowSystemFolders(on) => {
             crate::models::settings::update_config(app, host, |c| c.sidebar.system_folders = on);
         }
@@ -968,9 +975,16 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         Cmd::ApplyViewToAll(id) => {
             if let Some(p) = app.ws.find_pane(id) {
                 let view = p.view.clone();
+                let before = Box::new(app.views.snapshot());
                 app.views.apply_to_all(&view);
-                app.ui.toasts.push(Toast::success(tr!("ops-view-applied")));
+                app.ui
+                    .toasts
+                    .push(Toast::success(tr!("ops-view-applied")).cmd(tr!("common-undo"), Cmd::RestoreViews(before)));
             }
+        }
+        Cmd::RestoreViews(before) => {
+            app.views.restore(*before);
+            app.ui.toasts.push(Toast::info(tr!("ops-view-restored")));
         }
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
         Cmd::OpenTerminalPanel(dir) => crate::models::terminal::open_at(app, host, dir),

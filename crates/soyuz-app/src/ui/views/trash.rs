@@ -15,7 +15,7 @@ use crate::state::pane::Pane;
 use crate::theme::tokens::radius;
 use crate::theme::{icons as ticons, icons::ph, palette};
 use crate::ui::empty_state::EmptyState;
-use crate::ui::widgets::{pill_button, spinner, trunc_galley};
+use crate::ui::widgets::{Btn, pill_button, spinner, trunc_galley};
 
 pub use crate::models::trash::{TrashState, key};
 
@@ -93,9 +93,9 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         }
         let ts = &mut v.fileops.trash;
         let restore = if compact {
-            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore"), true).clicked()
+            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore"), Btn::Primary).clicked()
         } else {
-            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore-selected"), true)
+            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore-selected"), Btn::Primary)
                 .clicked()
         };
         if restore {

@@ -39,6 +39,7 @@ of the *Explorer* preset; the command palette always shows the active ones.
   `Tab` switches between them and the splitter is draggable (double-click resets it).
 - The **omnibar** shows the path as clickable segments; the small chevrons open sibling
   folders. Click the empty area or press `Ctrl+L` to type a path (with completion).
+  Shift+click a segment opens it in the other pane; Ctrl+click copies its path.
 - The **status bar** shows counts, selection size, free space, an icon-size slider, view
   and theme switches, and a ring when jobs are running.
 - **Focus mode** (`Ctrl+Shift+B`, or *Focus mode* in the palette) hides the sidebar, the
@@ -205,7 +206,8 @@ an extension** and kept as the extension `.` in `[[open.default_apps]]`.
 ## Background jobs, conflicts and undo
 
 Every operation runs as a job; the window stays responsive. Small jobs finish quietly
-with a toast (with **Undo**); longer ones open the **activity panel** (`Ctrl+Shift+J`)
+with a toast (with **Undo**; with nothing selected or filtered, Esc closes the newest toast,
+and Shift+Esc all of them); longer ones open the **activity panel** (`Ctrl+Shift+J`)
 automatically. Each job card shows progress, speed graph and ETA, and can be paused,
 resumed, cancelled, reprioritized or started immediately.
 

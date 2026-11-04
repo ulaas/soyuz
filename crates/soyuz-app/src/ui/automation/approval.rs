@@ -8,7 +8,7 @@ use soyuz_jobs::JobKindBrief;
 use crate::models::dialogs::ScriptApprovalModel;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::dialogs::DialogCtx;
-use crate::ui::widgets::pill_button;
+use crate::ui::widgets::{Btn, pill_button};
 
 const SHOWN: usize = 14;
 
@@ -63,14 +63,14 @@ pub(crate) fn show(ui: &mut Ui, m: &mut ScriptApprovalModel, ctx: &mut DialogCtx
     ui.add_space(14.0);
     let mut keep = true;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if pill_button(ui, Some(ph::PLAY), tr!("automation-approval-run"), true).clicked() {
+        if pill_button(ui, Some(ph::PLAY), tr!("automation-approval-run"), Btn::Primary).clicked() {
             if let Some(cmd) = m.run() {
                 ctx.cmds.push(cmd);
             }
             keep = false;
         }
         ui.add_space(6.0);
-        if pill_button(ui, None, tr!("common-cancel"), false).clicked() {
+        if pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked() {
             m.cancel();
             keep = false;
         }

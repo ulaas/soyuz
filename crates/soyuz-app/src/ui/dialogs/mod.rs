@@ -44,12 +44,14 @@ use crate::state::workspace::Workspace;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{kbd, pill_button};
+use crate::ui::widgets::{Btn, kbd, pill_button};
 
 /// What dialogs may touch while drawing.
 pub struct DialogCtx<'a> {
     pub cmds: &'a mut Vec<Cmd>,
     pub ws: &'a mut Workspace,
+    /// Program icons of the Open with list.
+    pub thumbs: &'a crate::services::thumbs::Thumbs,
 }
 
 pub trait Dialog {
@@ -259,12 +261,7 @@ impl Dialogs {
             .stroke(Stroke::new(1.0, p.border_strong))
             .corner_radius(CornerRadius::same(radius::MODAL))
             .inner_margin(Margin::same(20))
-            .shadow(egui::epaint::Shadow {
-                offset: [0, 12],
-                blur: 40,
-                spread: 0,
-                color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-            });
+            .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
         let width = top.width();
         let mut keep = true;
         let resp = egui::Modal::new(id)
@@ -345,9 +342,9 @@ pub fn footer(ui: &mut Ui, primary: &str, cancel: &str) -> (bool, bool) {
     ui.add_space(16.0);
     let mut out = (false, false);
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        out.0 = pill_button(ui, None, primary, true).clicked();
+        out.0 = pill_button(ui, None, primary, Btn::Primary).clicked();
         ui.add_space(6.0);
-        out.1 = pill_button(ui, None, cancel, false).clicked();
+        out.1 = pill_button(ui, None, cancel, Btn::Secondary).clicked();
     });
     out
 }
@@ -355,7 +352,8 @@ pub fn footer(ui: &mut Ui, primary: &str, cancel: &str) -> (bool, bool) {
 /// Footer with a single right-aligned primary button; returns whether it was clicked.
 pub fn close_footer(ui: &mut Ui, label: &str) -> bool {
     ui.add_space(16.0);
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| pill_button(ui, None, label, true).clicked()).inner
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| pill_button(ui, None, label, Btn::Primary).clicked())
+        .inner
 }
 
 /// Generic confirmation: on confirm the stored [`Cmd`] is queued.

@@ -16,6 +16,7 @@ use soyuz_core::config::Sidebar;
 use crate::cmd::Cmd;
 use crate::icon::IconId;
 use crate::models::frontend::FrontendCmd;
+use crate::models::toasts::Toast;
 use crate::state::session::FavoriteEntry;
 
 /// One system folder of this OS.
@@ -207,7 +208,16 @@ fn pick(all: &[SystemFolder], cfg: &Sidebar, favorites: &[FavoriteEntry]) -> Vec
         .collect()
 }
 
-/// [`Cmd::AskHideSystemFolders`]: confirm hiding them, saying where to show them again.
+/// [`Cmd::AskHideSystemFolders`] in the GUI: hide them at once. The toast undoes it and
+/// says where to show them again.
+pub fn hidden_toast() -> Toast {
+    Toast::success(tr!("app-sysfolders-hidden"))
+        .body(tr!("app-sysfolders-hidden-body"))
+        .cmd(tr!("common-undo"), Cmd::ShowSystemFolders(true))
+}
+
+/// [`Cmd::AskHideSystemFolders`] in the terminal UI, which has no toast buttons: confirm
+/// hiding them, saying where to show them again.
 pub fn ask_hide() -> FrontendCmd {
     FrontendCmd::Confirm {
         title: tr!("app-sysfolders-hide-title").into(),
@@ -282,6 +292,13 @@ mod tests {
         let FrontendCmd::Confirm { message, on_confirm, .. } = ask_hide() else { panic!("a confirm") };
         assert!(matches!(on_confirm, Cmd::ShowSystemFolders(false)));
         assert!(message.contains(tr!("settings-views-sysfolders")), "{message}");
+    }
+
+    #[test]
+    fn hiding_offers_undo_and_says_where_to_turn_them_back_on() {
+        let t = hidden_toast();
+        assert!(matches!(t.cmd.map(|c| c.1), Some(Cmd::ShowSystemFolders(true))));
+        assert!(t.body.is_some_and(|b| b.contains(tr!("settings-views-sysfolders"))));
     }
 
     #[test]

@@ -58,6 +58,9 @@ os_thumbnail_cache = true        # reuse the system's thumbnails (Windows thumbc
 write_os_thumbnails = true       # Linux: also write Soyuz-made thumbnails to ~/.cache/thumbnails for other apps (ignored elsewhere)
 icon_pack = ""                   # "" = built-in glyphs | "flat" (built-in) | "<folder in icons/>" with a pack.toml
 thumb_disk_cache_mib = 256       # on-disk thumbnail cache in thumbs/ (0 = off)
+name_truncation = "keep_extension" # keep_extension (report-fin….pdf; folders and paths cut in the middle) | middle | end
+name_tooltips = true             # hovering a file whose name was cut shows the whole name
+welcome_tips = true              # new profiles start with the card of first steps
 
 # Fonts per role. `family` = an embedded font (Inter, Inter SemiBold, IBM Plex Sans,
 # IBM Plex Sans SemiBold, Noto Sans, Noto Sans SemiBold, Cascadia Mono, Hack, JetBrains Mono,

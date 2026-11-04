@@ -15,7 +15,7 @@ use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Key, Layout, Margin, Rect, RichText, Sense, Stroke, StrokeKind,
     TextEdit, Ui, pos2, vec2,
 };
-use soyuz_core::{ConflictResolution, EntryInfo, SizeStyle, format_size};
+use soyuz_core::{ConflictResolution, EntryInfo, format_size};
 use soyuz_jobs::{ConflictInfo, ConflictKind, JobPrompt};
 
 use super::DialogCtx;
@@ -25,42 +25,7 @@ use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
 use crate::ui::views::icons;
-use crate::ui::widgets::trunc_galley;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Btn {
-    Primary,
-    Secondary,
-    Danger,
-    Ghost,
-}
-
-/// Dialog button in the design-system style.
-pub(crate) fn button(ui: &mut Ui, label: &str, kind: Btn) -> egui::Response {
-    let p = palette(ui.ctx());
-    let font = FontId::proportional(12.5);
-    let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::WHITE);
-    let size = vec2((galley.size().x + 26.0).max(72.0), 28.0);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    crate::ui::a11y::button(&resp, label);
-    let hover = resp.hovered();
-    let (bg, fg, stroke) = match kind {
-        Btn::Primary => (if hover { p.accent_hover } else { p.accent }, Color32::WHITE, None),
-        Btn::Danger => (if hover { p.danger } else { p.danger.gamma_multiply(0.88) }, Color32::WHITE, None),
-        Btn::Secondary => (if hover { p.bg_surface3 } else { p.bg_surface2 }, p.text_primary, Some(p.border_subtle)),
-        Btn::Ghost => (if hover { p.bg_surface2 } else { Color32::TRANSPARENT }, p.text_secondary, None),
-    };
-    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), bg);
-    if let Some(s) = stroke {
-        ui.painter().rect_stroke(rect, CornerRadius::same(radius::ROW), Stroke::new(1.0, s), StrokeKind::Inside);
-    }
-    let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.5), fg);
-    ui.painter().galley(rect.center() - g.size() / 2.0, g, fg);
-    if resp.has_focus() {
-        crate::ui::widgets::focus_ring(ui, rect);
-    }
-    resp
-}
+use crate::ui::widgets::{Btn, fit, pill_button};
 
 /// Small rounded tag ("Newer", "Larger").
 pub(crate) fn tag(ui: &Ui, pos: egui::Pos2, text: &str, color: Color32) -> f32 {
@@ -161,6 +126,7 @@ fn conflict(ui: &mut Ui, m: &mut PromptModel, c: &ConflictInfo, p: &Palette) -> 
         &c.src,
         newer == Some(std::cmp::Ordering::Greater),
         larger == Some(std::cmp::Ordering::Greater),
+        m,
         p,
     );
     entry_card(
@@ -170,6 +136,7 @@ fn conflict(ui: &mut Ui, m: &mut PromptModel, c: &ConflictInfo, p: &Palette) -> 
         &c.dst,
         newer == Some(std::cmp::Ordering::Less),
         larger == Some(std::cmp::Ordering::Less),
+        m,
         p,
     );
     ui.add_space(10.0);
@@ -199,31 +166,31 @@ fn conflict(ui: &mut Ui, m: &mut PromptModel, c: &ConflictInfo, p: &Palette) -> 
     let mut pick: Option<ConflictResolution> = None;
     let (mut cancel_job, mut commit, mut back, mut start_rename) = (false, false, false, false);
     ui.horizontal(|ui| {
-        if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
+        if pill_button(ui, None, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
             cancel_job = true;
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             if renaming {
-                if button(ui, tr!("common-rename"), Btn::Primary).clicked() {
+                if pill_button(ui, None, tr!("common-rename"), Btn::Primary).clicked() {
                     commit = true;
                 }
-                if button(ui, tr!("dialogs-conflict-back"), Btn::Secondary).clicked() {
+                if pill_button(ui, None, tr!("dialogs-conflict-back"), Btn::Secondary).clicked() {
                     back = true;
                 }
                 return;
             }
             match c.kind {
                 ConflictKind::MoveIntoSelf => {
-                    if button(ui, tr!("common-skip"), Btn::Primary).clicked() {
+                    if pill_button(ui, None, tr!("common-skip"), Btn::Primary).clicked() {
                         pick = Some(ConflictResolution::Skip);
                     }
                 }
                 ConflictKind::SameFile => {
-                    if button(ui, tr!("dialogs-conflict-keep-both"), Btn::Primary).clicked() {
+                    if pill_button(ui, None, tr!("dialogs-conflict-keep-both"), Btn::Primary).clicked() {
                         pick = Some(ConflictResolution::KeepBoth);
                     }
-                    if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
+                    if pill_button(ui, None, tr!("common-skip"), Btn::Secondary).clicked() {
                         pick = Some(ConflictResolution::Skip);
                     }
                 }
@@ -234,16 +201,16 @@ fn conflict(ui: &mut Ui, m: &mut PromptModel, c: &ConflictInfo, p: &Palette) -> 
                     } else {
                         (tr!("dialogs-conflict-replace"), ConflictResolution::Overwrite)
                     };
-                    if button(ui, primary, Btn::Primary).clicked() {
+                    if pill_button(ui, None, primary, Btn::Primary).clicked() {
                         pick = Some(res);
                     }
-                    if button(ui, tr!("dialogs-conflict-keep-both"), Btn::Secondary).clicked() {
+                    if pill_button(ui, None, tr!("dialogs-conflict-keep-both"), Btn::Secondary).clicked() {
                         pick = Some(ConflictResolution::KeepBoth);
                     }
-                    if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
+                    if pill_button(ui, None, tr!("common-skip"), Btn::Secondary).clicked() {
                         pick = Some(ConflictResolution::Skip);
                     }
-                    let more = button(ui, tr!("dialogs-conflict-more"), Btn::Ghost);
+                    let more = pill_button(ui, None, tr!("dialogs-conflict-more"), Btn::Ghost);
                     crate::ui::native::popup::Menu::menu(&more).show(|ui| {
                         ui.set_min_width(220.0);
                         use crate::ui::widgets::menu_item;
@@ -344,7 +311,17 @@ fn preview(ui: &mut Ui, r: Rect, e: &EntryInfo, p: &Palette) {
     ui.painter().text(r.center(), Align2::CENTER_CENTER, icons::glyph(e), font, icons::color(e, p));
 }
 
-fn entry_card(ui: &mut Ui, r: Rect, caption: &str, e: &EntryInfo, newer: bool, larger: bool, p: &Palette) {
+#[allow(clippy::too_many_arguments)]
+fn entry_card(
+    ui: &mut Ui,
+    r: Rect,
+    caption: &str,
+    e: &EntryInfo,
+    newer: bool,
+    larger: bool,
+    m: &PromptModel,
+    p: &Palette,
+) {
     let highlight = newer || larger;
     ui.painter().rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface2);
     ui.painter().rect_stroke(
@@ -365,18 +342,15 @@ fn entry_card(ui: &mut Ui, r: Rect, caption: &str, e: &EntryInfo, newer: bool, l
     let x = thumb.right() + 12.0;
     let tw = r.right() - x - 10.0;
     let badge = if soyuz_core::naming::has_hidden_controls(&e.name) { 14.0 } else { 0.0 };
-    let g = trunc_galley(ui.painter(), &e.name, semibold(13.0), p.text_primary, tw - badge);
+    let g = fit::entry_name(ui.painter(), &e.name, e.is_dir_like(), semibold(13.0), p.text_primary, tw - badge).galley;
     let (gw, gh) = (g.size().x, g.size().y);
     ui.painter().galley(pos2(x, thumb.top() + 2.0), g, p.text_primary);
     crate::ui::widgets::paint_hidden_badge(ui.painter(), p, pos2(x + gw, thumb.top() + 2.0 + gh / 2.0), &e.name);
     let dir = e.path.parent().map(|d| soyuz_fs::strip_verbatim(d).to_string_lossy().into_owned()).unwrap_or_default();
-    let g = trunc_galley(ui.painter(), &dir, FontId::proportional(11.0), p.text_tertiary, tw);
+    let g = fit::ends(ui.painter(), &dir, FontId::proportional(11.0), p.text_tertiary, tw).galley;
     ui.painter().galley(pos2(x, thumb.top() + 20.0), g, p.text_tertiary);
-    let size = if e.is_dir_like() {
-        tr!("dialogs-conflict-folder").to_string()
-    } else {
-        format_size(e.size, SizeStyle::Binary)
-    };
+    let size =
+        if e.is_dir_like() { tr!("dialogs-conflict-folder").to_string() } else { format_size(e.size, m.size_style) };
     let sy = thumb.top() + 46.0;
     let sg = ui.painter().layout_no_wrap(size, FontId::proportional(12.0), p.text_secondary);
     let sw = sg.size().x;
@@ -384,10 +358,7 @@ fn entry_card(ui: &mut Ui, r: Rect, caption: &str, e: &EntryInfo, newer: bool, l
     if larger {
         tag(ui, pos2(x + sw + 8.0, sy), tr!("dialogs-conflict-larger"), p.accent);
     }
-    let date = e
-        .modified
-        .map(|t| soyuz_core::format_time(t, &soyuz_core::DateFormat::Named(soyuz_core::DateFormatName::Short)))
-        .unwrap_or_else(|| "\u{2014}".into());
+    let date = e.modified.map_or_else(|| "\u{2014}".into(), |t| soyuz_core::format_time(t, &m.date_format));
     let dy = thumb.top() + 64.0;
     let dg = ui.painter().layout_no_wrap(date, FontId::proportional(12.0), p.text_secondary);
     let dw = dg.size().x;

@@ -8,7 +8,7 @@ use egui::{
 };
 
 use crate::theme::fonts::SEMIBOLD;
-use crate::theme::{icons, palette};
+use crate::theme::palette;
 pub use crate::ui::widgets::dropdown as dd;
 
 /// Upper-case `s` for the current language (Turkish dotted i: "Biçim" → "BİÇİM").
@@ -321,34 +321,12 @@ pub fn code(ui: &mut Ui, value: &mut String, hint: &str, width: f32) -> Response
     r
 }
 
-/// Small text button (secondary style); `danger` paints it red on hover.
+/// Small text button; `danger` tints it red. Icon-only buttons are named from their icon.
 pub fn small_button(ui: &mut Ui, icon: Option<&str>, label: &str, danger: bool) -> Response {
-    let p = palette(ui.ctx());
-    let font = FontId::proportional(12.0);
-    let g = ui.painter().layout_no_wrap(label.to_string(), font, p.text_primary);
-    let iw = if icon.is_some() { if label.is_empty() { 14.0 } else { 18.0 } } else { 0.0 };
-    let w = g.size().x + iw + if label.is_empty() { 14.0 } else { 20.0 };
-    let (rect, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::click());
-    crate::ui::a11y::button(&resp, if label.is_empty() { icon_name(icon.unwrap_or("")) } else { label });
-    let hover = resp.hovered();
-    let fg = if danger && hover {
-        p.danger
-    } else if hover {
-        p.text_primary
-    } else {
-        p.text_secondary
-    };
-    let fill = if hover { p.bg_surface3 } else { p.bg_surface2 };
-    ui.painter().rect_filled(rect, CornerRadius::same(6), fill);
-    ui.painter().rect_stroke(rect, CornerRadius::same(6), Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
-    let mut x = rect.left() + if label.is_empty() { 7.0 } else { 10.0 };
-    if let Some(i) = icon {
-        ui.painter().text(pos2(x, rect.center().y), Align2::LEFT_CENTER, i, icons::font(13.0), fg);
-        x += iw;
-    }
-    ui.painter().galley(pos2(x, rect.center().y - g.size().y / 2.0), g, fg);
-    if resp.has_focus() {
-        crate::ui::widgets::focus_ring(ui, rect);
+    let kind = if danger { crate::ui::widgets::Btn::DangerSoft } else { crate::ui::widgets::Btn::Secondary };
+    let resp = crate::ui::widgets::pill_button(ui, icon, label, kind);
+    if label.is_empty() {
+        crate::ui::a11y::button(&resp, icon_name(icon.unwrap_or("")));
     }
     resp
 }

@@ -150,6 +150,9 @@ written as a list of quoted values is an enumeration: use one of them.
 | `write_os_thumbnails` | boolean | `true` | Linux / BSD: write the thumbnails Soyuz makes itself into the shared freedesktop cache (`~/.cache/thumbnails`), so file managers and file choosers reuse them. Ignored on Windows and macOS. |
 | `icon_pack` | string | `""` | File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`. |
 | `thumb_disk_cache_mib` | integer | `256` | On-disk thumbnail cache in `thumbs/` (MiB; 0 = off). Thumbnails survive restarts. |
+| `name_truncation` | `"keep_extension"` \| `"middle"` \| `"end"` | `"keep_extension"` | How names and paths too long for their space are cut: `keep_extension`, `middle` or `end`. (`keep_extension`: File names keep their start and extension (`report-fin….pdf`); folders and paths are cut in the middle; `middle`: Everything is cut in the middle (`report-…al-v3.pdf`); `end`: Everything is cut at the end (`report-final…`)) |
+| `name_tooltips` | boolean | `true` | Hovering a file whose name was cut shows the whole name. |
+| `welcome_tips` | boolean | `true` | New profiles start with the card of first steps (the palette's Welcome tips brings it back either way). |
 
 ## `[fonts]`
 

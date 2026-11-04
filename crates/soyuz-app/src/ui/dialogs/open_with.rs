@@ -13,9 +13,11 @@ use soyuz_fs::AppInfo;
 
 use super::{Dialog, DialogCtx, footer};
 use crate::models::requests::open_with as model;
+use crate::services::thumbs::{ThumbKey, Thumbs};
 use crate::theme::{icons::ph, palette};
 use crate::ui::path_picker::{PathPicker, PickResult};
-use crate::ui::widgets::{pill_button, trunc_galley};
+use crate::ui::views::flow::ROW_ICON;
+use crate::ui::widgets::{Btn, fit, pill_button, trunc_galley};
 
 pub struct OpenWithDialog {
     path: PathBuf,
@@ -68,11 +70,12 @@ impl OpenWithDialog {
     }
 }
 
-/// Draw a row: the application's name, and dimmed the folder of a program picked by path
-/// (two tools of the same name stay apart). One line, cut to fit.
-fn app_row(ui: &mut Ui, app: &AppInfo, on: bool) -> egui::Response {
+/// Draw a row: the program's icon, the application's name, and dimmed the folder of a
+/// program picked by path (two tools of the same name stay apart). One line, cut to fit.
+fn app_row(ui: &mut Ui, app: &AppInfo, on: bool, thumbs: &Thumbs) -> egui::Response {
     let p = palette(ui.ctx());
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 26.0), egui::Sense::click());
+    let height = (ui.spacing().interact_size.y + 4.0).max(28.0);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::click());
     let label = model::app_label(app);
     crate::ui::a11y::toggle(&resp, &label, on);
     let corner = egui::CornerRadius::same(crate::theme::tokens::radius::ROW);
@@ -84,17 +87,37 @@ fn app_row(ui: &mut Ui, app: &AppInfo, on: bool) -> egui::Response {
     if resp.has_focus() {
         crate::ui::widgets::focus_ring(ui, rect.shrink(1.0));
     }
+    let icon_at = egui::pos2(rect.left() + 17.0, rect.center().y);
+    let icon = crate::services::thumbs::has_program_icon(&app.exec)
+        .then(|| {
+            let px = crate::services::thumbs::icon_px(ROW_ICON, ui.ctx().pixels_per_point());
+            thumbs.get_program_icon(&ThumbKey { path: app.exec.clone(), mtime: None, size: 0, px })
+        })
+        .flatten();
+    match icon {
+        Some(t) => crate::ui::views::flow::paint_program_icon(ui.painter(), icon_at, ROW_ICON, &t, 1.0),
+        None => {
+            ui.painter().text(
+                icon_at,
+                egui::Align2::CENTER_CENTER,
+                ph::APP_WINDOW,
+                crate::theme::icons::font(16.0),
+                p.text_secondary,
+            );
+        }
+    }
     let font = egui::FontId::proportional(13.0);
-    let name = trunc_galley(ui.painter(), &label, font.clone(), p.text_primary, rect.width() - 20.0);
+    let left = rect.left() + 34.0;
+    let width = rect.right() - left - 10.0;
+    let name = trunc_galley(ui.painter(), &label, font.clone(), p.text_primary, width);
     let name_w = name.size().x;
-    let left = rect.left() + 10.0;
     ui.painter().galley(egui::pos2(left, rect.center().y - name.size().y / 2.0), name, p.text_primary);
-    let room = rect.width() - 20.0 - name_w - 10.0;
+    let room = width - name_w - 10.0;
     if room > 40.0
         && model::is_by_path(app)
         && let Some(dir) = app.exec.parent()
     {
-        let path = trunc_galley(ui.painter(), &dir.display().to_string(), font, p.text_tertiary, room);
+        let path = fit::ends(ui.painter(), &dir.display().to_string(), font, p.text_tertiary, room).galley;
         let y = rect.center().y - path.size().y / 2.0;
         ui.painter().galley(egui::pos2(left + name_w + 10.0, y), path, p.text_tertiary);
     }
@@ -181,7 +204,7 @@ impl Dialog for OpenWithDialog {
                     Some(list) => {
                         for (i, app) in list.iter().enumerate() {
                             let on = self.selected == Some(i);
-                            let r = app_row(ui, app, on);
+                            let r = app_row(ui, app, on, ctx.thumbs);
                             let r = if model::is_by_path(app) {
                                 r.on_hover_text(app.exec.display().to_string())
                             } else {
@@ -208,8 +231,13 @@ impl Dialog for OpenWithDialog {
         let mut submit = false;
         let row = egui::vec2(ui.available_width(), 32.0);
         ui.allocate_ui_with_layout(row, Layout::right_to_left(Align::Center), |ui| {
-            let browse = pill_button(ui, Some(ph::FOLDER_OPEN), tr!("dialogs-openwith-browse"), n == 0)
-                .on_hover_text(tr!("dialogs-openwith-browse-tip"));
+            let browse = pill_button(
+                ui,
+                Some(ph::FOLDER_OPEN),
+                tr!("dialogs-openwith-browse"),
+                if n == 0 { Btn::Primary } else { Btn::Secondary },
+            )
+            .on_hover_text(tr!("dialogs-openwith-browse-tip"));
             let shortcut = !browsing && ui.input_mut(|i| i.consume_key(egui::Modifiers::ALT, egui::Key::B));
             if browse.clicked() || shortcut {
                 self.picker = Some(PathPicker::programs(

@@ -3,9 +3,7 @@
 
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
-use egui::{
-    Align2, Color32, CornerRadius, FontId, Id, Key, Margin, Modifiers, Order, Rect, Stroke, TextEdit, Ui, vec2,
-};
+use egui::{CornerRadius, FontId, Id, Key, Margin, Modifiers, Order, Rect, Stroke, TextEdit, Ui, pos2, vec2};
 
 use crate::ops::fileops::rename::{InlineRename, Outcome, finish, next_sel, revalidate, sel_range};
 use crate::state::pane::Pane;
@@ -97,18 +95,25 @@ pub fn editor(ui: &mut Ui, rect: Rect, font: FontId, pane: &mut Pane, v: &mut Vi
     }
 }
 
+/// The validation message under the row, or above it when the window ends first.
 fn error_bubble(ui: &Ui, rect: Rect, msg: &str, p: &crate::theme::Palette) {
     let painter = ui.ctx().layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("soyuz.rename.err")));
-    let galley = painter.layout(msg.to_string(), FontId::proportional(11.5), Color32::WHITE, 280.0);
+    let fg = p.on_color(p.danger);
+    let galley = painter.layout(msg.to_string(), FontId::proportional(11.5), fg, 280.0);
     let size = galley.size() + vec2(16.0, 10.0);
-    let r = Rect::from_min_size(rect.left_bottom() + vec2(0.0, 5.0), size);
+    let screen = ui.ctx().content_rect();
+    let flip = rect.bottom() + 5.0 + size.y > screen.bottom();
+    let top = if flip { rect.top() - 5.0 - size.y } else { rect.bottom() + 5.0 };
+    let left = rect.left().min(screen.right() - size.x - 4.0).max(screen.left() + 4.0);
+    let r = Rect::from_min_size(pos2(left, top), size);
     painter.rect_filled(r, CornerRadius::same(radius::ROW), p.danger);
-    painter.galley(r.min + vec2(8.0, 5.0), galley, Color32::WHITE);
-    painter.text(
-        r.left_top() + vec2(12.0, 0.0),
-        Align2::CENTER_BOTTOM,
-        "\u{25b2}",
-        FontId::proportional(7.0),
-        p.danger,
-    );
+    painter.galley(r.min + vec2(8.0, 5.0), galley, fg);
+    // The caret points at the field.
+    let (x, edge, tip) = if flip {
+        (rect.left() + 12.0, r.bottom(), r.bottom() + 5.0)
+    } else {
+        (rect.left() + 12.0, r.top(), r.top() - 5.0)
+    };
+    let caret = vec![pos2(x - 5.0, edge), pos2(x + 5.0, edge), pos2(x, tip)];
+    painter.add(egui::Shape::convex_polygon(caret, p.danger, Stroke::NONE));
 }

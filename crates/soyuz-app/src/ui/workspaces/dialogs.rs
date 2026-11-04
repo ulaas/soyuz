@@ -10,8 +10,8 @@ use super::WsCmd;
 use crate::cmd::Cmd;
 use crate::state::workspace_windows::WindowId;
 use crate::theme::{icons::ph, palette};
-use crate::ui::dialogs::conflict::{Btn, button};
 use crate::ui::dialogs::{Dialog, DialogCtx, footer};
+use crate::ui::widgets::{Btn, pill_button};
 
 /// Name a new workspace (or overwrite one with the same name).
 pub struct SaveWorkspaceDialog {
@@ -124,7 +124,7 @@ impl Dialog for ManageWorkspacesDialog {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         if editing {
-                            if button(ui, tr!("workspaces-manage-done"), Btn::Primary).clicked()
+                            if pill_button(ui, None, tr!("workspaces-manage-done"), Btn::Primary).clicked()
                                 && let Some((k, n, h)) = self.editing.take()
                             {
                                 ctx.cmds.push(Cmd::Workspace(WsCmd::Rename(k, n)));
@@ -132,23 +132,23 @@ impl Dialog for ManageWorkspacesDialog {
                             }
                             return;
                         }
-                        if button(ui, tr!("common-delete"), Btn::Ghost).clicked() {
+                        if pill_button(ui, None, tr!("common-delete"), Btn::Ghost).clicked() {
                             ctx.cmds.push(Cmd::Workspace(WsCmd::Delete(i)));
                         }
-                        if button(ui, tr!("workspaces-manage-edit"), Btn::Ghost).clicked() {
+                        if pill_button(ui, None, tr!("workspaces-manage-edit"), Btn::Ghost).clicked() {
                             self.editing = Some((i, name.clone(), hotkey.clone()));
                         }
                         if i > 0
-                            && button(ui, tr!("workspaces-manage-up"), Btn::Ghost)
+                            && pill_button(ui, None, tr!("workspaces-manage-up"), Btn::Ghost)
                                 .on_hover_text(tr!("workspaces-manage-up-tip"))
                                 .clicked()
                         {
                             ctx.cmds.push(Cmd::Workspace(WsCmd::MoveUp(i)));
                         }
-                        if button(ui, tr!("workspaces-manage-new-window"), Btn::Secondary).clicked() {
+                        if pill_button(ui, None, tr!("workspaces-manage-new-window"), Btn::Secondary).clicked() {
                             ctx.cmds.push(Cmd::Workspace(WsCmd::OpenInNewWindow(i)));
                         }
-                        if button(ui, tr!("workspaces-manage-open"), Btn::Primary).clicked() {
+                        if pill_button(ui, None, tr!("workspaces-manage-open"), Btn::Primary).clicked() {
                             ctx.cmds.push(Cmd::Workspace(WsCmd::Open(i)));
                         }
                     });
@@ -204,9 +204,9 @@ impl Dialog for CloseWindowDialog {
         let (mut merge, mut close, mut cancel) = (false, false, false);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            merge = button(ui, tr!("workspaces-close-move"), Btn::Primary).clicked();
-            close = button(ui, tr!("workspaces-close-close"), Btn::Danger).clicked();
-            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+            merge = pill_button(ui, None, tr!("workspaces-close-move"), Btn::Primary).clicked();
+            close = pill_button(ui, None, tr!("workspaces-close-close"), Btn::Danger).clicked();
+            cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ui.input(|i| i.key_pressed(Key::Enter)) {
             merge = true;

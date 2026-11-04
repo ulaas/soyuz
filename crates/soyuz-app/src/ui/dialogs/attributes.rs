@@ -11,7 +11,6 @@ use parking_lot::Mutex;
 use soyuz_core::{Control, EntryInfo, EntryKind, OpControl};
 use soyuz_fs::{TimesSet, WalkItem, WalkOptions};
 
-use super::conflict::{Btn, button};
 use super::properties::MetaCmd;
 use super::properties_attrs::{AttrEdit, AttrEditUi as _, ModeEdit, ModeEditUi as _, plan_jobs};
 use super::properties_widgets::{caption, check, datetime_field, kv_row_with, rule};
@@ -20,6 +19,7 @@ use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::theme::{icons::ph, palette};
 use crate::ui::toasts::Toast;
+use crate::ui::widgets::{Btn, pill_button};
 
 pub fn open(app: &mut SoyuzApp) {
     match super::properties::targets(&app.core) {
@@ -193,9 +193,12 @@ impl Dialog for AttributesDialog {
         let mut cancel = false;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            ok = ui.add_enabled_ui(changes, |ui| button(ui, tr!("common-apply"), Btn::Primary)).inner.clicked()
+            ok = ui
+                .add_enabled_ui(changes, |ui| pill_button(ui, None, tr!("common-apply"), Btn::Primary))
+                .inner
+                .clicked()
                 && changes;
-            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+            cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ok {
             if self.recursive && any_dir {

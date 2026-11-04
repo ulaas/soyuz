@@ -3,7 +3,7 @@
 
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::SizeStyle;
-use soyuz_core::config::{Backdrop, FallbackFonts, IconStyle};
+use soyuz_core::config::{Backdrop, FallbackFonts, IconStyle, NameTruncation};
 
 use super::widgets::{color_swatch, group, number, segmented, small_button, switch, to_hex};
 use crate::app::SoyuzApp;
@@ -140,6 +140,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
         r.row_kw(
+            tr!("settings-appearance-welcome-tips"),
+            tr!("settings-appearance-welcome-tips-desc"),
+            "onboarding first run tips card intro",
+            |ui| {
+                switch(ui, &mut d.appearance.welcome_tips);
+            },
+        );
+        r.row_kw(
             tr!("settings-appearance-high-contrast"),
             tr!("settings-appearance-high-contrast-desc"),
             "accessibility a11y contrast vision",
@@ -158,6 +166,30 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             "blank empty padding bottom right-click context menu new folder",
             |ui| {
                 number(ui, &mut d.appearance.list_end_space, 0..=400, " px");
+            },
+        );
+        r.row_kw(
+            tr!("settings-appearance-name-truncation"),
+            tr!("settings-appearance-name-truncation-desc"),
+            "truncate ellipsis long name extension cut middle",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.appearance.name_truncation,
+                    &[
+                        (NameTruncation::KeepExtension, tr!("settings-appearance-name-truncation-keep")),
+                        (NameTruncation::Middle, tr!("settings-appearance-name-truncation-middle")),
+                        (NameTruncation::End, tr!("settings-appearance-name-truncation-end")),
+                    ],
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-appearance-name-tooltips"),
+            tr!("settings-appearance-name-tooltips-desc"),
+            "tooltip hover full name truncated",
+            |ui| {
+                switch(ui, &mut d.appearance.name_tooltips);
             },
         );
         r.row_kw(tr!("settings-terminal-font-size"), tr!("settings-appearance-font-size-desc"), "text scale", |ui| {

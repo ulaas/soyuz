@@ -27,7 +27,7 @@ use crate::theme::icons::{self, ph};
 use crate::theme::{Palette, palette};
 use crate::ui::gfx::{self, TexExt};
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{pill_button, spinner, trunc_galley};
+use crate::ui::widgets::{Btn, pill_button, spinner, trunc_galley};
 
 /// Paragraphs laid out for a document preview (the rest is summarized).
 const DOC_PARAS: usize = 1_500;
@@ -983,7 +983,7 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
             ui.painter().text(body.center(), Align2::CENTER_CENTER, e, FontId::proportional(12.0), p.danger);
             let br = Rect::from_center_size(body.center() + vec2(0.0, 30.0), vec2(120.0, 26.0));
             let mut c = ui.new_child(UiBuilder::new().max_rect(br));
-            if pill_button(&mut c, Some(ph::BINARY), tr!("views-preview-show-bytes"), false).clicked() {
+            if pill_button(&mut c, Some(ph::BINARY), tr!("views-preview-show-bytes"), Btn::Secondary).clicked() {
                 action = Some(PreviewAction::ToggleHex);
             }
         }
@@ -1015,7 +1015,7 @@ fn locked_card(ui: &mut Ui, p: &Palette) -> bool {
                 .wrap(),
             );
             ui.add_space(8.0);
-            clicked = pill_button(ui, Some(ph::KEY), tr!("views-rich-pdf-unlock"), true).clicked();
+            clicked = pill_button(ui, Some(ph::KEY), tr!("views-rich-pdf-unlock"), Btn::Primary).clicked();
         });
     clicked
 }

@@ -12,8 +12,8 @@
 use std::path::{Path, PathBuf};
 
 use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Modal, RichText, ScrollArea, Sense,
-    Stroke, TextEdit, Ui, vec2,
+    Align, Align2, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke,
+    TextEdit, Ui, vec2,
 };
 
 use crate::models::file_browser::{BrowseFilter, FileBrowser};
@@ -21,7 +21,7 @@ use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::theme::tokens::radius;
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{icon_button, pill_button, trunc_galley};
+use crate::ui::widgets::{Btn, chip, fit, icon_button, pill_button};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PickMode {
@@ -62,6 +62,8 @@ pub struct PathPicker {
     programs: bool,
     /// The name of the row last picked.
     picked_name: Option<String>,
+    /// Saving with one extension on offer: a name typed without one gets it.
+    save_ext: Option<String>,
     focus_name: bool,
     focus_query: bool,
 }
@@ -101,6 +103,10 @@ impl PathPicker {
             places_slot: None,
             programs: false,
             picked_name: None,
+            save_ext: match exts {
+                [ext] if mode == PickMode::Save => Some(ext.trim_start_matches('.').to_string()),
+                _ => None,
+            },
             focus_name: mode == PickMode::Save,
             focus_query: mode == PickMode::Open,
         };
@@ -194,6 +200,15 @@ impl PathPicker {
         }
     }
 
+    /// The name a save will really use when it differs from the typed one: the only
+    /// extension on offer is added to a name without any.
+    fn final_name(&self) -> Option<String> {
+        let name = self.name.trim();
+        let ext = self.save_ext.as_deref()?;
+        let bare = Path::new(name).extension().is_none() && !name.eq_ignore_ascii_case(&format!(".{ext}"));
+        (bare && !name.is_empty()).then(|| format!("{}.{ext}", name.trim_end_matches('.')))
+    }
+
     /// The path the primary button would return now.
     fn target(&self) -> Option<PathBuf> {
         match self.mode {
@@ -206,7 +221,7 @@ impl PathPicker {
                 if name.is_empty() || soyuz_core::validate_name(name).is_err() {
                     return None;
                 }
-                Some(self.browser.dir().join(name))
+                Some(self.browser.dir().join(self.final_name().unwrap_or_else(|| name.to_string())))
             }
         }
     }
@@ -223,12 +238,7 @@ impl PathPicker {
             .stroke(Stroke::new(1.0, p.border_strong))
             .corner_radius(CornerRadius::same(radius::MODAL))
             .inner_margin(Margin::same(18))
-            .shadow(egui::epaint::Shadow {
-                offset: [0, 12],
-                blur: 40,
-                spread: 0,
-                color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-            });
+            .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
         let mut result = PickResult::Pending;
         let mut go: Option<PathBuf> = None;
         let title = self.title.clone();
@@ -265,12 +275,7 @@ impl PathPicker {
             ui.horizontal_wrapped(|ui| {
                 for (label, glyph, path) in &self.places {
                     let on = self.browser.dir() == path;
-                    // Glyphs live in the icon font family, the label in the UI font.
-                    let color = if on { p.accent } else { p.text_secondary };
-                    let mut job = egui::text::LayoutJob::default();
-                    job.append(glyph, 0.0, egui::TextFormat::simple(icons::font(13.0), color));
-                    job.append(label, 6.0, egui::TextFormat::simple(FontId::proportional(12.5), color));
-                    if ui.add(egui::Button::selectable(on, job)).clicked() {
+                    if chip(ui, Some(*glyph), label, on).clicked() {
                         go = Some(path.clone());
                     }
                 }
@@ -315,6 +320,14 @@ impl PathPicker {
                         result = self.confirm();
                     }
                 });
+                if let Some(name) = self.final_name() {
+                    ui.add_space(4.0);
+                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                        ui.label(
+                            RichText::new(tr!("app-picker-saves-as", name = name)).size(11.5).color(p.text_tertiary),
+                        );
+                    });
+                }
             }
             if let Some(path) = &self.confirm_replace {
                 ui.add_space(6.0);
@@ -327,12 +340,12 @@ impl PathPicker {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let label = if self.mode == PickMode::Save { tr!("common-save") } else { tr!("app-picker-open") };
                 let ok = self.target().is_some();
-                let resp = ui.add_enabled_ui(ok, |ui| pill_button(ui, None, label, true)).inner;
+                let resp = ui.add_enabled_ui(ok, |ui| pill_button(ui, None, label, Btn::Primary)).inner;
                 if resp.clicked() && ok {
                     result = self.confirm();
                 }
                 ui.add_space(6.0);
-                if pill_button(ui, None, tr!("common-cancel"), false).clicked() {
+                if pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked() {
                     result = PickResult::Cancelled;
                 }
             });
@@ -479,13 +492,15 @@ impl PathPicker {
                             icons::font_fill(15.0),
                             color,
                         );
-                        let g = trunc_galley(
+                        let g = fit::entry_name(
                             ui.painter(),
                             &e.name,
+                            e.is_dir,
                             FontId::proportional(13.0),
                             p.text_primary,
                             rect.width() - 40.0,
-                        );
+                        )
+                        .galley;
                         ui.painter().galley(rect.left_center() + vec2(30.0, -g.size().y / 2.0), g, p.text_primary);
                         if resp.clicked() {
                             self.selected = Some(i);
@@ -569,6 +584,24 @@ mod tests {
         assert_eq!(p.confirm(), PickResult::Picked(d.path().join("new.toml")));
         p.name = "bad/name".into();
         assert_eq!(p.target(), None);
+    }
+
+    #[test]
+    fn saving_adds_the_only_extension_on_offer() {
+        let d = tempfile::tempdir().unwrap();
+        let mut p = PathPicker::new("Export", PickMode::Save, d.path().to_path_buf(), "settings", &["toml"]);
+        wait(&mut p);
+        assert_eq!(p.final_name().as_deref(), Some("settings.toml"));
+        assert_eq!(p.target(), Some(d.path().join("settings.toml")));
+        p.name = "settings.toml".into();
+        assert_eq!(p.final_name(), None);
+        p.name = "settings.bak".into();
+        assert_eq!(p.final_name(), None, "another extension is the user's choice");
+        assert_eq!(p.target(), Some(d.path().join("settings.bak")));
+        p.name = ".toml".into();
+        assert_eq!(p.final_name(), None);
+        let any = PathPicker::new("Export", PickMode::Save, d.path().to_path_buf(), "x", &["toml", "json"]);
+        assert_eq!(any.final_name(), None, "two extensions on offer: no guess");
     }
 
     #[test]

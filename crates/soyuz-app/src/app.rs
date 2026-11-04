@@ -140,6 +140,9 @@ impl SoyuzApp {
             return;
         }
         let (kctx, text_focused) = self.key_context(ctx);
+        if !text_focused {
+            self.esc_closes_overlays(ctx);
+        }
         if kctx == KeyContext::FileList && !text_focused {
             offer_pasted_image(&mut self.core, ctx);
             // Ctrl+V with only files on the OS clipboard produces no egui event: the
@@ -178,6 +181,41 @@ impl SoyuzApp {
         crate::ui::input::strip(ctx, &frame, self.core.config.keys.cmd_is_ctrl);
     }
 
+    /// Esc closes the welcome card. Then it clears what the list has (the selection, the
+    /// filter: the keymap's business) and only with nothing to clear closes the newest
+    /// toast. Shift+Esc closes all of them.
+    fn esc_closes_overlays(&mut self, ctx: &egui::Context) {
+        use egui::{Key, Modifiers, Popup};
+        if !ctx.input(|i| i.key_pressed(Key::Escape))
+            || self.gui.settings.is_open()
+            || Popup::is_any_open(ctx)
+            || !crate::models::workspaces::overlays_here(&self.core)
+        {
+            return;
+        }
+        let consume = |m| ctx.input_mut(|i| i.consume_key(m, Key::Escape));
+        if self.core.ui.welcome {
+            if consume(Modifiers::NONE) {
+                crate::ui::welcome::dismiss(self);
+            }
+            return;
+        }
+        let toasts = &mut self.core.ui.toasts;
+        if toasts.is_empty() {
+            return;
+        }
+        if ctx.input(|i| i.modifiers.shift) {
+            if toasts.dismiss_all() {
+                consume(Modifiers::SHIFT);
+            }
+            return;
+        }
+        let pane = self.core.ws.pane();
+        if !pane.filter_active() && pane.selection.is_empty() && self.core.ui.toasts.dismiss_newest() {
+            consume(Modifiers::NONE);
+        }
+    }
+
     /// Apply queued commands (commands may queue more; bounded to avoid loops). The
     /// core's requests for the frontend are carried out after every command.
     pub fn apply_cmds(&mut self, host: &crate::host::EguiHost) {
@@ -202,6 +240,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     let delay = f64::from(c.general.double_click_speed_ms.clamp(100, 2000)) / 1000.0;
     ctx.options_mut(|o| o.input_options.max_double_click_delay = delay);
     crate::ui::views::set_display_options(c.general.show_extensions, c.appearance.icon_style);
+    crate::ui::widgets::fit::set_mode(c.appearance.name_truncation);
     crate::ui::views::icon_pack::apply(ctx, &c.appearance.icon_pack);
     crate::ui::native::set_enabled(c.appearance.native_dialogs);
     for w in crate::ui::context_menu::set_hidden(&c.context_menu) {

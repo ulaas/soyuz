@@ -219,6 +219,10 @@ pub struct PromptModel {
     pub focus_password: bool,
     /// Validate rename-on-conflict names with the Windows rules.
     pub windows_rules: bool,
+    /// `[general] size_style`: how the prompt shows sizes.
+    pub size_style: soyuz_core::SizeStyle,
+    /// `[general] date_format`: how the prompt shows dates.
+    pub date_format: soyuz_core::DateFormat,
 }
 
 impl PromptModel {
@@ -252,7 +256,16 @@ impl PromptModel {
             password: String::new(),
             focus_password: true,
             windows_rules: cfg!(windows),
+            size_style: soyuz_core::SizeStyle::Binary,
+            date_format: soyuz_core::DateFormat::default(),
         }
+    }
+
+    /// Show sizes and dates the way `[general]` says.
+    pub fn display(mut self, size_style: soyuz_core::SizeStyle, date_format: soyuz_core::DateFormat) -> Self {
+        self.size_style = size_style;
+        self.date_format = date_format;
+        self
     }
 
     /// Validate rename-on-conflict names with the Windows rules (target on a

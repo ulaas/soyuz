@@ -18,7 +18,6 @@ use parking_lot::Mutex;
 use soyuz_core::{EntryInfo, EntryKind, OpControl, SizeStyle, format_size};
 use soyuz_fs::TimesSet;
 
-use super::conflict::{Btn, button};
 use super::properties_attrs::{AttrEdit, AttrEditUi as _, ModeEdit, ModeEditUi as _, info_attrs, plan_jobs};
 use super::properties_checksum::Checksums;
 use super::properties_security::OwnerEdit;
@@ -31,6 +30,7 @@ use crate::ops::fileops::FileOpCmd;
 use crate::state::pane::PaneId;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
+use crate::ui::widgets::{Btn, pill_button};
 
 pub use crate::models::properties::{
     Bg, FlagPlan, MetaCmd, Start, Tab, apply, apply_reason, execute, handles, open, pump, targets,
@@ -708,10 +708,10 @@ impl Dialog for PropertiesDialog {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                ok = button(ui, tr!("common-ok"), Btn::Primary).clicked();
-                cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+                ok = pill_button(ui, None, tr!("common-ok"), Btn::Primary).clicked();
+                cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
                 ui.add_enabled_ui(dirty, |ui| {
-                    apply = button(ui, tr!("common-apply"), Btn::Ghost).clicked() && dirty;
+                    apply = pill_button(ui, None, tr!("common-apply"), Btn::Ghost).clicked() && dirty;
                 });
             });
         });

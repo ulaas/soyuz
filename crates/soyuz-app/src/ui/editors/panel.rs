@@ -13,8 +13,8 @@ use crate::editors::io::{Answer, Want};
 use crate::editors::{DocKind, External, UnsavedPrompt};
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::dialogs::conflict::{Btn, button};
 use crate::ui::dialogs::{Dialog, DialogCtx};
+use crate::ui::widgets::{Btn, pill_button};
 
 const HEADER_H: f32 = 38.0;
 
@@ -408,14 +408,15 @@ impl Dialog for UnsavedDialog {
         let (mut save, mut discard, mut cancel) = (false, false, false);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            save = button(
+            save = pill_button(
                 ui,
+                None,
                 if self.prompt.target.is_some() { tr!("common-save") } else { tr!("editors-unsaved-save-all") },
                 Btn::Primary,
             )
             .clicked();
-            discard = button(ui, tr!("editors-unsaved-dont-save"), Btn::Danger).clicked();
-            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+            discard = pill_button(ui, None, tr!("editors-unsaved-dont-save"), Btn::Danger).clicked();
+            cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ui.input(|i| i.key_pressed(Key::Enter)) {
             save = true;

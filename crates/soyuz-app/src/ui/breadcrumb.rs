@@ -16,7 +16,9 @@ use crate::state::pane::PaneId;
 use crate::theme::tokens::{Rail, mix, radius};
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{hidden_controls_tip, menu_item, paint_hidden_badge, spinner, trunc_galley};
+use crate::ui::widgets::{
+    fit, hidden_controls_tip, menu_item, menu_item_marked, paint_hidden_badge, spinner, trunc_galley,
+};
 
 pub struct OmnibarCtx<'a> {
     pub pane: PaneId,
@@ -210,7 +212,8 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
             crate::ui::looks::paint_dot(ui.painter(), pos2(r.left() + CRUMB_PAD + 3.5, cy), dc, ring);
         }
         let tx = r.left() + CRUMB_PAD + dot_w;
-        let g = trunc_galley(ui.painter(), &list[i].label, f, color, r.width() - 2.0 * CRUMB_PAD - badge - dot_w);
+        let room = r.width() - 2.0 * CRUMB_PAD - badge - dot_w;
+        let g = fit::ends(ui.painter(), &list[i].label, f, color, room).galley;
         let gw = g.size().x;
         ui.painter().galley(pos2(tx, cy - g.size().y / 2.0), g, color);
         let resp = if hidden {
@@ -219,12 +222,19 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         } else {
             resp
         };
-        if resp.clicked() && !last {
-            c.cmds.push(Cmd::FocusPane(c.pane));
-            c.cmds.push(Cmd::Navigate { pane: c.pane, location: list[i].location.clone(), select: None });
-        }
-        if resp.clicked() && last {
-            start_edit(c);
+        // Shift: open it in the other pane. Ctrl: copy its path.
+        let mods = ui.input(|i| i.modifiers);
+        if resp.clicked() {
+            if mods.shift {
+                c.cmds.push(Cmd::OpenInOtherPane(list[i].location.clone()));
+            } else if mods.command {
+                c.cmds.push(Cmd::CopyText(list[i].location.display()));
+            } else if last {
+                start_edit(c);
+            } else {
+                c.cmds.push(Cmd::FocusPane(c.pane));
+                c.cmds.push(Cmd::Navigate { pane: c.pane, location: list[i].location.clone(), select: None });
+            }
         }
         if resp.middle_clicked() {
             c.cmds.push(Cmd::OpenInNewTab { location: list[i].location.clone(), activate: false });
@@ -362,7 +372,6 @@ fn sep(
 /// Path editor with completion (the editing logic is `state::crumbs`, shared with the
 /// terminal UI).
 fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
-    let p = palette(ui.ctx());
     // Full field height: the text edit centers its row (see the filter in toolbar.rs).
     let inner = field.shrink2(vec2(12.0, 0.0));
     let id = Id::unique("soyuz.omnibar.edit");
@@ -435,17 +444,9 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
                 Frame::menu(ui.style()).show(ui, |ui| {
                     ui.set_width(popup_rect.width() - 14.0);
                     for (i, name) in names.iter().enumerate() {
-                        let r = menu_item(ui, Some(ph::FOLDER), name, if i == 0 { Some("Tab") } else { None }, true);
-                        if c.address.completion == Some(i) {
-                            ui.painter().rect_filled(r.rect, CornerRadius::same(radius::ROW), p.accent_subtle);
-                            ui.painter().text(
-                                pos2(r.rect.left() + 34.0, r.rect.center().y),
-                                Align2::LEFT_CENTER,
-                                name,
-                                FontId::proportional(13.0),
-                                p.text_primary,
-                            );
-                        }
+                        let shortcut = if i == 0 { Some("Tab") } else { None };
+                        let on = c.address.completion == Some(i);
+                        let r = menu_item_marked(ui, Some(ph::FOLDER), name, shortcut, true, on);
                         if r.clicked() {
                             crumbs::accept(&mut c.address.text, name);
                             c.address.request_focus = false;

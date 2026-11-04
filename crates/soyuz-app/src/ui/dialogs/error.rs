@@ -3,13 +3,13 @@
 //! password, for a [`PromptModel`] (drawn by `super::conflict::show`).
 
 use egui::{Align, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
-use soyuz_core::{ErrorAction, SizeStyle, format_size};
+use soyuz_core::{ErrorAction, format_size};
 use soyuz_jobs::kinds::extract::ARCHIVE_LIMIT_OP;
 use soyuz_jobs::{JobPrompt, PromptResponse};
 
-use super::conflict::{Btn, button};
 use crate::models::dialogs::{PromptAnswer as Answer, PromptModel};
 use crate::theme::Palette;
+use crate::ui::widgets::{Btn, pill_button};
 
 /// Display name for the messages (they add the quotes themselves).
 fn name(p: &std::path::Path) -> String {
@@ -53,13 +53,13 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
             let respond = |a| Some(Answer::Respond(PromptResponse::Error { action: a, apply_to_all: false }));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                if button(ui, tr!("dialogs-prompt-abort"), Btn::Primary)
+                if pill_button(ui, None, tr!("dialogs-prompt-abort"), Btn::Primary)
                     .on_hover_text(tr!("dialogs-prompt-abort-extract-tip"))
                     .clicked()
                 {
                     out = respond(ErrorAction::Abort);
                 }
-                if button(ui, tr!("dialogs-prompt-continue"), Btn::Secondary)
+                if pill_button(ui, None, tr!("dialogs-prompt-continue"), Btn::Secondary)
                     .on_hover_text(tr!("dialogs-prompt-continue-tip"))
                     .clicked()
                 {
@@ -81,7 +81,7 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
             path_box(ui, path, p);
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                if button(ui, tr!("dialogs-prompt-abort"), Btn::Ghost)
+                if pill_button(ui, None, tr!("dialogs-prompt-abort"), Btn::Ghost)
                     .on_hover_text(tr!("dialogs-prompt-abort-tip"))
                     .clicked()
                 {
@@ -94,16 +94,16 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
                     ui.spacing_mut().item_spacing.x = 6.0;
                     let respond = |a| Some(Answer::Respond(PromptResponse::Error { action: a, apply_to_all: false }));
                     if *retryable {
-                        if button(ui, tr!("common-retry"), Btn::Primary).clicked() {
+                        if pill_button(ui, None, tr!("common-retry"), Btn::Primary).clicked() {
                             out = respond(ErrorAction::Retry);
                         }
-                        if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
+                        if pill_button(ui, None, tr!("common-skip"), Btn::Secondary).clicked() {
                             out = respond(ErrorAction::Skip);
                         }
-                    } else if button(ui, tr!("common-skip"), Btn::Primary).clicked() {
+                    } else if pill_button(ui, None, tr!("common-skip"), Btn::Primary).clicked() {
                         out = respond(ErrorAction::Skip);
                     }
-                    if button(ui, tr!("dialogs-prompt-skip-all"), Btn::Secondary)
+                    if pill_button(ui, None, tr!("dialogs-prompt-skip-all"), Btn::Secondary)
                         .on_hover_text(tr!("dialogs-prompt-skip-all-tip"))
                         .clicked()
                     {
@@ -121,8 +121,8 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
                 RichText::new(tr!(
                     "dialogs-prompt-space",
                     name = name(dest),
-                    needed = format_size(*needed, SizeStyle::Binary),
-                    free = format_size(*free, SizeStyle::Binary)
+                    needed = format_size(*needed, d.size_style),
+                    free = format_size(*free, d.size_style)
                 ))
                 .color(p.text_primary),
             );
@@ -141,10 +141,10 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
             ui.add_space(16.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                if button(ui, tr!("dialogs-prompt-continue-anyway"), Btn::Primary).clicked() {
+                if pill_button(ui, None, tr!("dialogs-prompt-continue-anyway"), Btn::Primary).clicked() {
                     out = Some(Answer::Respond(PromptResponse::Space { proceed: true }));
                 }
-                if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Secondary).clicked() {
+                if pill_button(ui, None, tr!("dialogs-prompt-cancel-op"), Btn::Secondary).clicked() {
                     out = Some(Answer::Respond(PromptResponse::Space { proceed: false }));
                 }
             });
@@ -161,18 +161,18 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
             ui.add_space(14.0);
             let all = d.apply_all;
             ui.horizontal(|ui| {
-                if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
+                if pill_button(ui, None, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
                     out = Some(Answer::CancelJob);
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    if button(ui, tr!("dialogs-prompt-delete-permanently"), Btn::Danger).clicked() {
+                    if pill_button(ui, None, tr!("dialogs-prompt-delete-permanently"), Btn::Danger).clicked() {
                         out = Some(Answer::Respond(PromptResponse::TrashUnsupported {
                             permanent: true,
                             apply_to_all: all,
                         }));
                     }
-                    if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
+                    if pill_button(ui, None, tr!("common-skip"), Btn::Secondary).clicked() {
                         out = Some(Answer::Respond(PromptResponse::TrashUnsupported {
                             permanent: false,
                             apply_to_all: all,
@@ -191,15 +191,15 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
             ui.add_space(14.0);
             let all = d.apply_all;
             ui.horizontal(|ui| {
-                if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
+                if pill_button(ui, None, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
                     out = Some(Answer::CancelJob);
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    if button(ui, tr!("dialogs-prompt-change-anyway"), Btn::Danger).clicked() {
+                    if pill_button(ui, None, tr!("dialogs-prompt-change-anyway"), Btn::Danger).clicked() {
                         out = Some(Answer::Respond(PromptResponse::ReadOnly { force: true, apply_to_all: all }));
                     }
-                    if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
+                    if pill_button(ui, None, tr!("common-skip"), Btn::Secondary).clicked() {
                         out = Some(Answer::Respond(PromptResponse::ReadOnly { force: false, apply_to_all: all }));
                     }
                 });
@@ -226,11 +226,12 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
             ui.add_space(16.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                if (button(ui, tr!("dialogs-prompt-unlock"), Btn::Primary).clicked() || enter) && !d.password.is_empty()
+                if (pill_button(ui, None, tr!("dialogs-prompt-unlock"), Btn::Primary).clicked() || enter)
+                    && !d.password.is_empty()
                 {
                     out = Some(Answer::Respond(PromptResponse::Password(Some(d.password.clone()))));
                 }
-                if button(ui, tr!("common-cancel"), Btn::Secondary).clicked() {
+                if pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked() {
                     out = Some(Answer::Respond(PromptResponse::Password(None)));
                 }
             });

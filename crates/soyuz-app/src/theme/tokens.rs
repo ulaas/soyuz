@@ -118,9 +118,23 @@ impl Palette {
 
     /// Text / icon color on an accent fill: white, or near-black for light accents.
     pub fn on_accent(&self) -> Color32 {
-        let c = self.accent;
+        self.on_color(self.accent)
+    }
+
+    /// Text / icon color on a fill of `c`: white, or near-black for light fills.
+    pub fn on_color(&self, c: Color32) -> Color32 {
         let lum = 0.2126 * f32::from(c.r()) + 0.7152 * f32::from(c.g()) + 0.0722 * f32::from(c.b());
         if lum > 165.0 { hex(0x10131A) } else { Color32::WHITE }
+    }
+
+    /// A [`shadow`] token in this palette's shadow color.
+    pub fn shadow(&self, (down, blur): (i8, u8)) -> egui::epaint::Shadow {
+        egui::epaint::Shadow {
+            offset: [0, down],
+            blur,
+            spread: 0,
+            color: Color32::from_black_alpha((self.shadow_alpha * 255.0).min(255.0) as u8),
+        }
     }
 
     /// High-contrast palettes (borders at ≥ 3:1 against the window) keep outlines on
@@ -337,6 +351,17 @@ pub mod type_scale {
     pub const TITLE: f32 = 15.0;
     pub const CAPTION: f32 = 11.5;
     pub const DISPLAY: f32 = 22.0;
+}
+
+/// Elevation of surfaces above the window: `(offset down, blur)` in points, colored with
+/// [`Palette::shadow`]. Content (a picture's drop shadow) keeps its own.
+pub mod shadow {
+    /// Menus, dropdowns, toasts, drag chips.
+    pub const POPUP: (i8, u8) = (4, 16);
+    /// Dialogs, pickers, tool windows, the welcome card.
+    pub const WINDOW: (i8, u8) = (12, 40);
+    /// What takes over the window: the command palette, settings.
+    pub const OVERLAY: (i8, u8) = (18, 56);
 }
 
 /// Animation timings (seconds); all become 0 with `reduced_motion`.

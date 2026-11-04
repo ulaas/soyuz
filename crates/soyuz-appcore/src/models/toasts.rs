@@ -3,6 +3,8 @@
 
 use soyuz_core::config::Action;
 
+use crate::cmd::Cmd;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToastKind {
     Info,
@@ -18,6 +20,9 @@ pub struct Toast {
     pub body: Option<String>,
     /// Button label and the action it dispatches.
     pub action: Option<(String, Action)>,
+    /// Button label and the command it runs (GUI only: an Undo that is not in the job
+    /// history; the terminal UI has no way to press it).
+    pub cmd: Option<Box<(String, Cmd)>>,
     /// Seconds before auto-dismiss (`None` = sticky).
     pub duration: Option<f32>,
 }
@@ -29,7 +34,7 @@ impl Toast {
             ToastKind::Warning => Some(6.0),
             _ => Some(4.0),
         };
-        Toast { kind, title: title.into(), body: None, action: None, duration }
+        Toast { kind, title: title.into(), body: None, action: None, cmd: None, duration }
     }
 
     pub fn info(title: impl Into<String>) -> Self {
@@ -55,6 +60,13 @@ impl Toast {
 
     pub fn action(mut self, label: impl Into<String>, action: Action) -> Self {
         self.action = Some((label.into(), action));
+        self
+    }
+
+    /// A button that runs `cmd`; the toast stays up longer so there is time to press it.
+    pub fn cmd(mut self, label: impl Into<String>, cmd: Cmd) -> Self {
+        self.cmd = Some(Box::new((label.into(), cmd)));
+        self.duration = self.duration.map(|d| d.max(8.0));
         self
     }
 
@@ -125,6 +137,27 @@ impl Toasts {
         }
     }
 
+    /// Close the newest toast still open; `false` when none is.
+    pub fn dismiss_newest(&mut self) -> bool {
+        match self.live.iter_mut().rev().find(|l| l.closing.is_none()) {
+            Some(l) => {
+                l.closing = Some(f64::NAN);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Close every toast; `false` when none was open.
+    pub fn dismiss_all(&mut self) -> bool {
+        let mut any = false;
+        for l in self.live.iter_mut().filter(|l| l.closing.is_none()) {
+            l.closing = Some(f64::NAN);
+            any = true;
+        }
+        any
+    }
+
     pub fn is_empty(&self) -> bool {
         self.live.is_empty()
     }
@@ -145,6 +178,26 @@ mod tests {
         assert!(t.live.last().unwrap().remaining.is_none());
         t.dismiss(id);
         assert!(t.live.last().unwrap().closing.is_some());
+    }
+
+    #[test]
+    fn esc_closes_the_newest_first() {
+        let mut t = Toasts::default();
+        assert!(!t.dismiss_newest());
+        t.push(Toast::info("old"));
+        t.push(Toast::info("new"));
+        assert!(t.dismiss_newest());
+        assert!(t.live[1].closing.is_some() && t.live[0].closing.is_none());
+        assert!(t.dismiss_newest());
+        assert!(t.live[0].closing.is_some());
+        assert!(!t.dismiss_newest() && !t.dismiss_all());
+    }
+
+    #[test]
+    fn a_command_button_gives_time_to_press_it() {
+        let t = Toast::success("Done").cmd("Undo", Cmd::ShowSystemFolders(true));
+        assert_eq!(t.duration, Some(8.0));
+        assert!(matches!(t.cmd.map(|c| c.1), Some(Cmd::ShowSystemFolders(true))));
     }
 
     #[test]

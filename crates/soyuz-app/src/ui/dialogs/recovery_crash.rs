@@ -3,11 +3,11 @@
 
 use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, ScrollArea, Ui};
 
-use super::conflict::{Btn, button};
 use super::{Dialog, DialogCtx};
 use crate::models::requests::crash_reports::{self as model, CrashReportsModel};
 use crate::services::crash::{CrashReport, safe_mode};
 use crate::theme::{icons::ph, palette};
+use crate::ui::widgets::{Btn, pill_button};
 
 pub struct CrashDialog {
     m: CrashReportsModel,
@@ -75,15 +75,15 @@ impl Dialog for CrashDialog {
         ui.add_space(16.0);
         let (mut close, mut delete, mut folder, mut safe) = (false, false, false, false);
         ui.horizontal(|ui| {
-            delete = button(ui, tr!("dialogs-crash-delete"), Btn::Ghost).clicked();
-            folder = button(ui, tr!("dialogs-crash-open-folder"), Btn::Ghost)
+            delete = pill_button(ui, None, tr!("dialogs-crash-delete"), Btn::Ghost).clicked();
+            folder = pill_button(ui, None, tr!("dialogs-crash-open-folder"), Btn::Ghost)
                 .on_hover_text(tr!("dialogs-crash-open-folder-tip"))
                 .clicked();
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                close = button(ui, tr!("common-close"), Btn::Primary).clicked();
+                close = pill_button(ui, None, tr!("common-close"), Btn::Primary).clicked();
                 if !safe_mode() {
-                    safe = button(ui, tr!("dialogs-crash-safe-mode"), Btn::Secondary)
+                    safe = pill_button(ui, None, tr!("dialogs-crash-safe-mode"), Btn::Secondary)
                         .on_hover_text(tr!("dialogs-crash-safe-mode-tip"))
                         .clicked();
                 }

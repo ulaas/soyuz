@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use egui::{Align, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, Stroke, TextEdit, Ui, vec2};
 use soyuz_core::EntryInfo;
 
-use super::conflict::{Btn, button};
 use super::new_item::LinkChoice;
 use super::properties::Bg;
 use super::properties_widgets::{badge, caption, check, small_icon_button};
@@ -20,6 +19,7 @@ use crate::models::link_dialog::{LinkForm, PROBE_DEBOUNCE, Probe, TargetState, l
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::toasts::Toast;
+use crate::ui::widgets::{Btn, pill_button};
 
 pub fn open(app: &mut SoyuzApp, kind: LinkChoice) {
     match LinkForm::open(&app.core, kind) {
@@ -357,8 +357,11 @@ impl Dialog for LinkDialog {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let enabled = err.is_none();
-            ok = ui.add_enabled_ui(enabled, |ui| button(ui, tr!("dialogs-link-create"), Btn::Primary)).inner.clicked();
-            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+            ok = ui
+                .add_enabled_ui(enabled, |ui| pill_button(ui, None, tr!("dialogs-link-create"), Btn::Primary))
+                .inner
+                .clicked();
+            cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         let text_focus = n.has_focus();
         if text_focus && ui.input(|i| i.key_pressed(Key::Enter)) {

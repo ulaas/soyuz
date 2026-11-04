@@ -562,6 +562,7 @@ impl CreateForm {
     }
 
     /// The compress job; `Err` keeps the form open (with a toast to show, if any).
+    #[allow(clippy::result_large_err)] // a form submit, not a hot path
     pub fn submit(&self) -> Result<Cmd, Option<Toast>> {
         let name = self.name.trim();
         if name.is_empty() {

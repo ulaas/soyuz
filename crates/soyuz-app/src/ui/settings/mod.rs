@@ -377,12 +377,7 @@ fn in_window(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette, ease: f32) {
         .stroke(Stroke::new(1.0, p.border_strong))
         .corner_radius(CornerRadius::same(14))
         .inner_margin(Margin::ZERO)
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 20],
-            blur: 60,
-            spread: 0,
-            color: Color32::from_black_alpha((p.shadow_alpha * 255.0 * 1.2).min(255.0) as u8),
-        });
+        .shadow(p.shadow(crate::theme::tokens::shadow::OVERLAY));
     let mut close_now = false;
     let resp = Modal::new(id)
         .frame(frame)

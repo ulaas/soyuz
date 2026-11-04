@@ -11,7 +11,7 @@ use crate::keys::conflicts::users_of;
 use crate::theme::icons::ph;
 use crate::theme::{icons, palette};
 use crate::ui::palette::widgets::{chips_width_scaled, paint_chips_scaled};
-use crate::ui::widgets::pill_button;
+use crate::ui::widgets::{Btn, pill_button};
 
 /// What the recorded binding is for.
 #[derive(Clone, Debug, PartialEq)]
@@ -83,12 +83,7 @@ impl Recorder {
             .stroke(Stroke::new(1.0, p.border_strong))
             .corner_radius(CornerRadius::same(12))
             .inner_margin(Margin::same(20))
-            .shadow(egui::epaint::Shadow {
-                offset: [0, 12],
-                blur: 40,
-                spread: 0,
-                color: Color32::from_black_alpha(110),
-            });
+            .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
         let binding = self.binding();
         let users: Vec<(soyuz_core::config::KeyContext, Action)> = if self.chords.is_empty() {
             Vec::new()
@@ -172,15 +167,17 @@ impl Recorder {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(tr!("dialogs-record-keys-hint")).size(11.0).color(p.text_tertiary));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if pill_button(ui, Some(ph::CHECK), tr!("common-save"), true).clicked() && !self.chords.is_empty() {
+                    if pill_button(ui, Some(ph::CHECK), tr!("common-save"), Btn::Primary).clicked()
+                        && !self.chords.is_empty()
+                    {
                         outcome = RecordOutcome::Save(binding.clone());
                     }
                     ui.add_space(6.0);
-                    if pill_button(ui, None, tr!("common-cancel"), false).clicked() {
+                    if pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked() {
                         outcome = RecordOutcome::Cancel;
                     }
                     ui.add_space(6.0);
-                    if pill_button(ui, Some(ph::BACKSPACE), tr!("dialogs-record-clear"), false).clicked() {
+                    if pill_button(ui, Some(ph::BACKSPACE), tr!("dialogs-record-clear"), Btn::Secondary).clicked() {
                         clear = true;
                     }
                 });
