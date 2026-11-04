@@ -448,3 +448,58 @@ fn replacing_a_file_with_a_long_name() {
     let names: Vec<_> = fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
     assert_eq!(names.len(), 2, "no temp left behind: {names:?}");
 }
+
+/// A link to the existing folder `target`: a junction on Windows (needs no privilege), a
+/// symlink elsewhere.
+fn dir_link(target: &std::path::Path, link: &std::path::Path) {
+    #[cfg(windows)]
+    junction(target, link).unwrap();
+    #[cfg(not(windows))]
+    symlink(target, link, LinkKind::Dir).unwrap();
+}
+
+#[test]
+fn link_copies_follow_the_overwrite_policy() {
+    let d = tempfile::tempdir().unwrap();
+    let folder = d.path().join("folder");
+    fs::create_dir(&folder).unwrap();
+    let link = d.path().join("link");
+    dir_link(&folder, &link);
+    let dst = d.path().join("dst");
+    write(&dst, &pattern(4096));
+    let ctl = OpControl::new();
+    let copy = |policy| {
+        let o = CopyOptions { overwrite: policy, ..CopyOptions::default() };
+        copy_file(&link, &dst, &o, &ctl, &mut ())
+    };
+    assert_eq!(copy(Overwrite::Never).unwrap_err().kind, FsErrorKind::AlreadyExists);
+    assert_eq!(copy(Overwrite::IfLarger).unwrap(), CopyOutcome::Skipped(SkipReason::Smaller));
+    assert_eq!(fs::read(&dst).unwrap(), pattern(4096), "a skipped link copy leaves the file alone");
+
+    // Replacing a file, then a link of the same flavour, with no temp left behind.
+    assert!(matches!(copy(Overwrite::Always).unwrap(), CopyOutcome::Copied { .. }));
+    assert_ne!(stat(&dst, false).unwrap().kind, EntryKind::File);
+    assert!(matches!(copy(Overwrite::Always).unwrap(), CopyOutcome::Copied { .. }));
+    assert_ne!(stat(&dst, false).unwrap().kind, EntryKind::File);
+    let mut names: Vec<_> = fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    names.sort();
+    assert_eq!(names, ["dst", "folder", "link"], "no temp left behind");
+
+    // A link copied onto itself stays.
+    let o = CopyOptions { overwrite: Overwrite::Always, ..CopyOptions::default() };
+    assert_eq!(copy_file(&link, &link, &o, &ctl, &mut ()).unwrap(), CopyOutcome::Skipped(SkipReason::SameFile));
+    assert!(read_link(&link).is_ok());
+}
+
+/// 120 emoji + `.txt` is 244 UTF-16 units but only 124 characters: the temp name would not
+/// fit, so the new file is written in place instead of failing.
+#[cfg(windows)]
+#[test]
+fn a_new_file_with_a_long_utf16_name_copies() {
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("src");
+    write(&src, b"contents");
+    let dst = d.path().join(format!("{}.txt", "\u{1F600}".repeat(120)));
+    copy_file(&src, &dst, &CopyOptions::default(), &OpControl::new(), &mut ()).unwrap();
+    assert_eq!(fs::read(&dst).unwrap(), b"contents");
+}

@@ -91,6 +91,9 @@ pub(crate) struct Extractor<'a> {
     summary: ExtractSummary,
     skip_all: bool,
     safe_dirs: HashSet<PathBuf>,
+    /// The archive holds symlink entries, which can replace a directory after it was
+    /// checked: `safe_dirs` is then not trusted and every path is checked on disk.
+    has_links: bool,
     /// Relative dir → actual directory when a dir was renamed by conflict resolution.
     dir_remap: HashMap<String, PathBuf>,
     /// Deferred directory metadata (applied after all content).
@@ -156,6 +159,7 @@ impl<'a> Extractor<'a> {
         safe_dirs.insert(dest.to_path_buf());
         let wanted_count = plan.iter().filter(|p| p.is_some()).count() as u64;
         let entries_cap = opts.limits.entries_cap().filter(|&cap| wanted_count > cap);
+        let has_links = entries.iter().zip(&plan).any(|(e, p)| e.is_symlink && p.is_some());
         Ok(Extractor {
             entries,
             extras,
@@ -167,6 +171,7 @@ impl<'a> Extractor<'a> {
             summary: ExtractSummary::default(),
             skip_all: false,
             safe_dirs,
+            has_links,
             dir_remap: HashMap::new(),
             dir_meta: Vec::new(),
             written: HashMap::new(),
@@ -296,6 +301,10 @@ impl<'a> Extractor<'a> {
     /// Apply deferred directory metadata and return the summary.
     pub fn finish(mut self) -> ExtractSummary {
         for (path, mtime, mode) in self.dir_meta.drain(..).rev() {
+            // A later entry may have replaced the directory: never follow what is there now.
+            if !fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink()) {
+                continue;
+            }
             if self.opts.preserve_mode
                 && let Some(m) = mode
             {
@@ -374,7 +383,7 @@ impl<'a> Extractor<'a> {
 
     /// Create `dir` (and its ancestors below `dest`), refusing to traverse symlinks.
     fn ensure_dir(&mut self, dir: &Path) -> Result<(), Fail> {
-        if self.safe_dirs.contains(dir) {
+        if !self.has_links && self.safe_dirs.contains(dir) {
             return Ok(());
         }
         let Ok(rel) = dir.strip_prefix(&self.dest) else {
@@ -383,7 +392,7 @@ impl<'a> Extractor<'a> {
         let mut cur = self.dest.clone();
         for comp in rel.components() {
             cur.push(comp);
-            if self.safe_dirs.contains(&cur) {
+            if !self.has_links && self.safe_dirs.contains(&cur) {
                 continue;
             }
             match fs::symlink_metadata(&cur) {
@@ -449,9 +458,7 @@ impl<'a> Extractor<'a> {
             Some(t) => t,
             None => return Ok(Outcome::Skipped),
         };
-        let dir = path.parent().unwrap_or(&self.dest).to_path_buf();
-        self.tmp_counter += 1;
-        let tmp = dir.join(format!(".soyuz-extract-{}-{}.part", std::process::id(), self.tmp_counter));
+        let tmp = self.temp_beside(&path);
         let result = self.write_tmp(e, &tmp, data, consumed);
         let bytes = match result {
             Ok(n) => n,
@@ -460,15 +467,7 @@ impl<'a> Extractor<'a> {
                 return Err(f);
             }
         };
-        if replace
-            && let Ok(md) = fs::symlink_metadata(&path)
-            && (md.is_dir() || md.file_type().is_symlink())
-            && let Err(err) = remove_existing(&path)
-        {
-            let _ = fs::remove_file(&tmp);
-            return Err(Fail::Entry(err, true));
-        }
-        if let Err(err) = rename_into_place(&tmp, &path, replace) {
+        if let Err(err) = self.swap_into_place(&tmp, &path, replace) {
             let _ = fs::remove_file(&tmp);
             return Err(Fail::Entry(err, true));
         }
@@ -485,6 +484,27 @@ impl<'a> Extractor<'a> {
         }
         self.written.insert(rel.to_string(), path);
         Ok(Outcome::Done(bytes))
+    }
+
+    /// A free temp name next to `path`.
+    fn temp_beside(&mut self, path: &Path) -> PathBuf {
+        self.tmp_counter += 1;
+        let dir = path.parent().unwrap_or(&self.dest);
+        dir.join(format!(".soyuz-extract-{}-{}.part", std::process::id(), self.tmp_counter))
+    }
+
+    /// Move the finished `tmp` to `path`. What it replaces goes only now, when the
+    /// replacement exists: an empty directory or a link has to be removed first, a file
+    /// is replaced atomically.
+    fn swap_into_place(&mut self, tmp: &Path, path: &Path, replace: bool) -> Result<(), ArchiveError> {
+        if replace
+            && let Ok(md) = fs::symlink_metadata(path)
+            && (md.is_dir() || md.file_type().is_symlink())
+        {
+            remove_existing(path)?;
+            self.safe_dirs.remove(path);
+        }
+        rename_into_place(tmp, path, replace)
     }
 
     fn write_tmp(
@@ -650,12 +670,15 @@ impl<'a> Extractor<'a> {
             Some(t) => t,
             None => return Ok(Outcome::Skipped),
         };
-        if replace {
-            remove_existing(&path).map_err(|err| Fail::Entry(err, *consumed))?;
-        }
         let target_is_dir = self.entries.iter().any(|x| x.is_dir && x.path == resolved)
             || fs::metadata(push_rel(self.dest.clone(), &resolved)).is_ok_and(|m| m.is_dir());
-        make_symlink(&target, &path, target_is_dir).map_err(|err| Fail::Entry(fs_err("symlink", &path, &err), true))?;
+        // Made under a temp name: without the right to create links the destination stays.
+        let tmp = self.temp_beside(&path);
+        make_symlink(&target, &tmp, target_is_dir).map_err(|err| Fail::Entry(fs_err("symlink", &path, &err), true))?;
+        if let Err(err) = self.swap_into_place(&tmp, &path, replace) {
+            let _ = remove_existing(&tmp);
+            return Err(Fail::Entry(err, true));
+        }
         if self.opts.preserve_times
             && let Some(t) = e.modified
         {
@@ -695,13 +718,20 @@ impl<'a> Extractor<'a> {
             Some(t) => t,
             None => return Ok(Outcome::Skipped),
         };
-        if replace {
-            remove_existing(&path).map_err(|err| Fail::Entry(err, false))?;
-        }
-        let bytes = match fs::hard_link(&src, &path) {
+        let tmp = self.temp_beside(&path);
+        let bytes = match fs::hard_link(&src, &tmp) {
             Ok(()) => 0,
-            Err(_) => fs::copy(&src, &path).map_err(|err| Fail::Entry(fs_err("copy", &path, &err), false))?,
+            Err(_) => fs::copy(&src, &tmp).map_err(|err| {
+                let _ = fs::remove_file(&tmp);
+                Fail::Entry(fs_err("copy", &path, &err), false)
+            })?,
         };
+        if let Err(err) = self.swap_into_place(&tmp, &path, replace) {
+            let _ = fs::remove_file(&tmp);
+            return Err(Fail::Entry(err, false));
+        }
+        // Renaming onto another name of the same file does nothing and keeps the temp name.
+        let _ = fs::remove_file(&tmp);
         self.written.insert(rel.to_string(), path);
         Ok(Outcome::Done(bytes))
     }

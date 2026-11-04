@@ -153,8 +153,7 @@ pub fn copy_file(
     let src_l = stat(src, false).map_err(op_err)?;
     let is_link = matches!(src_l.kind, EntryKind::Symlink { .. } | EntryKind::Junction);
     if is_link && !opts.follow_symlinks {
-        copy_symlink(src, dst, opts)?;
-        return Ok(CopyOutcome::Copied { bytes: 0, method: CopyMethod::ReadWrite });
+        return copy_symlink(src, dst, opts);
     }
     let s = if is_link { stat(src, true).map_err(op_err)? } else { src_l };
     match s.kind {
@@ -177,14 +176,7 @@ pub fn copy_file(
         if matches!(d.kind, EntryKind::Dir | EntryKind::Junction) {
             return Err(FsError::new(FsErrorKind::IsDirectory, "copy", Some(dst)));
         }
-        let skip = match opts.overwrite {
-            Overwrite::Never => return Err(FsError::new(FsErrorKind::AlreadyExists, "copy", Some(dst))),
-            Overwrite::Always => None,
-            Overwrite::IfNewer => (s.modified <= d.modified).then_some(SkipReason::Older),
-            Overwrite::IfLarger => (s.size <= d.size).then_some(SkipReason::Smaller),
-            Overwrite::IfDifferentSize => (s.size == d.size).then_some(SkipReason::SameSize),
-        };
-        if let Some(reason) = skip {
+        if let Some(reason) = overwrite_skip(opts.overwrite, &s, &d, "copy", dst)? {
             return Ok(CopyOutcome::Skipped(reason));
         }
         replacing = true;
@@ -235,14 +227,31 @@ pub fn copy_file(
     }
 }
 
+/// What the overwrite policy says about replacing `d` with `s`: `Some` = keep `d`.
+fn overwrite_skip(
+    policy: Overwrite,
+    s: &soyuz_core::EntryInfo,
+    d: &soyuz_core::EntryInfo,
+    op: &'static str,
+    dst: &Path,
+) -> FsResult<Option<SkipReason>> {
+    Ok(match policy {
+        Overwrite::Never => return Err(FsError::new(FsErrorKind::AlreadyExists, op, Some(dst))),
+        Overwrite::Always => None,
+        Overwrite::IfNewer => (s.modified <= d.modified).then_some(SkipReason::Older),
+        Overwrite::IfLarger => (s.size <= d.size).then_some(SkipReason::Smaller),
+        Overwrite::IfDifferentSize => (s.size == d.size).then_some(SkipReason::SameSize),
+    })
+}
+
 /// Marker inside the names of the copy engine's temp files (`.<name>.soyuz-part-<pid>-<n>`).
 pub const PART_MARKER: &str = ".soyuz-part-";
 
 /// Longest temp suffix: `.` + marker + pid (10 digits) + `-` + sequence (20 digits).
 const TEMP_EXTRA: usize = 1 + PART_MARKER.len() + 10 + 1 + 20;
 
-/// The temp sibling name of `dst` stays within the file-name limit: 255 UTF-16 units
-/// (counted as characters) on Windows, `NAME_MAX` = 255 bytes on unix.
+/// The temp sibling name of `dst` stays within the file-name limit: 255 UTF-16 units on
+/// Windows, `NAME_MAX` = 255 bytes on unix.
 fn temp_fits(dst: &Path) -> bool {
     dst.file_name().is_some_and(|n| name_len(n) + TEMP_EXTRA <= 255)
 }
@@ -253,7 +262,13 @@ fn name_len(n: &std::ffi::OsStr) -> usize {
     n.as_bytes().len()
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn name_len(n: &std::ffi::OsStr) -> usize {
+    use std::os::windows::ffi::OsStrExt;
+    n.encode_wide().count()
+}
+
+#[cfg(not(any(unix, windows)))]
 fn name_len(n: &std::ffi::OsStr) -> usize {
     n.to_string_lossy().chars().count()
 }
@@ -367,34 +382,69 @@ pub(crate) fn pump(
 }
 
 /// Recreate the symlink `src` at `dst` (never follows). Junctions are recreated as
-/// junctions on Windows.
-pub fn copy_symlink(src: &Path, dst: &Path, opts: &CopyOptions) -> FsResult<()> {
-    let e = stat(src, false).map_err(|e| FsError { op: "copy_symlink".into(), ..e })?;
-    let target = crate::links::read_link(src).map_err(|e| FsError { op: "copy_symlink".into(), ..e })?;
-    if exists_nofollow(dst) {
-        if opts.overwrite == Overwrite::Never {
-            return Err(FsError::new(FsErrorKind::AlreadyExists, "copy_symlink", Some(dst)));
+/// junctions on Windows. An existing destination follows the overwrite policy like a file
+/// does; the new link is made under a temp name first, so a volume or account that cannot
+/// create links leaves the destination untouched.
+pub fn copy_symlink(src: &Path, dst: &Path, opts: &CopyOptions) -> FsResult<CopyOutcome> {
+    let op_err = |e: FsError| FsError { op: "copy_symlink".into(), ..e };
+    let e = stat(src, false).map_err(op_err)?;
+    let target = crate::links::read_link(src).map_err(op_err)?;
+    let replacing = exists_nofollow(dst);
+    if replacing {
+        if let (Ok(a), Ok(b)) = (file_identity(src, false), file_identity(dst, false))
+            && a == b
+        {
+            return Ok(CopyOutcome::Skipped(SkipReason::SameFile));
         }
-        let d = stat(dst, false)?;
-        match d.kind {
-            EntryKind::Symlink { .. } | EntryKind::Junction => crate::delete::delete_link(dst)?,
-            EntryKind::Dir => return Err(FsError::new(FsErrorKind::IsDirectory, "copy_symlink", Some(dst))),
-            _ => crate::delete::delete_file(dst, &DeleteOptions { clear_readonly: true, posix_semantics: true })?,
+        let d = stat(dst, false).map_err(op_err)?;
+        if d.kind == EntryKind::Dir {
+            return Err(FsError::new(FsErrorKind::IsDirectory, "copy_symlink", Some(dst)));
+        }
+        if let Some(reason) = overwrite_skip(opts.overwrite, &e, &d, "copy_symlink", dst)? {
+            return Ok(CopyOutcome::Skipped(reason));
         }
     }
-    if e.kind == EntryKind::Junction {
-        let abs = crate::links::resolve_link(src)?;
-        return crate::links::junction(&abs, dst);
+    let at = if replacing { temp_sibling(dst) } else { dst.to_path_buf() };
+    let made = (|| -> FsResult<()> {
+        crate::fault::hit(crate::fault::FaultOp::Create, &at).map_err(err::map("copy_symlink", &at))?;
+        if e.kind == EntryKind::Junction {
+            return crate::links::junction(&crate::links::resolve_link(src)?, &at);
+        }
+        let kind = match e.kind {
+            EntryKind::Symlink { target: soyuz_core::LinkTarget::Dir } => LinkKind::Dir,
+            _ if cfg!(windows) && stat(src, true).is_ok_and(|t| t.kind == EntryKind::Dir) => LinkKind::Dir,
+            _ => LinkKind::File,
+        };
+        crate::links::symlink(&target, &at, kind)
+    })();
+    made.map_err(op_err)?;
+    if replacing && let Err(e) = replace_with_link(&at, dst) {
+        let _ = crate::delete::delete_link(&at);
+        return Err(op_err(e));
     }
-    let kind = match e.kind {
-        EntryKind::Symlink { target: soyuz_core::LinkTarget::Dir } => LinkKind::Dir,
-        _ if cfg!(windows) && stat(src, true).is_ok_and(|t| t.kind == EntryKind::Dir) => LinkKind::Dir,
-        _ => LinkKind::File,
-    };
-    crate::links::symlink(&target, dst, kind)?;
     if opts.preserve.contains(Preserve::TIMES) {
         let t = TimesSet { modified: e.modified, created: e.created, accessed: e.accessed };
         let _ = crate::times::set_times(dst, &t, false);
+    }
+    Ok(CopyOutcome::Copied { bytes: 0, method: CopyMethod::ReadWrite })
+}
+
+/// Move the finished temp link over `dst`. Windows refuses a plain replace when a
+/// directory-flavoured link is involved: the old entry then moves aside until the new
+/// link has taken its name, and comes back when that fails.
+fn replace_with_link(tmp: &Path, dst: &Path) -> FsResult<()> {
+    let first = replace_with(tmp, dst);
+    if first.is_ok() || !cfg!(windows) {
+        return first;
+    }
+    let aside = temp_sibling(dst);
+    crate::mv::rename(dst, &aside, crate::mv::RenameMode::NoReplace)?;
+    if let Err(e) = crate::mv::rename(tmp, dst, crate::mv::RenameMode::NoReplace) {
+        let _ = crate::mv::rename(&aside, dst, crate::mv::RenameMode::NoReplace);
+        return Err(e);
+    }
+    if crate::delete::delete_link(&aside).is_err() {
+        remove_partial(&aside);
     }
     Ok(())
 }

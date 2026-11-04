@@ -85,10 +85,6 @@ impl Watched {
             .ok()
             .map(|rest| if rest.as_os_str().is_empty() { self.dir.clone() } else { self.dir.join(rest) })
     }
-
-    fn gone(&self) -> bool {
-        !crate::list::exists_nofollow(&self.dir)
-    }
 }
 
 type Registry = Arc<Mutex<HashMap<WatchId, Watched>>>;
@@ -533,23 +529,33 @@ fn notify_err(op: &'static str, path: Option<&Path>, e: notify::Error) -> FsErro
     fe
 }
 
-/// Map debounced notify events onto per-watch events.
+/// Map debounced notify events onto per-watch events. Directories are checked with the
+/// registry unlocked: a dead network share can take a minute to answer, and `watch` /
+/// `unwatch` on the UI thread wait for this lock.
 fn dispatch(reg: &Registry, res: DebounceEventResult) -> Vec<WatchEvent> {
-    let mut reg = reg.lock();
     let events = match res {
         Ok(ev) => ev,
         Err(errors) => {
             log::warn!("watcher errors: {errors:?}");
+            let watches: Vec<(WatchId, PathBuf)> = reg
+                .lock()
+                .iter_mut()
+                .map(|(id, w)| {
+                    w.activity += 1;
+                    (*id, w.dir.clone())
+                })
+                .collect();
+            let checked: Vec<(WatchId, bool)> =
+                watches.into_iter().map(|(id, dir)| (id, !crate::list::exists_nofollow(&dir))).collect();
+            let mut reg = reg.lock();
             let mut out = Vec::new();
-            for (id, w) in reg.iter_mut() {
-                w.activity += 1;
-                if w.gone() {
-                    if !w.lost {
-                        w.lost = true;
-                        out.push(WatchEvent { id: *id, kind: WatchKind::Lost });
-                    }
-                } else {
-                    out.push(WatchEvent { id: *id, kind: WatchKind::Rescan });
+            for (id, gone) in checked {
+                let Some(w) = reg.get_mut(&id) else { continue };
+                if !gone {
+                    out.push(WatchEvent { id, kind: WatchKind::Rescan });
+                } else if !w.lost {
+                    w.lost = true;
+                    out.push(WatchEvent { id, kind: WatchKind::Lost });
                 }
             }
             return out;
@@ -557,46 +563,53 @@ fn dispatch(reg: &Registry, res: DebounceEventResult) -> Vec<WatchEvent> {
     };
     let mut changed: HashMap<WatchId, Vec<PathBuf>> = HashMap::new();
     let mut rescan: Vec<WatchId> = Vec::new();
-    let mut lost: Vec<WatchId> = Vec::new();
-    for ev in &events {
-        if ev.need_rescan() {
-            for (id, w) in reg.iter_mut() {
-                w.activity += 1;
-                rescan.push(*id);
-            }
-            continue;
-        }
-        for p in &ev.paths {
-            for (id, w) in reg.iter_mut() {
-                let Some(local) = w.local(p) else {
-                    // An ancestor of the watched directory was removed or renamed away.
-                    if w.dir.starts_with(p) && w.gone() && !lost.contains(id) {
-                        lost.push(*id);
-                    }
-                    continue;
-                };
-                w.activity += 1;
-                if local == w.dir {
-                    let removed = matches!(
-                        ev.kind,
-                        EventKind::Remove(RemoveKind::Folder | RemoveKind::Any)
-                            | EventKind::Modify(ModifyKind::Name(_))
-                    );
-                    if removed && w.gone() && !lost.contains(id) {
-                        lost.push(*id);
-                    }
-                    continue;
+    // Watches whose directory may be gone, checked once the lock is released.
+    let mut suspects: HashMap<WatchId, PathBuf> = HashMap::new();
+    {
+        let mut reg = reg.lock();
+        for ev in &events {
+            if ev.need_rescan() {
+                for (id, w) in reg.iter_mut() {
+                    w.activity += 1;
+                    rescan.push(*id);
                 }
-                let inside = w.recursive || local.parent() == Some(w.dir.as_path());
-                if inside {
-                    let v = changed.entry(*id).or_default();
-                    if !v.contains(&local) {
-                        v.push(local);
+                continue;
+            }
+            for p in &ev.paths {
+                for (id, w) in reg.iter_mut() {
+                    let Some(local) = w.local(p) else {
+                        // An ancestor of the watched directory was removed or renamed away.
+                        if w.dir.starts_with(p) {
+                            suspects.entry(*id).or_insert_with(|| w.dir.clone());
+                        }
+                        continue;
+                    };
+                    w.activity += 1;
+                    if local == w.dir {
+                        let removed = matches!(
+                            ev.kind,
+                            EventKind::Remove(RemoveKind::Folder | RemoveKind::Any)
+                                | EventKind::Modify(ModifyKind::Name(_))
+                        );
+                        if removed {
+                            suspects.entry(*id).or_insert_with(|| w.dir.clone());
+                        }
+                        continue;
+                    }
+                    let inside = w.recursive || local.parent() == Some(w.dir.as_path());
+                    if inside {
+                        let v = changed.entry(*id).or_default();
+                        if !v.contains(&local) {
+                            v.push(local);
+                        }
                     }
                 }
             }
         }
     }
+    let lost: Vec<WatchId> =
+        suspects.into_iter().filter(|(_, dir)| !crate::list::exists_nofollow(dir)).map(|(id, _)| id).collect();
+    let mut reg = reg.lock();
     let mut out = Vec::new();
     for id in &lost {
         if let Some(w) = reg.get_mut(id)

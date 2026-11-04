@@ -349,7 +349,10 @@ impl Write for FakeWrite {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         tick(&self.faults, buf.len() as u64)?;
         self.buf.extend_from_slice(buf);
-        self.counter.fetch_add(buf.len() as u64, Ordering::Relaxed);
+        // Counts file data: the note beside a partial file is not a sent byte.
+        if !self.path.ends_with(crate::transfer::PART_INFO_SUFFIX) {
+            self.counter.fetch_add(buf.len() as u64, Ordering::Relaxed);
+        }
         Ok(buf.len())
     }
     fn flush(&mut self) -> io::Result<()> {

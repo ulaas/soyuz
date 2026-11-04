@@ -7,7 +7,7 @@ use soyuz_vfs::RemoteUri;
 use soyuz_vfs::dav_server::DavServer;
 use soyuz_vfs::local::LocalProvider;
 use soyuz_vfs::registry::{self, Credentials, Hooks, HostKeyPrompt};
-use soyuz_vfs::transfer::{FileCopy, NoHooks, copy_file};
+use soyuz_vfs::transfer::{FileCopy, NoHooks, copy_file, mark_partial};
 
 struct TestHooks;
 
@@ -81,6 +81,7 @@ fn webdav_provider_against_local_server() {
     let dst = local_dir.path().join("down.bin");
     std::fs::write(local_dir.path().join(".down.bin.soyuzpart"), &data[..100_000]).unwrap();
     let d = dst.to_string_lossy().into_owned();
+    mark_partial(&*dav, "/up/big.bin", &local, &d).unwrap();
     let st = copy_file(
         &FileCopy {
             src: &*dav,
