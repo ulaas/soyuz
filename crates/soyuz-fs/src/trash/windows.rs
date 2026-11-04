@@ -184,6 +184,9 @@ mod imp {
         if let TrashSupport::Unsupported(why) = support(&abs) {
             return Err(FsError::with_message(FsErrorKind::Unsupported, "trash", Some(path), why));
         }
+        // Through junctions and folder links: the item's real volume decides the bin, and
+        // the bin's name for it is the path it can actually be moved from.
+        let abs = real_parent_path(&abs);
         let root = crate::volumes::volume_root(&abs)?;
         if crate::path::is_root(&abs) || abs == root {
             return Err(FsError::with_message(
@@ -203,6 +206,17 @@ mod imp {
         }
         let bin = ensure_bin(&root)?;
         trash_into(&abs, &bin)
+    }
+
+    /// `path` with its parent folder resolved (the last component stays: a link is trashed
+    /// as itself, never what it points to). The path unchanged when the parent cannot be
+    /// resolved.
+    pub(crate) fn real_parent_path(path: &Path) -> PathBuf {
+        let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else { return path.to_path_buf() };
+        match std::fs::canonicalize(parent) {
+            Ok(p) => crate::path::strip_verbatim(&p).join(name),
+            Err(_) => path.to_path_buf(),
+        }
     }
 
     /// Move `abs` into the bin directory `bin` as a `$I`/`$R` pair.
@@ -238,7 +252,12 @@ mod imp {
             }
             if let Err(e) = wfs::move_file(abs, &r_path, 0) {
                 let _ = std::fs::remove_file(&i_path);
-                return Err(err::io("trash", abs, e));
+                let code = e.raw_os_error();
+                let mut fe = err::io("trash", abs, e);
+                if code == Some(17) {
+                    fe.message = "the recycle bin is on another volume than the item".into();
+                }
+                return Err(fe);
             }
             return Ok(TrashItem {
                 id: r_name,
@@ -278,12 +297,12 @@ mod imp {
     pub(crate) fn list() -> FsResult<Vec<TrashItem>> {
         let sid = sid()?;
         let mask = volume::logical_drives();
+        let letters =
+            (0..26u8).filter(|i| mask & (1 << i) != 0).map(|i| PathBuf::from(format!("{}:\\", (b'A' + i) as char)));
+        // Folder-mounted volumes have bins of their own, which `trash` writes to.
+        let roots = unique_roots(letters.chain(volume::volume_mount_paths()));
         let mut out = Vec::new();
-        for i in 0..26u8 {
-            if mask & (1 << i) == 0 {
-                continue;
-            }
-            let root = PathBuf::from(format!("{}:\\", (b'A' + i) as char));
+        for root in roots {
             // Fixed and removable drives only: never touch network or optical drives here.
             if !matches!(volume::drive_type(&root), 2 | 3) {
                 continue;
@@ -294,6 +313,17 @@ mod imp {
             }
         }
         Ok(out)
+    }
+
+    /// Each root once, whatever its spelling: a drive root comes from the letters and the mount list.
+    pub(crate) fn unique_roots(roots: impl Iterator<Item = PathBuf>) -> Vec<PathBuf> {
+        let mut seen = std::collections::HashSet::new();
+        roots
+            .filter(|r| {
+                let key = r.to_string_lossy().trim_end_matches('\\').to_lowercase();
+                seen.insert(key)
+            })
+            .collect()
     }
 
     /// Validate that `item` names a `$R` entry with its `$I` record next to it.
@@ -422,6 +452,31 @@ mod tests {
         assert_eq!(kept_ext("report.final.docx"), ".docx");
         assert_eq!(kept_ext(".gitignore"), "");
         assert_eq!(kept_ext("noext"), "");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn each_root_is_listed_once() {
+        use std::path::PathBuf;
+        let roots = ["C:/", "D:/", "c:/", "C:/mnt/data/", "C:/MNT/data"].map(|r| PathBuf::from(r.replace('/', "\\")));
+        let got = unique_roots(roots.into_iter());
+        let want = ["C:/", "D:/", "C:/mnt/data/"].map(|r| PathBuf::from(r.replace('/', "\\")));
+        assert_eq!(got, want);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_in_the_path_is_resolved() {
+        let d = tempfile::tempdir().unwrap();
+        let real = d.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = d.path().join("link");
+        crate::links::junction(&real, &link).unwrap();
+        let got = real_parent_path(&link.join("item.txt"));
+        assert_eq!(got.file_name().unwrap(), "item.txt");
+        assert_eq!(got.parent().unwrap().file_name().unwrap(), "real");
+        // The junction itself is what gets trashed, not its target.
+        assert_eq!(real_parent_path(&link).file_name().unwrap(), "link");
     }
 
     #[cfg(windows)]
