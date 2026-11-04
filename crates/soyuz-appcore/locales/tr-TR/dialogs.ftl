@@ -395,6 +395,7 @@ dialogs-transfer-move-many = { $count } öğe şuraya taşınacak:
 dialogs-transfer-copy-many = { $count } öğe şuraya kopyalanacak:
 dialogs-transfer-dest = Hedef klasör
 dialogs-transfer-dest-hint = Klasör yolu
+dialogs-transfer-relative = Klasörün sürücüden veya kökten başlayan tam yolunu yazın.
 
 ## Open with
 

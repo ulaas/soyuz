@@ -138,9 +138,8 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     let ai = app.core.ai.panel.open && here(app, Panel::Assistant);
     let right = screen.right() - if ai { app.core.ai.panel.width } else { 0.0 };
     let anchor = Rect::from_min_max(screen.min, pos2(right, screen.bottom() - bottom_offset));
-    for action in crate::ui::toasts::show(&mut app.core.ui.toasts, &ctx, anchor, app.core.ui.reduced_motion) {
-        app.core.cmds.push(Cmd::Action(action));
-    }
+    let clicked = crate::ui::toasts::show(&mut app.core.ui.toasts, &ctx, anchor, app.core.ui.reduced_motion);
+    app.core.cmds.extend(clicked);
 }
 
 fn status_info(app: &SoyuzApp) -> StatusInfo {

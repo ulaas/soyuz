@@ -192,7 +192,7 @@ fn submit(
     }
     let mut meta = JobMeta::new(op, &items, dest);
     if clear {
-        meta = meta.after(AfterJob::ClearClipboard);
+        meta = meta.after(AfterJob::ClearClipboard { generation: app.fileops.clipboard.generation() });
     }
     if matches!(op, OpKind::NewFolder | OpKind::Rename) {
         meta = meta.quiet();

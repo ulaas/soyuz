@@ -122,8 +122,11 @@ pub enum Cmd {
     /// Keep an Open with… choice for the extension `ext` (`[open]`): the last-used app
     /// (with `remember_choice`), and `app` as the default (`always`) or no default.
     RememberOpenWith {
+        /// The file the choice was made for (a rule naming a longer extension of it must
+        /// not keep answering for it).
+        name: String,
         ext: String,
-        app: AppInfo,
+        app: Box<AppInfo>,
         always: bool,
     },
     /// Open a path in a new Soyuz window (in-process or a new process, see

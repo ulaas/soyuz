@@ -26,6 +26,15 @@ impl PaneId {
     }
 }
 
+/// A listing error the pane does not show as a failure.
+#[derive(Clone, Debug)]
+pub struct ListingWarning {
+    /// A refresh failed and the old entries stayed; otherwise the listing stopped partway
+    /// and the pane shows what it got.
+    pub kept_old: bool,
+    pub error: FsError,
+}
+
 #[derive(Clone, Debug)]
 pub enum ListingStatus {
     Loading {
@@ -96,6 +105,9 @@ pub struct Pane {
     pub status: ListingStatus,
     /// A soft relist (refresh / rescan) is running; contents stay visible.
     pub refreshing: bool,
+    /// A listing ended with an error the pane does not show as a failure; a toast tells
+    /// the user (taken by `ops::handle_msg`).
+    pub listing_warning: Option<ListingWarning>,
     /// Visible order must be recomputed before the next draw.
     pub dirty: bool,
     /// Changes reported while a listing was running (it may already have enumerated past
@@ -178,6 +190,7 @@ impl Pane {
             ctl: None,
             status: ListingStatus::Loading { since: Instant::now() },
             refreshing: false,
+            listing_warning: None,
             dirty: true,
             deferred_paths: Vec::new(),
             relist_pending: false,
@@ -285,8 +298,15 @@ impl Pane {
             if done {
                 self.refreshing = false;
                 if let Some(e) = err {
-                    self.status = ListingStatus::Failed(e);
-                    self.entries.clear();
+                    if e.kind == soyuz_core::FsErrorKind::NotFound {
+                        self.status = ListingStatus::Failed(e);
+                        self.entries.clear();
+                    } else {
+                        // The folder is still there: keep what the pane shows, cursor and
+                        // selection included, and say the view may be out of date.
+                        self.status = ListingStatus::Ready;
+                        self.listing_warning = Some(ListingWarning { kept_old: true, error: e });
+                    }
                 } else {
                     let mut fresh = chunk;
                     sort_entries(&mut fresh, &self.view.sort);
@@ -310,6 +330,7 @@ impl Pane {
                 Some(e) if self.entries.is_empty() => ListingStatus::Failed(e),
                 Some(e) => {
                     log::warn!("listing {} incomplete: {e}", self.location.display());
+                    self.listing_warning = Some(ListingWarning { kept_old: false, error: e });
                     ListingStatus::Ready
                 }
                 None => ListingStatus::Ready,
@@ -443,7 +464,11 @@ impl Pane {
         }
         self.filter = text.to_string();
         self.filter_pattern = compile_filter(text);
-        self.dirty = true;
+        self.recompute_visible();
+        // A cursor the filter hides must not stay the target of Delete, Rename or Enter.
+        if self.cursor.is_some() && self.cursor_pos().is_none() {
+            self.cursor = None;
+        }
     }
 
     pub fn filter_active(&self) -> bool {
@@ -491,7 +516,8 @@ impl Pane {
     }
 
     /// Selected entries in visible order (falls back to the cursor entry when nothing
-    /// is selected).
+    /// visible is selected and the cursor itself is on screen: an entry the filter hides
+    /// is never acted on).
     pub fn selected_entries(&self) -> Vec<&EntryInfo> {
         let mut v: Vec<&EntryInfo> = self
             .visible
@@ -500,7 +526,8 @@ impl Pane {
             .map(|&i| &self.entries[i])
             .collect();
         if v.is_empty()
-            && let Some(e) = self.cursor.as_deref().and_then(|c| self.entry(c))
+            && let Some(pos) = self.cursor_pos()
+            && let Some(e) = self.entry_at(pos)
         {
             v.push(e);
         }
@@ -695,6 +722,56 @@ mod tests {
         p.refresh_visible(true, true);
         assert_eq!(shown(&p), ["a"]);
         assert!(p.entry("zz").is_some());
+    }
+
+    #[test]
+    fn an_entry_the_filter_hides_is_never_the_target() {
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        p.on_listing(vec![file("a.txt"), file("b.txt")], true, None);
+        p.refresh_visible(true, true);
+        p.move_cursor(0, false, false);
+        assert_eq!(p.selected_entries()[0].name, "a.txt");
+        p.set_filter("b");
+        assert!(p.selected_entries().is_empty(), "a.txt is selected but off screen");
+        assert_eq!(p.cursor_pos(), None);
+        assert_eq!(p.cursor, None);
+        // A cursor hidden some other way (hidden files turned off) is not a target either.
+        p.set_filter("");
+        p.refresh_visible(true, true);
+        p.cursor = Some("a.txt".into());
+        p.selection.clear();
+        assert_eq!(p.selected_entries().len(), 1);
+        p.visible.retain(|&i| p.entries[i].name != "a.txt");
+        assert!(p.selected_entries().is_empty());
+    }
+
+    #[test]
+    fn a_failed_refresh_keeps_the_entries_unless_the_folder_is_gone() {
+        use soyuz_core::FsErrorKind;
+        let err = |kind| FsError::with_message(kind, "read_dir", None, "boom");
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        p.on_listing(vec![file("a"), file("b")], true, None);
+        p.move_cursor(0, false, false);
+        p.refreshing = true;
+        p.on_listing(Vec::new(), true, Some(err(FsErrorKind::Io)));
+        assert_eq!(p.entries.len(), 2, "the pane stays as it was");
+        assert!(matches!(p.status, ListingStatus::Ready));
+        assert!(p.cursor.is_some() && !p.selection.is_empty());
+        assert!(p.listing_warning.take().is_some_and(|w| w.kept_old));
+        p.refreshing = true;
+        p.on_listing(Vec::new(), true, Some(err(FsErrorKind::NotFound)));
+        assert!(p.entries.is_empty() && matches!(p.status, ListingStatus::Failed(_)));
+        assert!(p.listing_warning.is_none());
+    }
+
+    #[test]
+    fn a_listing_that_stops_partway_warns() {
+        let err = FsError::with_message(soyuz_core::FsErrorKind::Io, "read_dir", None, "stalled");
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        p.status = ListingStatus::Loading { since: Instant::now() };
+        p.on_listing(vec![file("a")], true, Some(err));
+        assert!(matches!(p.status, ListingStatus::Ready));
+        assert!(p.listing_warning.take().is_some_and(|w| !w.kept_old));
     }
 
     /// Changes reported while a listing runs wait for it; a relist request wins.

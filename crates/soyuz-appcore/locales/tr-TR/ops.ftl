@@ -170,6 +170,8 @@ ops-still-undoing = Bu işlem hâlâ geri alınıyor
 ops-nothing-to-redo = Yinelenecek bir şey yok
 ops-history-empty = Geçmiş zaten boş
 ops-not-available = Şu anda kullanılamıyor
+ops-relist-failed = Bu klasör yenilenemedi; önceki içerik gösteriliyor
+ops-listing-incomplete = Bu klasör ancak kısmen listelenebildi
 
 ## Sürükle ve bırak
 

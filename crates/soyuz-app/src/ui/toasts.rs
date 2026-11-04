@@ -1,10 +1,10 @@
 //! Stacked, animated toast notifications (bottom-right). Toasts auto-dismiss (paused
-//! while hovered) and may carry one action button whose [`Action`] is dispatched through
-//! the normal action pipeline — e.g. `Action::Undo` for "Moved 3 items · Undo".
+//! while hovered) and may carry one action button whose command ([`Toast::command`]) runs
+//! through the normal pipeline — e.g. undoing the entry a "Moved 3 items · Undo" names.
 
 use egui::{Align2, Area, Color32, CornerRadius, FontId, Id, Order, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
-use soyuz_core::config::Action;
 
+use crate::cmd::Cmd;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::widgets::trunc_galley;
@@ -28,13 +28,13 @@ fn semibold(size: f32) -> FontId {
     FontId::new(size, egui::FontFamily::Name(crate::theme::fonts::SEMIBOLD.into()))
 }
 
-/// Draw the stack anchored to the bottom-right of `area`. Returns actions clicked.
+/// Draw the stack anchored to the bottom-right of `area`. Returns the commands clicked.
 ///
 /// Every toast has one fixed size: text that does not fit is cut with an ellipsis
 /// and shown whole in a tooltip. Hovering a toast pauses its timer (the progress line
 /// at the bottom stops) and reveals the close button. Older toasts glide up when a
 /// new one arrives and settle when one below them closes (reduced motion: jumps).
-pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion: bool) -> Vec<Action> {
+pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion: bool) -> Vec<Cmd> {
     let mut clicked = Vec::new();
     if toasts.live.is_empty() {
         return clicked;
@@ -124,7 +124,7 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
             // the action button sits left of it.
             let close_r = Rect::from_center_size(pos2(r.right() - 20.0, cy), vec2(24.0, 24.0));
             let mut text_right = close_r.left() - 4.0;
-            if let Some((label, action)) = &l.toast.action {
+            if let Some((label, _)) = &l.toast.action {
                 let g = painter.layout_no_wrap(label.clone(), semibold(12.5), p.accent);
                 let w = (g.size().x + 22.0).max(56.0);
                 let ar = Rect::from_center_size(pos2(close_r.left() - 4.0 - w / 2.0, cy), vec2(w, 26.0));
@@ -142,7 +142,7 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
                 }
                 painter.galley(ar.center() - g.size() / 2.0, g, p.accent);
                 if aresp.clicked() {
-                    clicked.push(action.clone());
+                    clicked.extend(l.toast.command());
                     close = true;
                 }
                 text_right = ar.left() - 10.0;

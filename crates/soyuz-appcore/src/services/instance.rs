@@ -309,12 +309,34 @@ impl Drop for Listener {
     }
 }
 
+/// The longest line a launcher may send (a request lists the paths to open).
+const MAX_LINE: u64 = 1024 * 1024;
+
+/// One line of at most `limit` bytes into `out` (a longer one comes back cut, and fails
+/// to parse); 0 at the end of the stream or on an error.
+fn read_line_bounded(reader: &mut impl std::io::BufRead, out: &mut String, limit: u64) -> usize {
+    std::io::Read::take(reader, limit).read_line(out).unwrap_or(0)
+}
+
+#[cfg(test)]
+#[test]
+fn a_line_without_an_end_is_cut_at_the_limit() {
+    let mut r = std::io::Cursor::new(vec![b'x'; 1000]);
+    let mut out = String::new();
+    assert_eq!(read_line_bounded(&mut r, &mut out, 16), 16);
+    assert_eq!(out.len(), 16);
+    let mut r = std::io::Cursor::new(b"short\nnext\n".to_vec());
+    let mut out = String::new();
+    read_line_bounded(&mut r, &mut out, 16);
+    assert_eq!(out, "short\n");
+}
+
 /// One launcher connection (its own thread): hello, request, `queued`, then the UI's answer.
 fn serve_connection<S: std::io::Read + Write + Clone>(shared: &Shared, stream: S) {
     let mut out = stream.clone();
     let mut reader = BufReader::new(stream);
     let mut first = String::new();
-    if reader.read_line(&mut first).unwrap_or(0) == 0 {
+    if read_line_bounded(&mut reader, &mut first, MAX_LINE) == 0 {
         return;
     }
     let Ok(hello) = serde_json::from_str::<Hello>(first.trim()) else {
@@ -338,7 +360,7 @@ fn serve_connection<S: std::io::Read + Write + Clone>(shared: &Shared, stream: S
         );
     }
     let mut second = String::new();
-    if reader.read_line(&mut second).unwrap_or(0) == 0 {
+    if read_line_bounded(&mut reader, &mut second, MAX_LINE) == 0 {
         return;
     }
     let req = match serde_json::from_str::<RequestLine>(second.trim()) {

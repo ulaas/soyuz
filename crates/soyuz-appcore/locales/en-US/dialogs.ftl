@@ -441,6 +441,7 @@ dialogs-transfer-move-many = Move { $count } items to:
 dialogs-transfer-copy-many = Copy { $count } items to:
 dialogs-transfer-dest = Destination folder
 dialogs-transfer-dest-hint = Folder path
+dialogs-transfer-relative = Type the folder's full path, starting at the drive or root.
 
 ## Open with
 

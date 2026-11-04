@@ -153,7 +153,12 @@ fn open_with_default(data: PathBuf) {
     let mut app = common::new_app(c, &data);
     app.core.cmds.push(Cmd::ChooseOpenWith(data.join("a.txt")));
     // Kept without opening anything: `.rs` gets the tool as its default and last used.
-    app.core.cmds.push(Cmd::RememberOpenWith { ext: "rs".into(), app: model::custom_app(&tool), always: true });
+    app.core.cmds.push(Cmd::RememberOpenWith {
+        name: "main.rs".into(),
+        ext: "rs".into(),
+        app: Box::new(model::custom_app(&tool)),
+        always: true,
+    });
     let steps = vec![
         Step::new(
             "the default listed, the field empty, Always ticked",
