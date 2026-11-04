@@ -47,6 +47,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[behaviour]`](#behaviour)
 - [`[open]`](#open)
 - [`[[open.default_apps]]`](#opendefault_apps)
+- [`[[open.programs]]`](#openprograms)
 - [`[jobs]`](#jobs)
 - [`[terminal]`](#terminal)
 - [`[archive]`](#archive)
@@ -355,12 +356,27 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 |---|---|---|---|
 | `remember_choice` | boolean | `true` | Open with… preselects the application last chosen for the same file type. |
 | `choose_when_unknown` | boolean | `true` | A file no application is registered for (an unknown type, or one without an extension) opens Open with… on Enter / double-click instead of an error; off = the error notification. |
+| `always_for_unknown` | boolean | `true` | Open with… for a type no application is registered for starts with "Always use this app" ticked, so the program you pick opens that type from then on; off = it starts unticked and every file of the type asks again. |
 | `run_binaries` | boolean | `true` | Enter / double-click on a native program (Linux: an executable ELF binary or AppImage) runs it, in its own folder, ahead of `default_apps`; off = it opens like any other file. Executable scripts and shared libraries are never run. |
 | `store_apps_via_explorer` | boolean | `true` | Windows: a file whose default app is a Store app Soyuz cannot start itself (Photos, …) is handed to Explorer, which opens it in that app; off = it opens with the first registered program Soyuz can start (or Open with… when there is none). |
 | `elevate_when_required` | boolean | `true` | Windows: Enter / double-click on a program that needs administrator rights (its manifest asks for them, e.g. most installers) starts it through the UAC prompt; off = it fails with an error and only "Run as administrator" starts it. |
 | `last_used` | table: name → string | `{}` | The application last chosen in Open with…, by extension (its `id`, else its program path; `"."` for files without an extension). Written by Soyuz. |
 
 ## `[[open.default_apps]]`
+
+One `[[open.default_apps]]` rule.
+
+A list of tables; empty by default. Defaults below are for a new entry's omitted keys.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `extensions` | array of strings | — | Extensions without the dot, any case (`["mp4", "mkv"]`); `"tar.gz"` matches the end of the name; `"."` matches files without an extension (`README`, `.bashrc`). |
+| `name` | string | — | The application's name (shown in Settings and Open with…). |
+| `program` | string | — | The program: an absolute path (macOS: the `.app` bundle). |
+| `args` | array of strings | — | Arguments; `%1` is replaced by the file (appended when no argument has a placeholder). On Windows, command-line fragments as the registry has them. |
+| `id` | string | — | The registered application it came from (ProgId / desktop entry / bundle id); empty for a program chosen by path. |
+
+## `[[open.programs]]`
 
 One `[[open.default_apps]]` rule.
 

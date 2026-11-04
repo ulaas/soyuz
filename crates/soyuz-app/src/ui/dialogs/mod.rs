@@ -71,6 +71,8 @@ pub trait Dialog {
     }
     /// Draw the body. Return `false` to close.
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool;
+    /// Draw what stacks on top of the dialog (a file picker), outside its modal or window.
+    fn overlay(&mut self, _ctx: &egui::Context) {}
 }
 
 #[derive(Default)]
@@ -181,6 +183,12 @@ impl Top<'_> {
             Top::Model(m) => show_model(ui, m, ctx),
         }
     }
+
+    fn overlay(&mut self, ctx: &egui::Context) {
+        if let Top::Gui(d) = self {
+            d.overlay(ctx);
+        }
+    }
 }
 
 impl Dialogs {
@@ -216,6 +224,8 @@ impl Dialogs {
             } else {
                 self.stack.pop();
             }
+        } else {
+            top.overlay(ctx);
         }
     }
 

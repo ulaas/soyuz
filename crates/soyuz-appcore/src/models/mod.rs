@@ -9,6 +9,7 @@ pub mod context_menu;
 pub mod devices;
 pub mod dialogs;
 pub mod disk_health;
+pub mod file_browser;
 pub mod focus_mode;
 pub mod folder_stats;
 pub mod frontend;

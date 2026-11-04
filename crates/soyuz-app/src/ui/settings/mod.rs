@@ -41,6 +41,8 @@ enum PickPurpose {
     ThemeImport,
     /// `[media] ffmpeg_dir`: the folder of the picked library file.
     FfmpegDir,
+    /// The program of the default-app rule at this index.
+    DefaultAppProgram(usize),
 }
 
 /// Delay between the last edit and writing `config.toml`.
@@ -712,6 +714,15 @@ fn start_theme_export(app: &mut SoyuzApp) {
     app.gui.settings.picker = Some((PickPurpose::ThemeExport, picker));
 }
 
+/// Open the program browser for the default-app rule `rule`.
+pub(super) fn start_default_app_pick(app: &mut SoyuzApp, rule: usize) {
+    let picker = crate::ui::path_picker::PathPicker::programs(
+        tr!("dialogs-openwith-browse-title"),
+        crate::models::requests::open_with::browse_start(&app.gui.settings.draft.open),
+    );
+    app.gui.settings.picker = Some((PickPurpose::DefaultAppProgram(rule), picker));
+}
+
 /// Write the draft's resolved palettes (theme + accent + overrides) as a theme file.
 fn export_theme(app: &mut SoyuzApp, path: &std::path::Path) {
     let d = &app.gui.settings.draft;
@@ -769,6 +780,7 @@ fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
             app.gui.settings.picker = None
         }
         PickResult::Picked(path) => {
+            let picked_name = picker.picked_name();
             app.gui.settings.picker = None;
             match purpose {
                 PickPurpose::Export => {
@@ -778,6 +790,18 @@ fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
                 PickPurpose::ThemeExport => export_theme(app, &path),
                 PickPurpose::ThemeImport => import_theme(app, &path),
                 PickPurpose::FfmpegDir => media::picked(app, &path),
+                PickPurpose::DefaultAppProgram(i) => {
+                    if let Some(rule) = app.gui.settings.draft.open.default_apps.get_mut(i) {
+                        if rule.name.trim().is_empty() {
+                            rule.name = picked_name.unwrap_or_else(|| {
+                                path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+                            });
+                        }
+                        rule.id.clear();
+                        rule.args.clear();
+                        rule.program = path;
+                    }
+                }
             }
         }
     }

@@ -402,13 +402,22 @@ dialogs-openwith-title = Birlikte aç: “{ $name }”
 dialogs-openwith-looking = Uygulamalar aranıyor…
 dialogs-openwith-none = Bu dosya türü için kayıtlı uygulama yok
 dialogs-openwith-default-handler = { $app } (varsayılan işleyiciyle açılır)
-dialogs-openwith-other = Ya da başka bir program (tam yol):
+dialogs-openwith-other = Ya da bir program yolu:
 dialogs-openwith-open = Aç
 dialogs-openwith-always = .{ $ext } dosyaları için her zaman bu uygulamayı kullan
 dialogs-openwith-always-noext = Uzantısı olmayan dosyalar için her zaman bu uygulamayı kullan
 dialogs-openwith-always-system = Bu uygulama sistem üzerinden açılır, bu yüzden Soyuz'da varsayılan olamaz
 dialogs-openwith-not-program = { $path } bir program dosyası değil
 dialogs-openwith-choose = Bir uygulama seçin veya bir program yolu yazın
+dialogs-openwith-browse = Gözat…
+dialogs-openwith-back = Geri
+dialogs-openwith-browse-tip = Bu bilgisayarda bir program bulun (Alt+B)
+dialogs-openwith-browse-title = Bir program seçin
+dialogs-openwith-all-files = Tüm dosyalar
+dialogs-openwith-filter = Süzmek için yazın
+dialogs-openwith-place-start-menu = Başlat menüsü
+dialogs-openwith-place-start-menu-all = Başlat menüsü (tüm kullanıcılar)
+dialogs-openwith-place-user-programs = Programlarım
 
 ## MCP approval
 

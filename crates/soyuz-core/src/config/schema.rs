@@ -607,6 +607,10 @@ pub struct OpenSection {
     /// extension) opens Open with… on Enter / double-click instead of an error; off = the
     /// error notification.
     pub choose_when_unknown: bool,
+    /// Open with… for a type no application is registered for starts with "Always use this
+    /// app" ticked, so the program you pick opens that type from then on; off = it starts
+    /// unticked and every file of the type asks again.
+    pub always_for_unknown: bool,
     /// Enter / double-click on a native program (Linux: an executable ELF binary or
     /// AppImage) runs it, in its own folder, ahead of `default_apps`; off = it opens like
     /// any other file. Executable scripts and shared libraries are never run.
@@ -622,6 +626,10 @@ pub struct OpenSection {
     /// Default applications by file type: the first rule naming the file's extension wins;
     /// files without a rule open with the system's default application.
     pub default_apps: Vec<DefaultApp>,
+    /// Programs picked by path in Open with… (Browse, or typed), newest first, at most
+    /// [`OpenSection::MAX_PROGRAMS`]: listed there for every file. Written by Soyuz when
+    /// `remember_choice` is on; Settings removes them.
+    pub programs: Vec<DefaultApp>,
     /// The application last chosen in Open with…, by extension (its `id`, else its program
     /// path; `"."` for files without an extension). Written by Soyuz.
     pub last_used: BTreeMap<String, String>,
@@ -671,6 +679,16 @@ impl DefaultApp {
 impl OpenSection {
     /// The key (in `extensions` and `last_used`) of files without an extension.
     pub const NO_EXTENSION: &'static str = ".";
+
+    /// How many programs [`OpenSection::programs`] keeps.
+    pub const MAX_PROGRAMS: usize = 16;
+
+    /// Keep `app` first in [`OpenSection::programs`] (once, the oldest beyond the limit go).
+    pub fn remember_program(&mut self, app: DefaultApp) {
+        self.programs.retain(|p| p.program != app.program);
+        self.programs.insert(0, DefaultApp { extensions: Vec::new(), ..app });
+        self.programs.truncate(Self::MAX_PROGRAMS);
+    }
 
     /// The extension of `name`: the last one, lowercase (`None` for `README` or
     /// `.bashrc`).

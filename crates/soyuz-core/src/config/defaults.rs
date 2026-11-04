@@ -245,10 +245,12 @@ impl Default for OpenSection {
         OpenSection {
             remember_choice: true,
             choose_when_unknown: true,
+            always_for_unknown: true,
             run_binaries: true,
             store_apps_via_explorer: true,
             elevate_when_required: true,
             default_apps: Vec::new(),
+            programs: Vec::new(),
             last_used: BTreeMap::new(),
         }
     }

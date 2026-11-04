@@ -191,8 +191,14 @@ program needs them*). Any program can also be started elevated from its context 
 **Unrecognized files.** A file no app is registered for, an unknown type or a file
 without an extension, opens *Open with…* on `Enter` instead of an error
 (`[open] choose_when_unknown`, *Settings → Behaviour → Ask for unrecognized files*). The
-list is then usually empty: type or paste the program's full path, tick **Always use this
-app**, and that type opens with it from then on. Files without an extension (`README`,
+list is then usually empty, so press **Browse…**: it shows only programs (on Windows, Start
+menu shortcuts count, and pick the program they point at), filters as you type, and has
+the usual program folders one click away. **All files** lists everything else too.
+**Always use this app** starts ticked for such a type, so what you pick opens it from then
+on (`[open] always_for_unknown`, *Settings → Behaviour → Keep the choice for unrecognized
+files*). Programs you picked stay listed in *Open with…* for every file (`[open] programs`;
+*Settings → Behaviour → Remembered programs* forgets them). You can still type or paste a
+path. Files without an extension (`README`,
 `Makefile`, `.bashrc`) share one default, shown as **Always use this app for files without
 an extension** and kept as the extension `.` in `[[open.default_apps]]`.
 

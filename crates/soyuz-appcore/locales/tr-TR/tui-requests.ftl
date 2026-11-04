@@ -15,6 +15,7 @@ tui-requests-columns-hints = Yukarı/Aşağı seç · Space göster veya gizle �
 
 ## Open with
 tui-requests-openwith-hints = Yukarı/Aşağı seç · Enter aç · Tab sonraki · Boşluk işaretle · Esc vazgeç
+tui-requests-openwith-browse-hints = Süzmek için yazın · Yukarı/Aşağı seç · Enter aç ya da seç · Geri tuşu üst klasör · Tab sonraki · Esc geri
 
 ## Interrupted operations
 tui-requests-recovery-hints = Yukarı/Aşağı işlemler · R sürdür · B geri al · D yoksay · L veya Esc sonra karar ver
