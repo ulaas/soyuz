@@ -21,6 +21,8 @@ settings-reset-section = Bölümü sıfırla
 settings-reset-section-tooltip = Bu bölümün varsayılanlarını geri yükle
 settings-reset-section-done = { $section } varsayılanlara sıfırlandı
 settings-save-failed = config.toml kaydedilemedi
+settings-save-refused = Ayarlar kaydedilmedi: config.toml dosyasında hata var
+settings-save-refused-body = Dosyaya dokunulmadı. Dosyayı düzeltin, değişiklikleriniz o zaman kaydedilir.
 
 ## Bölümler
 

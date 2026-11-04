@@ -250,11 +250,22 @@ pub struct ConfigSave {
     pub due: Option<Instant>,
     /// When the last write finished (the settings window flashes "Saved").
     pub flashed: Option<Instant>,
+    /// The configuration as the file last had it: what changed since is what a reload
+    /// must not lose ([`config::rebase`]).
+    pub baseline: Option<Config>,
+    /// A write could not happen (the file does not load, or the disk said no); the changes
+    /// are still in memory and a successful reload schedules the write again.
+    pub held: bool,
 }
 
 impl ConfigSave {
     pub fn schedule(&mut self) {
         self.due = Some(Instant::now() + SAVE_DELAY);
+    }
+
+    /// Settings changed that are not in the file yet.
+    pub fn pending(&self) -> bool {
+        self.due.is_some() || self.held
     }
 }
 
@@ -289,25 +300,55 @@ pub fn flush(app: &mut AppCore) {
         return;
     }
     let path = app.config_watch.path().to_path_buf();
+    // The active configuration did not come from the file: writing it would replace the
+    // user's settings with defaults. Wait for a reload that works.
+    if app.config_watch.load_error.is_some() {
+        refuse(app, None);
+        return;
+    }
     // Merge into the user's file so comments and formatting survive (toml_edit).
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    match config::to_string_preserving(&existing, &app.config) {
-        Ok(text) => {
-            if let Some(dir) = path.parent() {
-                let _ = soyuz_fs::create_dir_all(dir);
-            }
-            match soyuz_fs::write_atomic(&path, text.as_bytes()) {
-                Ok(()) => {
-                    app.config_watch.last_text = Some(text);
-                    app.config_save.flashed = Some(Instant::now());
-                }
-                Err(e) => {
-                    app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e.to_string()));
-                }
-            }
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            refuse(app, Some(e.to_string()));
+            return;
+        }
+    };
+    let text = match config::to_string_preserving(&existing, &app.config) {
+        Ok(text) => text,
+        Err(e) => {
+            refuse(app, Some(e.to_string()));
+            return;
+        }
+    };
+    if let Some(dir) = path.parent() {
+        let _ = soyuz_fs::create_dir_all(dir);
+    }
+    match soyuz_fs::write_atomic(&path, text.as_bytes()) {
+        Ok(()) => {
+            app.config_watch.last_text = Some(text);
+            app.config_save.flashed = Some(Instant::now());
+            app.config_save.baseline = Some(app.config.clone());
+            app.config_save.held = false;
         }
         Err(e) => {
+            app.config_save.held = true;
             app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e.to_string()));
         }
     }
+}
+
+/// `config.toml` was left alone because it does not load: say so, keep the change in memory.
+fn refuse(app: &mut AppCore, why: Option<String>) {
+    app.config_save.held = true;
+    let body = match why {
+        Some(why) => format!("{}\n{why}", tr!("settings-save-refused-body")),
+        None => tr!("settings-save-refused-body").to_string(),
+    };
+    app.ui.toasts.push(
+        Toast::error(tr!("settings-save-refused"))
+            .body(body)
+            .action(tr!("services-config-edit"), config::Action::EditConfigFile),
+    );
 }

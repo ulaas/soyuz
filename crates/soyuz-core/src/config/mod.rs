@@ -31,7 +31,7 @@ pub use keys::{
 };
 pub use mcp::{AiMcp, AiMcpApprovalUi, AiMcpClient, AiMcpServer, AiRisk};
 pub use migrate::{MigrateOutcome, migrate_file};
-pub use preserve::to_string_preserving;
+pub use preserve::{rebase, to_string_preserving};
 pub use schema::*;
 
 use crate::error::{FsError, FsErrorKind};
@@ -87,12 +87,20 @@ pub const REMOVED_KEYS: &[&str] =
 
 /// Parse config text (see [`load`]).
 pub fn parse_str(text: &str) -> Result<Loaded, ConfigError> {
+    parse_reporting_unknown(text).map(|(loaded, _)| loaded)
+}
+
+/// [`parse_str`], plus the dotted paths of the keys this version does not know.
+fn parse_reporting_unknown(text: &str) -> Result<(Loaded, Vec<String>), ConfigError> {
     let mut warnings = Vec::new();
+    let mut unknown = Vec::new();
     let de = toml::Deserializer::parse(text).map_err(|e| parse_error(text, &e))?;
     let mut config: Config = serde_ignored::deserialize(de, |path| {
         let path = path.to_string();
         if !REMOVED_KEYS.contains(&path.as_str()) {
             warnings.push(format!("unknown config key: {path}"));
+            // An `Option` field adds a `?` segment to the path.
+            unknown.push(path.replace(".?", ""));
         }
     })
     .map_err(|e| parse_error(text, &e))?;
@@ -108,7 +116,7 @@ pub fn parse_str(text: &str) -> Result<Loaded, ConfigError> {
             warnings.push(format!("keys.bindings: {e}"));
         }
     }
-    Ok(Loaded { config, warnings })
+    Ok((Loaded { config, warnings }, unknown))
 }
 
 fn parse_error(text: &str, e: &toml::de::Error) -> ConfigError {
@@ -397,6 +405,24 @@ font_size = 14.0
             km.sequence_match(KeyContext::FileList, &seq),
             SeqMatch::Exact(Action::CustomCommand("Edit".into()))
         );
+    }
+
+    #[test]
+    fn a_choice_for_a_file_is_not_shadowed_by_a_longer_extension() {
+        let app = |p: &str, e: &str| DefaultApp { extensions: vec![e.into()], program: p.into(), ..Default::default() };
+        let mut open = OpenSection { default_apps: vec![app("7z", "tar.gz")], ..Default::default() };
+        // A plain .gz file: the tar.gz rule has nothing to do with it and stays.
+        open.set_default_for("y.gz", Some(app("zcat", "")));
+        assert_eq!(open.app_for("y.gz").unwrap().program, PathBuf::from("zcat"));
+        assert_eq!(open.app_for("x.tar.gz").unwrap().program, PathBuf::from("7z"));
+        // Chosen for x.tar.gz (its key is `gz`): the choice has to answer for that file.
+        open.set_default_for("x.tar.gz", Some(app("vlc", "")));
+        assert_eq!(open.app_for("x.tar.gz").unwrap().program, PathBuf::from("vlc"));
+        assert_eq!(open.rule_for("tar.gz"), None);
+        // "No default" reaches it too.
+        let mut open = OpenSection { default_apps: vec![app("7z", "tar.gz")], ..Default::default() };
+        open.set_default_for("x.tar.gz", None);
+        assert_eq!(open.app_for("x.tar.gz"), None);
     }
 
     #[test]

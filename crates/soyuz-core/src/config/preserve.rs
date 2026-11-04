@@ -2,33 +2,80 @@
 //! user's existing document with `toml_edit`, so comments, key order, blank lines and
 //! untouched values survive a save from the settings window.
 
+use std::collections::HashSet;
+
 use toml_edit::{DocumentMut, Item, Table, Value};
 
-use super::{Config, ConfigError, to_pretty_string};
+use super::{Config, ConfigError, parse_reporting_unknown, to_pretty_string};
 
 /// Text for `config` that keeps `existing`'s comments and layout. Only values that
 /// changed are rewritten (their trailing comments are kept); new keys / tables are
 /// appended unless they equal the built-in default (a key the user never wrote keeps
-/// meaning "default"); keys the configuration no longer has (removed map entries) are
-/// dropped.
-/// Falls back to [`to_pretty_string`] when `existing` is empty or does not parse.
+/// meaning "default"); keys of the schema the configuration no longer has (removed map
+/// entries) are dropped, and keys this version does not know stay for the user (or a
+/// newer version) to deal with.
+///
+/// An empty `existing` gives [`to_pretty_string`]. Text that does not load as a
+/// configuration (bad TOML, a bad value, a newer schema) is an error: writing over it
+/// would replace the user's settings with defaults.
 pub fn to_string_preserving(existing: &str, config: &Config) -> Result<String, ConfigError> {
     let fresh = to_pretty_string(config)?;
     if existing.trim().is_empty() {
         return Ok(fresh);
     }
-    let Ok(mut doc) = existing.parse::<DocumentMut>() else { return Ok(fresh) };
+    let (_, unknown) = parse_reporting_unknown(existing)?;
+    let unknown: HashSet<String> = unknown.into_iter().collect();
+    let mut doc: DocumentMut = existing.parse().map_err(|e: toml_edit::TomlError| ConfigError::Parse {
+        line: 0,
+        col: 0,
+        msg: e.to_string(),
+    })?;
     let new: DocumentMut =
         fresh.parse().map_err(|e: toml_edit::TomlError| ConfigError::Parse { line: 0, col: 0, msg: e.to_string() })?;
     let defaults: DocumentMut = to_pretty_string(&Config::default())?
         .parse()
         .map_err(|e: toml_edit::TomlError| ConfigError::Parse { line: 0, col: 0, msg: e.to_string() })?;
-    merge_table(doc.as_table_mut(), new.as_table(), Some(defaults.as_table()));
+    merge_table(doc.as_table_mut(), new.as_table(), Some(defaults.as_table()), "", &unknown);
     Ok(doc.to_string())
 }
 
-fn merge_table(old: &mut Table, new: &Table, defaults: Option<&Table>) {
-    let stale: Vec<String> = old.iter().map(|(k, _)| k.to_string()).filter(|k| !new.contains_key(k)).collect();
+/// `ours` rebased onto `theirs`: what changed between `base` and `ours` (settings not yet
+/// saved) applied on top of `theirs` (the file as it was just reloaded). Keys are compared
+/// one by one; an array counts as one value.
+pub fn rebase(base: &Config, ours: &Config, theirs: &Config) -> Result<Config, ConfigError> {
+    let parse_err = |e: toml::de::Error| ConfigError::Parse { line: 0, col: 0, msg: e.to_string() };
+    let table =
+        |c: &Config| -> Result<toml::Table, ConfigError> { toml::from_str(&to_pretty_string(c)?).map_err(parse_err) };
+    let mut merged = table(theirs)?;
+    merge_changes(&table(base)?, &table(ours)?, &mut merged);
+    toml::Value::Table(merged).try_into().map_err(parse_err)
+}
+
+fn merge_changes(base: &toml::Table, ours: &toml::Table, theirs: &mut toml::Table) {
+    for key in base.keys().chain(ours.keys().filter(|k| !base.contains_key(*k))) {
+        match (base.get(key), ours.get(key)) {
+            (Some(b), Some(o)) if value_eq(b, o) => {}
+            (Some(toml::Value::Table(b)), Some(toml::Value::Table(o))) => {
+                if let Some(toml::Value::Table(t)) = theirs.get_mut(key) {
+                    merge_changes(b, o, t);
+                } else {
+                    theirs.insert(key.clone(), toml::Value::Table(o.clone()));
+                }
+            }
+            (_, Some(o)) => {
+                theirs.insert(key.clone(), o.clone());
+            }
+            (_, None) => {
+                theirs.remove(key);
+            }
+        }
+    }
+}
+
+fn merge_table(old: &mut Table, new: &Table, defaults: Option<&Table>, path: &str, unknown: &HashSet<String>) {
+    let at = |k: &str| if path.is_empty() { k.to_string() } else { format!("{path}.{k}") };
+    let stale: Vec<String> =
+        old.iter().map(|(k, _)| k.to_string()).filter(|k| !new.contains_key(k) && !unknown.contains(&at(k))).collect();
     for k in stale {
         old.remove(&k);
     }
@@ -38,7 +85,7 @@ fn merge_table(old: &mut Table, new: &Table, defaults: Option<&Table>) {
             match new_item {
                 Item::Table(n) => {
                     let mut t = Table::new();
-                    merge_table(&mut t, n, default.and_then(Item::as_table));
+                    merge_table(&mut t, n, default.and_then(Item::as_table), &at(key), unknown);
                     if !t.is_empty() {
                         let only_tables = t.iter().all(|(_, i)| i.is_table() || i.is_array_of_tables());
                         t.set_implicit(only_tables);
@@ -56,7 +103,7 @@ fn merge_table(old: &mut Table, new: &Table, defaults: Option<&Table>) {
             continue;
         }
         match (old_item, new_item) {
-            (Item::Table(o), Item::Table(n)) => merge_table(o, n, default.and_then(Item::as_table)),
+            (Item::Table(o), Item::Table(n)) => merge_table(o, n, default.and_then(Item::as_table), &at(key), unknown),
             (Item::Value(o), Item::Table(n)) if o.is_inline_table() => {
                 let decor = o.decor().clone();
                 let mut v = Value::InlineTable(n.clone().into_inline_table());
@@ -198,9 +245,80 @@ paste = [\"Shift+Insert\"]
     }
 
     #[test]
-    fn falls_back_on_broken_or_empty_files() {
+    fn empty_file_gets_the_pretty_text() {
         let c = Config::default();
         assert_eq!(to_string_preserving("", &c).unwrap(), to_pretty_string(&c).unwrap());
-        assert_eq!(to_string_preserving("[[[ nope", &c).unwrap(), to_pretty_string(&c).unwrap());
+        assert_eq!(to_string_preserving("  \n", &c).unwrap(), to_pretty_string(&c).unwrap());
+    }
+
+    #[test]
+    fn refuses_text_that_does_not_load() {
+        let c = Config::default();
+        assert!(to_string_preserving("[[[ nope", &c).is_err(), "bad TOML");
+        assert!(to_string_preserving("[appearance]\nsidebar_width = \"wide\"\n", &c).is_err(), "a bad value");
+        assert!(to_string_preserving("schema = 99999\n", &c).is_err(), "a newer schema");
+    }
+
+    #[test]
+    fn keeps_keys_this_version_does_not_know() {
+        let text = "\
+# top
+future_key = 1 # keep me
+
+[general]
+show_hiddn = true # a typo to fix by hand
+show_hidden = false
+
+[future_table]
+x = 1
+
+[future_table.nested]
+y = 2
+
+[keys.bindings]
+copy = [\"Ctrl+Insert\"]
+paste = [\"Shift+Insert\"]
+";
+        let mut c = parse_str(text).unwrap().config;
+        c.general.show_hidden = true;
+        c.keys.bindings.remove("paste");
+        let out = to_string_preserving(text, &c).unwrap();
+        assert!(out.contains("future_key = 1 # keep me"), "{out}");
+        assert!(out.contains("show_hiddn = true # a typo to fix by hand"), "{out}");
+        assert!(out.contains("[future_table]") && out.contains("y = 2"), "{out}");
+        assert!(out.contains("show_hidden = true"), "{out}");
+        assert!(!out.contains("Shift+Insert"), "a map entry the user deleted goes: {out}");
+        assert_eq!(parse_str(&out).unwrap().config, c);
+    }
+
+    #[test]
+    fn removed_settings_still_leave_the_file() {
+        let text = "[appearance]\nstartup_placeholder = true\ntheme = \"dark\"\n";
+        let c = parse_str(text).unwrap().config;
+        let out = to_string_preserving(text, &c).unwrap();
+        assert!(!out.contains("startup_placeholder"), "{out}");
+    }
+
+    #[test]
+    fn rebase_keeps_pending_changes_on_top_of_a_reload() {
+        let base = Config::default();
+        let mut ours = base.clone();
+        ours.general.show_hidden = !base.general.show_hidden;
+        ours.keys.bindings.insert("copy".into(), vec!["Ctrl+Insert".into()]);
+        let mut theirs = base.clone();
+        theirs.appearance.theme = "external".into();
+        theirs.general.natural_sort = !base.general.natural_sort;
+        let merged = rebase(&base, &ours, &theirs).unwrap();
+        assert_eq!(merged.appearance.theme, "external", "the external edit stays");
+        assert_eq!(merged.general.natural_sort, theirs.general.natural_sort, "same table, another key");
+        assert_eq!(merged.general.show_hidden, ours.general.show_hidden, "the pending change stays");
+        assert_eq!(merged.keys.bindings, ours.keys.bindings);
+        // Nothing pending: the reload wins whole.
+        assert_eq!(rebase(&base, &base, &theirs).unwrap(), theirs);
+        // A pending removal of a map entry.
+        let mut with_entry = base.clone();
+        with_entry.keys.bindings.insert("paste".into(), vec!["F9".into()]);
+        let merged = rebase(&with_entry, &base, &with_entry).unwrap();
+        assert!(merged.keys.bindings.is_empty());
     }
 }
