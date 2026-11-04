@@ -154,6 +154,120 @@ fn never_writes_through_symlinks() {
     assert!(!outside.join("payload.txt").exists());
 }
 
+/// Whether this account may create symlinks (Windows needs Developer Mode or elevation).
+fn can_symlink(dir: &Path) -> bool {
+    let link = dir.join(".probe-link");
+    #[cfg(unix)]
+    let made = std::os::unix::fs::symlink("x", &link).is_ok();
+    #[cfg(windows)]
+    let made = std::os::windows::fs::symlink_file("x", &link).is_ok();
+    let _ = std::fs::remove_file(&link);
+    made
+}
+
+fn names_in(dir: &Path) -> Vec<String> {
+    let mut v: Vec<String> =
+        std::fs::read_dir(dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    v.sort();
+    v
+}
+
+/// A link target too long for any file system: creating the link fails on every platform,
+/// with or without the right to create links.
+#[test]
+fn a_link_that_cannot_be_created_keeps_the_existing_file() {
+    let d = tempfile::tempdir().unwrap();
+    let archive = d.path().join("links.zip");
+    let target = "a".repeat(40_000);
+    write_zip(&archive, &[], &[("notes.txt", target.as_str())]);
+    let dest = d.path().join("dest");
+    std::fs::create_dir(&dest).unwrap();
+    std::fs::write(dest.join("notes.txt"), b"precious").unwrap();
+    let mut r = open(&archive, None).unwrap();
+    let o = ExtractOptions { overwrite: Overwrite::Always, ..Default::default() };
+    let mut sink = TestSink::default();
+    let sum = r.extract(None, &dest, &o, &OpControl::new(), &mut sink).unwrap();
+    assert_eq!(sum.entries_failed, 1, "{sum:?}");
+    assert_eq!(std::fs::read(dest.join("notes.txt")).unwrap(), b"precious");
+    assert_eq!(names_in(&dest), ["notes.txt"], "no temp left behind");
+}
+
+#[test]
+fn links_replace_files_and_empty_folders() {
+    let d = tempfile::tempdir().unwrap();
+    let archive = d.path().join("links.tar");
+    let symlinks = can_symlink(d.path());
+    let mut entries: Vec<(&str, tar::EntryType, &str, &[u8])> =
+        vec![("real.txt", tar::EntryType::Regular, "", b"real"), ("hard-spot", tar::EntryType::Link, "real.txt", b"")];
+    if symlinks {
+        entries.push(("file-spot", tar::EntryType::Symlink, "real.txt", b""));
+        entries.push(("dir-spot", tar::EntryType::Symlink, "real.txt", b""));
+    } else {
+        eprintln!("skipping the symlink part: no privilege");
+    }
+    write_raw_tar(&archive, &entries);
+    let dest = d.path().join("dest");
+    std::fs::create_dir_all(dest.join("dir-spot")).unwrap();
+    std::fs::write(dest.join("file-spot"), b"old").unwrap();
+    std::fs::write(dest.join("hard-spot"), b"old").unwrap();
+    let mut r = open(&archive, None).unwrap();
+    let o = ExtractOptions { overwrite: Overwrite::Always, ..Default::default() };
+    let mut sink = TestSink::default();
+    let sum = r.extract(None, &dest, &o, &OpControl::new(), &mut sink).unwrap();
+    assert_eq!(sum.entries_failed, 0, "{:?}", sink.errors);
+    assert_eq!(std::fs::read(dest.join("hard-spot")).unwrap(), b"real");
+    if symlinks {
+        assert!(std::fs::symlink_metadata(dest.join("file-spot")).unwrap().file_type().is_symlink());
+        assert!(std::fs::symlink_metadata(dest.join("dir-spot")).unwrap().file_type().is_symlink());
+    }
+    assert_eq!(names_in(&dest), ["dir-spot", "file-spot", "hard-spot", "real.txt"], "no temp left behind");
+}
+
+/// `a/`, then the symlink `a` -> `b` replacing it, then `a/evil.txt`: the checked directory
+/// is gone and the later entry must not be written through the link.
+#[test]
+fn a_symlink_replacing_a_folder_is_not_written_through() {
+    let d = tempfile::tempdir().unwrap();
+    if !can_symlink(d.path()) {
+        eprintln!("skipping: no symlink privilege");
+        return;
+    }
+    let archive = d.path().join("swap.tar");
+    write_raw_tar(
+        &archive,
+        &[
+            ("b/", tar::EntryType::Directory, "", b""),
+            ("a/", tar::EntryType::Directory, "", b""),
+            ("a", tar::EntryType::Symlink, "b", b""),
+            ("a/evil.txt", tar::EntryType::Regular, "", b"evil"),
+        ],
+    );
+    let dest = d.path().join("dest");
+    let mut r = open(&archive, None).unwrap();
+    let o = ExtractOptions { overwrite: Overwrite::Always, ..Default::default() };
+    let mut sink = TestSink::default();
+    let sum = r.extract(None, &dest, &o, &OpControl::new(), &mut sink).unwrap();
+    assert!(!dest.join("b").join("evil.txt").exists(), "written through the link: {sum:?}");
+    assert_eq!(sum.entries_failed, 1, "{sum:?}");
+
+    // The same with another spelling: on a case-insensitive volume `A` and `a` are one name.
+    let archive = d.path().join("swap-case.tar");
+    write_raw_tar(
+        &archive,
+        &[
+            ("b/", tar::EntryType::Directory, "", b""),
+            ("A/", tar::EntryType::Directory, "", b""),
+            ("a", tar::EntryType::Symlink, "b", b""),
+            ("A/evil.txt", tar::EntryType::Regular, "", b"evil"),
+        ],
+    );
+    let dest = d.path().join("dest-case");
+    let mut r = open(&archive, None).unwrap();
+    let mut sink = TestSink::default();
+    let sum = r.extract(None, &dest, &o, &OpControl::new(), &mut sink).unwrap();
+    assert!(!dest.join("b").join("evil.txt").exists(), "written through the link: {sum:?}");
+}
+
 #[test]
 fn symlink_entries_list_on_every_platform() {
     let d = tempfile::tempdir().unwrap();
