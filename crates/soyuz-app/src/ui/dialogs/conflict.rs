@@ -306,7 +306,7 @@ fn conflict(ui: &mut Ui, m: &mut PromptModel, c: &ConflictInfo, p: &Palette) -> 
         m.start_rename();
     }
     // Keyboard: Enter = primary for the plain file case.
-    if out.is_none() && ui.input(|i| i.key_pressed(Key::Enter)) {
+    if out.is_none() && super::enter_default(ui) {
         out = m.default_answer();
     }
     out

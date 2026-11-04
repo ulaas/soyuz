@@ -2,7 +2,7 @@
 //! them, so ask first ("Keep open" / "Quit when finished" / "Cancel and quit"). The
 //! choices are the core's [`QuitModel`]; this file draws it.
 
-use egui::{Align, Key, Layout, RichText, Ui};
+use egui::{Align, Layout, RichText, Ui};
 
 use super::DialogCtx;
 use super::conflict::{Btn, button};
@@ -27,7 +27,7 @@ pub(crate) fn show(ui: &mut Ui, m: &mut QuitModel, ctx: &mut DialogCtx<'_>) -> b
         }
     });
     // Enter picks the safe default.
-    if ui.input(|i| i.key_pressed(Key::Enter)) {
+    if super::enter_default(ui) {
         choice = Some(QuitChoice::QuitWhenFinished);
     }
     match choice {

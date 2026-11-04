@@ -256,8 +256,7 @@ impl Dialog for OpenWithDialog {
         if cancel {
             return false;
         }
-        // Enter on the list (no widget has the keyboard: a focused button takes its own).
-        let enter = ui.memory(|m| m.focused().is_none()) && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let enter = super::enter_default(ui);
         if !(ok || open_now || submit || enter) {
             return true;
         }

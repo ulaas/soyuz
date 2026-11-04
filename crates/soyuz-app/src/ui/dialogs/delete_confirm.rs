@@ -2,10 +2,10 @@
 //! (Shift+Delete), secure wipe, permanent delete of trashed items and "Empty trash".
 //! The state and the answer are the core's [`DeleteConfirmModel`]; this file draws it.
 
-use egui::{Align, CornerRadius, FontId, Key, Layout, Margin, RichText, Ui};
+use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, Ui};
 
-use super::DialogCtx;
 use super::conflict::{Btn, button};
+use super::{DialogCtx, enter_default};
 pub use crate::models::dialogs::{ConfirmKind, DeleteConfirmModel};
 use crate::theme::{icons::ph, palette};
 
@@ -55,7 +55,7 @@ pub(crate) fn show(ui: &mut Ui, m: &mut DeleteConfirmModel, ctx: &mut DialogCtx<
         ok = button(ui, confirm, if danger { Btn::Danger } else { Btn::Primary }).clicked();
         cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
     });
-    if ui.input(|i| i.key_pressed(Key::Enter)) {
+    if enter_default(ui) {
         ok = true;
     }
     if ok {

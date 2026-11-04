@@ -6,7 +6,7 @@
 //! Enter runs, Esc (the host) cancels.
 
 use egui::{
-    Align2, CornerRadius, FontId, Frame, Key, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
+    Align2, CornerRadius, FontId, Frame, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
 };
 
 use super::DialogCtx;
@@ -257,7 +257,7 @@ pub(crate) fn show(ui: &mut Ui, m: &mut MediaToolsModel, ctx: &mut DialogCtx<'_>
         go = ui.add_enabled_ui(error.is_none(), |ui| button(ui, m.tool.go_label(), Btn::Primary)).inner.clicked();
         cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
     });
-    if ui.input(|i| i.key_pressed(Key::Enter)) && error.is_none() {
+    if super::enter_default(ui) && error.is_none() {
         go = true;
     }
     if go {

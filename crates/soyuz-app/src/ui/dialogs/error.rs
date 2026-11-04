@@ -66,7 +66,7 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
                     out = respond(ErrorAction::Skip);
                 }
             });
-            if out.is_none() && ui.input(|i| i.key_pressed(Key::Enter)) {
+            if out.is_none() && super::enter_default(ui) {
                 out = respond(ErrorAction::Abort);
             }
         }
@@ -111,7 +111,7 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
                     }
                 });
             });
-            if out.is_none() && ui.input(|i| i.key_pressed(Key::Enter)) {
+            if out.is_none() && super::enter_default(ui) {
                 let a = if *retryable { ErrorAction::Retry } else { ErrorAction::Skip };
                 out = Some(Answer::Respond(PromptResponse::Error { action: a, apply_to_all: false }));
             }

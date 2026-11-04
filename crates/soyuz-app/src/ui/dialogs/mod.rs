@@ -288,6 +288,58 @@ impl Dialogs {
     }
 }
 
+/// Enter means the dialog's default answer only when no control of this dialog has the
+/// keyboard. egui clicks a focused button on Enter by itself, so Tab to Cancel, then Enter,
+/// must cancel, and Enter on a focused checkbox must only tick it. (A single-line text
+/// field gives up the keyboard on Enter, so it still submits.)
+pub(crate) fn enter_default(ui: &Ui) -> bool {
+    let focused = ui.memory(|m| m.focused()).and_then(|id| ui.ctx().read_response(id));
+    let in_dialog = focused.is_some_and(|r| r.layer_id == ui.layer_id());
+    !in_dialog && ui.input(|i| i.key_pressed(Key::Enter))
+}
+
+#[cfg(test)]
+mod enter_tests {
+    use egui::{Event, Key, Modifiers, RawInput};
+
+    use super::enter_default;
+
+    fn enter() -> Event {
+        Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }
+    }
+
+    /// One frame with a Cancel button; returns the default answer.
+    fn frame(ctx: &egui::Context, focus: bool, events: Vec<Event>) -> bool {
+        let mut out = false;
+        let input = RawInput { events, ..RawInput::default() };
+        let mut output = ctx.run_ui(input, |ui| {
+            let r = ui.button("Cancel");
+            if focus {
+                r.request_focus();
+            }
+            out = enter_default(ui);
+        });
+        output.textures_delta.clear();
+        out
+    }
+
+    #[test]
+    fn enter_on_a_focused_cancel_does_not_confirm() {
+        let ctx = egui::Context::default();
+        frame(&ctx, true, Vec::new());
+        frame(&ctx, false, Vec::new());
+        assert!(!frame(&ctx, false, vec![enter()]), "the focused button takes Enter");
+    }
+
+    #[test]
+    fn enter_with_nothing_focused_confirms() {
+        let ctx = egui::Context::default();
+        frame(&ctx, false, Vec::new());
+        assert!(frame(&ctx, false, vec![enter()]));
+        assert!(!frame(&ctx, false, Vec::new()), "only when pressed");
+    }
+}
+
 /// Footer row with right-aligned buttons; returns `(primary clicked, cancel clicked)`.
 pub fn footer(ui: &mut Ui, primary: &str, cancel: &str) -> (bool, bool) {
     ui.add_space(16.0);
@@ -333,7 +385,7 @@ impl Dialog for ConfirmDialog {
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
         ui.label(RichText::new(&self.m.message).color(p.text_secondary));
-        let enter = ui.input(|i| i.key_pressed(Key::Enter));
+        let enter = enter_default(ui);
         let (ok, cancel) = footer(ui, &self.m.confirm, tr!("common-cancel"));
         if ok || enter {
             if let Some(c) = self.m.confirm() {
@@ -430,7 +482,7 @@ impl Dialog for ColumnsDialog {
         if changed {
             ctx.cmds.push(Cmd::ViewChanged(self.pane));
         }
-        !close_footer(ui, tr!("dialogs-done")) && !ui.input(|i| i.key_pressed(Key::Enter))
+        !close_footer(ui, tr!("dialogs-done")) && !enter_default(ui)
     }
 }
 
@@ -519,7 +571,7 @@ impl Dialog for AboutDialog {
         if copy {
             ctx.cmds.push(Cmd::CopyText(crate::models::about::copy_text(&facts)));
         }
-        !close && !ui.input(|i| i.key_pressed(Key::Enter))
+        !close && !enter_default(ui)
     }
 }
 

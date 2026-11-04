@@ -2,7 +2,7 @@
 //! junction, and "Copy to…" / "Move to…" with a destination path. The state and the
 //! answers are the core's [`LinkModel`] / [`TransferModel`]; this file draws them.
 
-use egui::{Align, FontId, Key, Layout, Margin, RichText, TextEdit, Ui};
+use egui::{Align, FontId, Layout, Margin, RichText, TextEdit, Ui};
 
 use super::DialogCtx;
 use super::conflict::{Btn, button};
@@ -60,7 +60,7 @@ pub(crate) fn show_link(ui: &mut Ui, m: &mut LinkModel, ctx: &mut DialogCtx<'_>)
         ok = button(ui, tr!("dialogs-link-create"), Btn::Primary).clicked();
         cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
     });
-    if ui.input(|i| i.key_pressed(Key::Enter)) {
+    if super::enter_default(ui) {
         ok = true;
     }
     if ok && let Some(cmd) = m.create() {
@@ -88,7 +88,7 @@ pub(crate) fn show_transfer(ui: &mut Ui, m: &mut TransferModel, ctx: &mut Dialog
         ok = button(ui, if m.mv { tr!("common-move") } else { tr!("common-copy") }, Btn::Primary).clicked();
         cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
     });
-    if ui.input(|i| i.key_pressed(Key::Enter)) {
+    if super::enter_default(ui) {
         ok = true;
     }
     if ok && let Some(cmd) = m.confirm() {
