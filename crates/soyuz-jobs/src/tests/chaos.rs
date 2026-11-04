@@ -237,7 +237,18 @@ fn scenario(seed: u64, mode: Mode, shape: Shape) -> Outcome {
                 assert_eq!(sum.items_skipped, 0, "{ctx}");
             }
         }
-        JobState::Cancelled | JobState::Failed(_) => assert!(hist.is_empty(), "{ctx}: {hist:?}"),
+        // What a stopped job finished stays in the history, marked partial.
+        JobState::Cancelled | JobState::Failed(_) => {
+            assert!(hist.len() <= 1, "{ctx}: {hist:?}");
+            for e in &hist {
+                assert!(e.partial && !e.records.is_empty(), "{ctx}: {e:?}");
+                for r in &e.records {
+                    if let crate::UndoRecord::Copied { dst } | crate::UndoRecord::Moved { to: dst, .. } = r {
+                        assert!(dst.exists(), "{ctx}: recorded {} missing", dst.display());
+                    }
+                }
+            }
+        }
         other => panic!("{ctx}: not terminal {other:?}"),
     }
     Outcome { state }
