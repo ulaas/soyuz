@@ -87,6 +87,13 @@
   </requires>
 
   <releases>
+    <release version="0.5.11" date="2026-11-05" type="development">
+      <description>
+        <p>The 0.5.10 changes, built: its release stopped on Linux test failures and a download
+          outage. Also on Linux, undo of a move or rename no longer takes a new file that reused
+          the old one's inode for the file it moved.</p>
+      </description>
+    </release>
     <release version="0.5.10" date="2026-11-05" type="development">
       <description>
         <p>Open with gets a program browser and remembers what you pick. Text size now reaches
