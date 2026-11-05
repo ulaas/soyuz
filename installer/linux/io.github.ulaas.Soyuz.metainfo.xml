@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.5.12" date="2026-11-05" type="development">
+      <description>
+        <p>Security update: zip, russh and pageant are updated for published advisories, including
+          a critical one in zip archive handling. When the item under the cursor is deleted, the
+          cursor now moves to the next item, or the previous one at the end of the list (Settings,
+          Behaviour, After deleting).</p>
+      </description>
+    </release>
     <release version="0.5.11" date="2026-11-05" type="development">
       <description>
         <p>The 0.5.10 changes, built: its release stopped on Linux test failures and a download

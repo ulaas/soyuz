@@ -3,13 +3,13 @@
 #
 #   scripts/package.sh --rpm                       # builds the tarball, then this spec
 #   rpmbuild -bb installer/linux/soyuz.spec \
-#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.5.11"
+#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.5.12"
 #
 # The org.freedesktop.FileManager1 D-Bus activation file is deliberately NOT installed:
 # Soyuz writes it to the user's ~/.local/share/dbus-1/services/ only on opt-in
 # (docs/RELEASING.md, "Linux").
 
-%{!?soyuz_version: %global soyuz_version 0.5.11}
+%{!?soyuz_version: %global soyuz_version 0.5.12}
 %{!?soyuz_arch: %global soyuz_arch %{_arch}}
 # 1 when the tarball carries the FFmpeg runtime (scripts/package.sh --ffmpeg-dir sets it):
 # lib/soyuz/lib*.so.* go to %{_libdir}/soyuz/ (private; the exe looks in
@@ -114,6 +114,10 @@ fi
 %endif
 
 %changelog
+* Thu Nov 05 2026 The Soyuz contributors - 0.5.12-1
+- Version 0.5.12: security update (zip, russh, pageant); the cursor moves to a
+  neighbour when the item under it is deleted.
+
 * Thu Nov 05 2026 The Soyuz contributors - 0.5.11-1
 - Version 0.5.11: the 0.5.10 changes, built. Undo of a move or rename no longer
   takes a new file that reused the old inode for the file it moved.
