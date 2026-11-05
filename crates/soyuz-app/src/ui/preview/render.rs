@@ -5,9 +5,7 @@
 
 use std::sync::Arc;
 
-use egui::{
-    Align2, Color32, CornerRadius, FontId, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2,
-};
+use egui::{Align2, Color32, FontId, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2};
 use soyuz_appcore::models::preview_load::PreviewLoader;
 use soyuz_core::config::Config;
 use soyuz_core::{EntryInfo, format_size, format_time};
@@ -16,10 +14,10 @@ use super::hex;
 use super::markdown;
 use crate::services::preview::{Content, Kind, Limits};
 use crate::services::preview_gfx::StyledLine;
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::{Palette, palette};
 use crate::ui::gfx::{self, TexExt};
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{Btn, pill_button, spinner, trunc_galley};
 
 pub use soyuz_appcore::models::preview_info::{group_digits, info_label, info_rows};
@@ -84,7 +82,7 @@ impl PreviewState {
 /// Two-column info grid.
 pub fn info_grid(ui: &mut Ui, rows: &[(String, String)], label_w: f32) {
     let p = palette(ui.ctx());
-    let font = FontId::proportional(11.5);
+    let font = crate::theme::font::ui(11.5);
     // Translated labels can be longer: widen the label column up to a limit.
     let widest = rows
         .iter()
@@ -97,7 +95,10 @@ pub fn info_grid(ui: &mut Ui, rows: &[(String, String)], label_w: f32) {
             let (r, _) = ui.allocate_exact_size(vec2(label_w, 18.0), Sense::hover());
             let label = info_label(k);
             ui.painter().text(r.left_center(), Align2::LEFT_CENTER, label, font.clone(), p.text_tertiary);
-            ui.add(egui::Label::new(egui::RichText::new(v).size(12.0).color(p.text_primary)).wrap());
+            ui.add(
+                egui::Label::new(egui::RichText::new(v).size(crate::theme::font::px(12.0)).color(p.text_primary))
+                    .wrap(),
+            );
         });
     }
 }
@@ -114,7 +115,7 @@ fn centered_message(ui: &Ui, rect: Rect, icon: &str, color: Color32, title: &str
     if !body.is_empty() {
         let g = ui.painter().layout(
             body.to_string(),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
             (rect.width() - 40.0).clamp(80.0, 360.0),
         );
@@ -223,8 +224,14 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             if interactive {
                 let pct = format!("{:.0}%", scale * ppp * 100.0);
                 let badge = Rect::from_min_size(rect.left_bottom() + vec2(12.0, -34.0), vec2(56.0, 22.0));
-                painter.rect_filled(badge, CornerRadius::same(6), p.bg_surface3.gamma_multiply(0.9));
-                painter.text(badge.center(), Align2::CENTER_CENTER, pct, FontId::proportional(11.5), p.text_secondary);
+                painter.rect_filled(badge, crate::theme::tokens::radius::same(6), p.bg_surface3.gamma_multiply(0.9));
+                painter.text(
+                    badge.center(),
+                    Align2::CENTER_CENTER,
+                    pct,
+                    crate::theme::font::ui(11.5),
+                    p.text_secondary,
+                );
             }
         }
         Content::Svg { uri, bytes } => {
@@ -246,7 +253,11 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                     markdown::show(ui, blocks, &p);
                     if *truncated {
                         ui.add_space(8.0);
-                        ui.label(egui::RichText::new(tr!("views-preview-truncated")).size(11.0).color(p.text_tertiary));
+                        ui.label(
+                            egui::RichText::new(tr!("views-preview-truncated"))
+                                .size(crate::theme::font::px(11.0))
+                                .color(p.text_tertiary),
+                        );
                     }
                 },
             );
@@ -273,7 +284,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                     format = &l.format,
                     size = format_size(l.total_size, soyuz_core::SizeStyle::Binary)
                 ),
-                FontId::proportional(11.0),
+                crate::theme::font::ui(11.0),
                 p.text_tertiary,
             );
             let br = Rect::from_min_size(pos2(header.right() - 84.0, header.top() + 8.0), vec2(74.0, 24.0));
@@ -294,7 +305,11 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                         let (path, is_dir, size) = &l.entries[i];
                         let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::hover());
                         if resp.hovered() {
-                            ui.painter().rect_filled(r.shrink2(vec2(6.0, 0.0)), CornerRadius::same(4), p.bg_surface2);
+                            ui.painter().rect_filled(
+                                r.shrink2(vec2(6.0, 0.0)),
+                                crate::theme::tokens::radius::same(4),
+                                p.bg_surface2,
+                            );
                         }
                         let depth = path.trim_end_matches('/').matches('/').count() as f32;
                         let name = path.trim_end_matches('/').rsplit('/').next().unwrap_or(path);
@@ -305,7 +320,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                         let tg = trunc_galley(
                             ui.painter(),
                             name,
-                            FontId::proportional(12.0),
+                            crate::theme::font::ui(12.0),
                             p.text_primary,
                             r.right() - x - 100.0,
                         );
@@ -315,7 +330,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                                 pos2(r.right() - 14.0, r.center().y),
                                 Align2::RIGHT_CENTER,
                                 format_size(*size, soyuz_core::SizeStyle::Binary),
-                                FontId::proportional(11.0),
+                                crate::theme::font::ui(11.0),
                                 p.text_tertiary,
                             );
                         }
@@ -339,7 +354,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             };
             if let Some(err) = &s.error {
                 line(ui, &mut y, tr!("views-preview-folder-unreadable").into(), semibold(13.0), p.text_primary);
-                line(ui, &mut y, err.clone(), FontId::proportional(11.5), p.danger);
+                line(ui, &mut y, err.clone(), crate::theme::font::ui(11.5), p.danger);
             } else {
                 line(
                     ui,
@@ -360,7 +375,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                             ui,
                             &mut y,
                             text,
-                            FontId::proportional(12.0),
+                            crate::theme::font::ui(12.0),
                             if done { p.text_secondary } else { p.accent },
                         );
                         if !done {
@@ -374,7 +389,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                             "views-preview-folder-direct",
                             size = format_size(s.direct_bytes, soyuz_core::SizeStyle::Binary)
                         ),
-                        FontId::proportional(12.0),
+                        crate::theme::font::ui(12.0),
                         p.text_secondary,
                     ),
                 }
@@ -383,14 +398,14 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                         ui,
                         &mut y,
                         tr!("views-preview-folder-hidden", count = s.hidden),
-                        FontId::proportional(11.5),
+                        crate::theme::font::ui(11.5),
                         p.text_tertiary,
                     );
                 }
                 if !s.top_ext.is_empty() {
                     y += 6.0;
                     let chips: Vec<String> = s.top_ext.iter().map(|(e, n)| format!(".{e} {n}")).collect();
-                    let font = FontId::proportional(11.0);
+                    let font = crate::theme::font::ui(11.0);
                     let widths: Vec<f32> = chips
                         .iter()
                         .map(|c| ui.painter().layout_no_wrap(c.clone(), font.clone(), p.text_secondary).size().x + 16.0)
@@ -402,7 +417,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                             break;
                         }
                         let r = Rect::from_min_size(pos2(x, y - 10.0), vec2(w, 20.0));
-                        ui.painter().rect_filled(r, CornerRadius::same(10), p.bg_surface2);
+                        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(10), p.bg_surface2);
                         ui.painter().text(r.center(), Align2::CENTER_CENTER, chip, font.clone(), p.text_secondary);
                         x += w + 6.0;
                     }
@@ -414,7 +429,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                         ui,
                         &mut y,
                         tr!("views-preview-folder-newest", name = name, when = rel),
-                        FontId::proportional(11.0),
+                        crate::theme::font::ui(11.0),
                         p.text_tertiary,
                     );
                 }
@@ -429,7 +444,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             let c = rect.center() - vec2(0.0, rect.height() * 0.18);
             let (g, col) = if *video { (ph::FILM_SLATE, p.glyph_video) } else { (ph::WAVEFORM, p.glyph_audio) };
             let disc = Rect::from_center_size(c, vec2(96.0, 96.0));
-            ui.painter().rect_filled(disc, CornerRadius::same(22), col.gamma_multiply(0.14));
+            ui.painter().rect_filled(disc, crate::theme::tokens::radius::same(22), col.gamma_multiply(0.14));
             ui.painter().text(c, Align2::CENTER_CENTER, g, icons::font_fill(46.0), col);
             let mut y = disc.bottom() + 22.0;
             let title = loaded.facts.iter().find(|(k, _)| k == "Title").map(|(_, v)| v.clone());
@@ -443,7 +458,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                     pos2(rect.center().x, y),
                     Align2::CENTER_CENTER,
                     a,
-                    FontId::proportional(12.0),
+                    crate::theme::font::ui(12.0),
                     p.text_secondary,
                 );
                 y += 20.0;
@@ -457,7 +472,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                     pos2(rect.center().x, y),
                     Align2::CENTER_CENTER,
                     summary.join(" · "),
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     p.text_tertiary,
                 );
             }
@@ -501,7 +516,7 @@ fn folder_notes(
     ui.painter().line_segment([bar.left_top(), bar.right_top()], Stroke::new(1.0, p.border_subtle));
     let name = soyuz_core::entry::display_name(&n.path);
     let caption = format!("{}  ·  {name}", tr!("views-preview-folder-notes").to_uppercase());
-    let g = trunc_galley(ui.painter(), &caption, FontId::proportional(10.5), p.text_tertiary, bar.width() - 80.0);
+    let g = trunc_galley(ui.painter(), &caption, crate::theme::font::ui(10.5), p.text_tertiary, bar.width() - 80.0);
     ui.painter().galley(pos2(bar.left(), bar.center().y - g.size().y / 2.0 + 2.0), g, p.text_tertiary);
     let br = Rect::from_min_max(pos2(bar.right() - 70.0, bar.top() + 4.0), pos2(bar.right(), bar.bottom()));
     let mut bc = ui.new_child(UiBuilder::new().max_rect(br).layout(egui::Layout::right_to_left(egui::Align::Center)));
@@ -514,7 +529,11 @@ fn folder_notes(
     ScrollArea::vertical().id_salt(("folder-notes", &n.path)).auto_shrink([false, false]).show(&mut c, |ui| {
         markdown::show(ui, &n.blocks, p);
         if n.truncated {
-            ui.label(egui::RichText::new(tr!("views-preview-truncated")).size(11.0).color(p.text_tertiary));
+            ui.label(
+                egui::RichText::new(tr!("views-preview-truncated"))
+                    .size(crate::theme::font::px(11.0))
+                    .color(p.text_tertiary),
+            );
         }
     });
     action
@@ -522,7 +541,7 @@ fn folder_notes(
 
 fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<StyledLine>>, widest: usize, truncated: bool) {
     let p = palette(ui.ctx());
-    let (font, row_h) = gfx::preview_code_font(ui.ctx());
+    let (font, row_h) = gfx::preview_code_font();
     let num_font = FontId::new(font.size - 1.0, font.family.clone());
     let char_w = ui.ctx().fonts_mut(|f| f.glyph_width(&font, '0'));
     let n = lines.len() + usize::from(truncated);
@@ -545,7 +564,7 @@ fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<StyledLine>>, widest: usiz
                         pos2(r.left() + gutter + 12.0, r.center().y),
                         Align2::LEFT_CENTER,
                         tr!("views-preview-text-truncated"),
-                        FontId::proportional(11.0),
+                        crate::theme::font::ui(11.0),
                         p.text_tertiary,
                     );
                     continue;

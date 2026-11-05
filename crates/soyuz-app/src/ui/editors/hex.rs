@@ -2,16 +2,24 @@
 //! the virtualized 16-bytes-per-row view and the data inspector.
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{Align2, CornerRadius, EventFilter, FontId, Id, Key, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, CornerRadius, EventFilter, Id, Key, Rect, Sense, Stroke, Ui, pos2, vec2};
 
 use super::widgets::{self, SCROLLBAR};
 use crate::editors::hex::{HexDoc, ROW};
 use crate::theme::{Palette, icons::ph};
 
-const TOOLBAR_H: f32 = 34.0;
-const BAR_H: f32 = 34.0;
-const STATUS_H: f32 = 24.0;
-const INSPECTOR_W: f32 = 230.0;
+fn toolbar_h() -> f32 {
+    crate::theme::font::grow(34.0)
+}
+fn bar_h() -> f32 {
+    crate::theme::font::grow(34.0)
+}
+fn status_h() -> f32 {
+    crate::theme::font::grow(24.0)
+}
+fn inspector_w() -> f32 {
+    crate::theme::font::grow(230.0)
+}
 
 #[derive(Default)]
 pub struct HexOutput {
@@ -29,13 +37,13 @@ pub fn show(
 ) -> HexOutput {
     doc.pump();
     let mut out = HexOutput::default();
-    let tb = Rect::from_min_size(rect.min, vec2(rect.width(), TOOLBAR_H));
+    let tb = Rect::from_min_size(rect.min, vec2(rect.width(), toolbar_h()));
     toolbar(doc, ui, tb, p, id, &mut out);
     let mut top = tb.bottom();
     if doc.goto.is_some() || doc.find.is_some() {
-        let r = Rect::from_min_size(pos2(rect.left(), top), vec2(rect.width(), BAR_H));
+        let r = Rect::from_min_size(pos2(rect.left(), top), vec2(rect.width(), bar_h()));
         bar(doc, ui, r, p, id, focus);
-        top += BAR_H;
+        top += bar_h();
     }
     if doc.too_large_for_text && doc.read_only {
         let r = Rect::from_min_size(pos2(rect.left() + 8.0, top + 2.0), vec2(rect.width() - 16.0, 30.0));
@@ -59,7 +67,7 @@ pub fn show(
         widgets::banner(ui, r, p, ph::WARNING, p.danger, &tr!("editors-hex-read-failed", error = e), &[]);
         top += 36.0;
     }
-    let status = Rect::from_min_max(pos2(rect.left(), rect.bottom() - STATUS_H), rect.max);
+    let status = Rect::from_min_max(pos2(rect.left(), rect.bottom() - status_h()), rect.max);
     let body = Rect::from_min_max(pos2(rect.left(), top), pos2(rect.right(), status.top()));
     self::body(doc, ui, body, p, font_size, focus, id);
     self::status(doc, ui, status, p);
@@ -72,7 +80,7 @@ fn toolbar(doc: &mut HexDoc, ui: &mut Ui, r: Rect, p: &Palette, id: Id, out: &mu
         let b = Rect::from_min_size(pos2(x.get(), r.top() + 4.0), vec2(26.0, 26.0));
         x.set(x.get() + 28.0);
         if on {
-            ui.painter().rect_filled(b, CornerRadius::same(4), p.accent_subtle);
+            ui.painter().rect_filled(b, crate::theme::tokens::radius::same(4), p.accent_subtle);
         }
         widgets::icon_at(ui, b, id.with(("hx", tip)), glyph, tip, enabled, p)
     };
@@ -91,7 +99,7 @@ fn toolbar(doc: &mut HexDoc, ui: &mut Ui, r: Rect, p: &Palette, id: Id, out: &mu
         let b = Rect::from_min_size(pos2(x.get(), r.top() + 4.0), vec2(26.0, 26.0));
         x.set(x.get() + 28.0);
         if on {
-            ui.painter().rect_filled(b, CornerRadius::same(4), p.accent_subtle);
+            ui.painter().rect_filled(b, crate::theme::tokens::radius::same(4), p.accent_subtle);
         }
         widgets::icon_at(ui, b, id.with(("hx2", tip)), glyph, tip, true, p)
     };
@@ -108,13 +116,18 @@ fn toolbar(doc: &mut HexDoc, ui: &mut Ui, r: Rect, p: &Palette, id: Id, out: &mu
     }
     // Byte order for the inspector.
     let label = if doc.big_endian { tr!("editors-hex-big-endian") } else { tr!("editors-hex-little-endian") };
-    let label_w = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(11.5), p.text_secondary).size().x;
+    let label_w =
+        ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(11.5), p.text_secondary).size().x;
     let bw = (label_w + 16.0).max(92.0);
     let br = Rect::from_min_size(pos2(r.right() - 8.0 - bw, r.top() + 6.0), vec2(bw, 22.0));
     let resp = ui.interact(br, id.with("endian"), Sense::click());
     crate::ui::a11y::button(&resp, label);
-    ui.painter().rect_filled(br, CornerRadius::same(4), if resp.hovered() { p.bg_surface3 } else { p.bg_surface2 });
-    ui.painter().text(br.center(), Align2::CENTER_CENTER, label, FontId::proportional(11.5), p.text_secondary);
+    ui.painter().rect_filled(
+        br,
+        crate::theme::tokens::radius::same(4),
+        if resp.hovered() { p.bg_surface3 } else { p.bg_surface2 },
+    );
+    ui.painter().text(br.center(), Align2::CENTER_CENTER, label, crate::theme::font::ui(11.5), p.text_secondary);
     if resp.on_hover_text(tr!("editors-hex-endian-tip")).clicked() {
         doc.big_endian = !doc.big_endian;
     }
@@ -140,7 +153,7 @@ fn bar(doc: &mut HexDoc, ui: &mut Ui, r: Rect, p: &Palette, id: Id, focus: &mut 
             pos2(fr.right() + 10.0, r.center().y),
             Align2::LEFT_CENTER,
             hint,
-            FontId::proportional(11.5),
+            crate::theme::font::ui(11.5),
             p.text_secondary,
         );
         if (resp.has_focus() || resp.lost_focus()) && ui.input(|i| i.key_pressed(Key::Enter)) {
@@ -167,7 +180,7 @@ fn bar(doc: &mut HexDoc, ui: &mut Ui, r: Rect, p: &Palette, id: Id, focus: &mut 
             pos2(cr.right() + 10.0, r.center().y),
             Align2::LEFT_CENTER,
             status,
-            FontId::proportional(11.5),
+            crate::theme::font::ui(11.5),
             color,
         );
         let enter = (resp.has_focus() || resp.lost_focus()) && ui.input(|i| i.key_pressed(Key::Enter));
@@ -200,7 +213,7 @@ fn status(doc: &HexDoc, ui: &mut Ui, r: Rect, p: &Palette) {
         pos2(r.left() + 10.0, r.center().y),
         Align2::LEFT_CENTER,
         s,
-        FontId::proportional(11.5),
+        crate::theme::font::ui(11.5),
         p.text_secondary,
     );
     let mode = if doc.read_only { tr!("editors-read-only") } else { tr!("editors-hex-overwrite") };
@@ -209,7 +222,7 @@ fn status(doc: &HexDoc, ui: &mut Ui, r: Rect, p: &Palette) {
         pos2(r.right() - 10.0, r.center().y),
         Align2::RIGHT_CENTER,
         format!("{col}  ·  {mode}"),
-        FontId::proportional(11.5),
+        crate::theme::font::ui(11.5),
         if doc.read_only { p.warning } else { p.text_secondary },
     );
 }
@@ -221,9 +234,9 @@ fn body(doc: &mut HexDoc, ui: &mut Ui, body: Rect, p: &Palette, font_size: f32, 
     let digits = crate::ui::preview::hex::offset_digits(doc.len);
     // Inspector beside the rows when everything fits, else as a strip below them.
     let rows_w = 10.0 + (digits as f32 + 2.0 + 49.0 + 1.5 + 16.0) * cw + 16.0 + SCROLLBAR;
-    let side = body.width() >= rows_w + INSPECTOR_W;
+    let side = body.width() >= rows_w + inspector_w();
     let (inspector, view) = if side {
-        let i = Rect::from_min_max(pos2(body.right() - INSPECTOR_W, body.top()), body.max);
+        let i = Rect::from_min_max(pos2(body.right() - inspector_w(), body.top()), body.max);
         (i, Rect::from_min_max(body.min, pos2(i.left(), body.bottom())))
     } else {
         let i = Rect::from_min_max(pos2(body.left(), body.bottom() - 104.0), body.max);
@@ -339,12 +352,12 @@ fn body(doc: &mut HexDoc, ui: &mut Ui, body: Rect, p: &Palette, font_size: f32, 
                 let (strong, weak) = if doc.text_col { (tx, hx) } else { (hx, tx) };
                 painter.rect_filled(
                     strong,
-                    CornerRadius::same(2),
+                    crate::theme::tokens::radius::same(2),
                     p.accent.gamma_multiply(if focused { 0.45 } else { 0.25 }),
                 );
                 painter.rect_stroke(
                     weak,
-                    CornerRadius::same(2),
+                    crate::theme::tokens::radius::same(2),
                     Stroke::new(1.0, p.accent.gamma_multiply(0.6)),
                     egui::StrokeKind::Inside,
                 );
@@ -401,7 +414,7 @@ fn body(doc: &mut HexDoc, ui: &mut Ui, body: Rect, p: &Palette, font_size: f32, 
             area.center(),
             Align2::CENTER_CENTER,
             tr!("editors-text-empty"),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
         );
     }
@@ -422,7 +435,7 @@ fn inspector(doc: &HexDoc, ui: &mut Ui, r: Rect, p: &Palette, side: bool) {
         pos2(r.left() + 14.0, r.top() + 16.0),
         Align2::LEFT_CENTER,
         tr!("editors-hex-inspector"),
-        FontId::new(12.5, egui::FontFamily::Name(crate::theme::fonts::SEMIBOLD.into())),
+        crate::theme::font::semibold(12.5),
         p.text_primary,
     );
     let order = if doc.big_endian { tr!("editors-hex-order-big") } else { tr!("editors-hex-order-little") };
@@ -430,7 +443,7 @@ fn inspector(doc: &HexDoc, ui: &mut Ui, r: Rect, p: &Palette, side: bool) {
         pos2(r.left() + 14.0, r.top() + 34.0),
         Align2::LEFT_CENTER,
         order,
-        FontId::proportional(11.0),
+        crate::theme::font::ui(11.0),
         p.text_tertiary,
     );
     let rows = doc.inspect();
@@ -441,13 +454,13 @@ fn inspector(doc: &HexDoc, ui: &mut Ui, r: Rect, p: &Palette, side: bool) {
                 pos2(r.left() + 14.0, y),
                 Align2::LEFT_CENTER,
                 label,
-                FontId::proportional(11.5),
+                crate::theme::font::ui(11.5),
                 p.text_secondary,
             );
             let g = crate::ui::widgets::trunc_galley(
                 &painter,
                 &value,
-                FontId::monospace(11.5),
+                crate::theme::font::mono(11.5),
                 p.text_primary,
                 r.width() - 80.0,
             );
@@ -462,11 +475,11 @@ fn inspector(doc: &HexDoc, ui: &mut Ui, r: Rect, p: &Palette, side: bool) {
             let (c, row) = (i / 4, i % 4);
             let x = x0 + c as f32 * col_w;
             let y = r.top() + 16.0 + row as f32 * 22.0;
-            painter.text(pos2(x, y), Align2::LEFT_CENTER, label, FontId::proportional(11.5), p.text_secondary);
+            painter.text(pos2(x, y), Align2::LEFT_CENTER, label, crate::theme::font::ui(11.5), p.text_secondary);
             let g = crate::ui::widgets::trunc_galley(
                 &painter,
                 &value,
-                FontId::monospace(11.5),
+                crate::theme::font::mono(11.5),
                 p.text_primary,
                 col_w - 60.0,
             );

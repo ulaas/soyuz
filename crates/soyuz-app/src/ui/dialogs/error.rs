@@ -2,7 +2,7 @@
 //! enough space, trash unsupported (offer permanent delete), read-only item and archive
 //! password, for a [`PromptModel`] (drawn by `super::conflict::show`).
 
-use egui::{Align, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use soyuz_core::{ErrorAction, format_size};
 use soyuz_jobs::kinds::extract::ARCHIVE_LIMIT_OP;
 use soyuz_jobs::{JobPrompt, PromptResponse};
@@ -20,13 +20,13 @@ fn name(p: &std::path::Path) -> String {
 fn path_box(ui: &mut Ui, path: &std::path::Path, p: &Palette) {
     egui::Frame::new()
         .fill(p.bg_sunken)
-        .corner_radius(CornerRadius::same(6))
+        .corner_radius(crate::theme::tokens::radius::same(6))
         .inner_margin(Margin::symmetric(10, 7))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(
                 RichText::new(soyuz_fs::strip_verbatim(path).display().to_string())
-                    .font(FontId::monospace(11.5))
+                    .font(crate::theme::font::mono(11.5))
                     .color(p.text_secondary),
             );
         });
@@ -40,11 +40,11 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
             ui.label(RichText::new(tr!("dialogs-prompt-archive-limit", name = name(path))).color(p.text_primary));
             ui.add_space(4.0);
             if !error.message.is_empty() {
-                ui.label(RichText::new(&error.message).font(FontId::proportional(12.0)).color(p.warning));
+                ui.label(RichText::new(&error.message).font(crate::theme::font::ui(12.0)).color(p.warning));
             }
             ui.label(
                 RichText::new(tr!("dialogs-prompt-archive-limit-hint"))
-                    .font(FontId::proportional(11.5))
+                    .font(crate::theme::font::ui(11.5))
                     .color(p.text_tertiary),
             );
             ui.add_space(8.0);
@@ -75,7 +75,7 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
             ui.add_space(4.0);
             ui.label(RichText::new(capitalize(error.kind.describe())).color(p.danger));
             if !error.message.is_empty() && error.message != error.kind.describe() {
-                ui.label(RichText::new(&error.message).font(FontId::proportional(12.0)).color(p.text_secondary));
+                ui.label(RichText::new(&error.message).font(crate::theme::font::ui(12.0)).color(p.text_secondary));
             }
             ui.add_space(8.0);
             path_box(ui, path, p);
@@ -129,14 +129,16 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
             ui.add_space(10.0);
             // Needed vs free bar.
             let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 8.0), Sense::hover());
-            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_sunken);
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_sunken);
             let frac = if *needed == 0 { 1.0 } else { (*free as f32 / *needed as f32).clamp(0.0, 1.0) };
             let mut fr = r;
             fr.set_width((r.width() * frac).max(4.0));
-            ui.painter().rect_filled(fr, CornerRadius::same(4), p.warning);
+            ui.painter().rect_filled(fr, crate::theme::tokens::radius::same(4), p.warning);
             ui.add_space(6.0);
             ui.label(
-                RichText::new(tr!("dialogs-prompt-space-hint")).font(FontId::proportional(11.5)).color(p.text_tertiary),
+                RichText::new(tr!("dialogs-prompt-space-hint"))
+                    .font(crate::theme::font::ui(11.5))
+                    .color(p.text_tertiary),
             );
             ui.add_space(16.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -152,7 +154,7 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
         JobPrompt::TrashUnsupported { path, reason } => {
             ui.label(RichText::new(tr!("dialogs-prompt-trash", name = name(path))).color(p.text_primary));
             if !reason.is_empty() {
-                ui.label(RichText::new(reason).font(FontId::proportional(12.0)).color(p.text_secondary));
+                ui.label(RichText::new(reason).font(crate::theme::font::ui(12.0)).color(p.text_secondary));
             }
             ui.add_space(6.0);
             ui.label(RichText::new(tr!("dialogs-prompt-trash-permanent")).color(p.danger));

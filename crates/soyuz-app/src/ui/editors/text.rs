@@ -19,9 +19,15 @@ use crate::services::preview_gfx::rgb;
 use crate::theme::{Palette, icons::ph};
 use crate::ui::gfx::color32;
 
-const TOOLBAR_H: f32 = 34.0;
-const BAR_H: f32 = 34.0;
-const STATUS_H: f32 = 24.0;
+fn toolbar_h() -> f32 {
+    crate::theme::font::grow(34.0)
+}
+fn bar_h() -> f32 {
+    crate::theme::font::grow(34.0)
+}
+fn status_h() -> f32 {
+    crate::theme::font::grow(24.0)
+}
 
 /// What the surrounding panel should do after a frame.
 #[derive(Default)]
@@ -47,19 +53,19 @@ pub fn show(doc: &mut TextDoc, ui: &mut Ui, rect: Rect, env: &mut TextEnv<'_>) -
     let cfg = env.cfg;
     let tab = (cfg.tab_width as usize).clamp(1, 16);
     // Toolbar.
-    let tb = Rect::from_min_size(rect.min, vec2(rect.width(), TOOLBAR_H));
+    let tb = Rect::from_min_size(rect.min, vec2(rect.width(), toolbar_h()));
     toolbar(doc, ui, tb, env, &mut out);
     let mut top = tb.bottom();
     if doc.find.open {
-        let h = if doc.find.replace { BAR_H * 2.0 - 4.0 } else { BAR_H };
+        let h = if doc.find.replace { bar_h() * 2.0 - 4.0 } else { bar_h() };
         let r = Rect::from_min_size(pos2(rect.left(), top), vec2(rect.width(), h));
         find_bar(doc, ui, r, env);
         top += h;
     }
     if doc.goto.is_some() {
-        let r = Rect::from_min_size(pos2(rect.left(), top), vec2(rect.width(), BAR_H));
+        let r = Rect::from_min_size(pos2(rect.left(), top), vec2(rect.width(), bar_h()));
         goto_bar(doc, ui, r, env);
-        top += BAR_H;
+        top += bar_h();
     }
     let notice = match doc.notice() {
         Some(true) => Some((ph::WARNING, p.warning, tr!("editors-text-lossy"), [tr!("editors-text-edit-anyway")])),
@@ -73,7 +79,7 @@ pub fn show(doc: &mut TextDoc, ui: &mut Ui, rect: Rect, env: &mut TextEnv<'_>) -
         }
         top += 36.0;
     }
-    let status = Rect::from_min_max(pos2(rect.left(), rect.bottom() - STATUS_H), rect.max);
+    let status = Rect::from_min_max(pos2(rect.left(), rect.bottom() - status_h()), rect.max);
     let body = Rect::from_min_max(pos2(rect.left(), top), pos2(rect.right(), status.top()));
     self::body(doc, ui, body, env, tab);
     self::status(doc, ui, status, p, tab);
@@ -88,7 +94,7 @@ fn toolbar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>, out: 
         let b = Rect::from_min_size(pos2(x.get(), r.top() + 4.0), vec2(26.0, 26.0));
         x.set(x.get() + 28.0);
         if on {
-            ui.painter().rect_filled(b, CornerRadius::same(4), p.accent_subtle);
+            ui.painter().rect_filled(b, crate::theme::tokens::radius::same(4), p.accent_subtle);
         }
         widgets::icon_at(ui, b, id.with(("tb", tip)), glyph, tip, enabled, p)
     };
@@ -107,7 +113,7 @@ fn toolbar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>, out: 
         let b = Rect::from_min_size(pos2(x.get(), r.top() + 4.0), vec2(26.0, 26.0));
         x.set(x.get() + 28.0);
         if on {
-            ui.painter().rect_filled(b, CornerRadius::same(4), p.accent_subtle);
+            ui.painter().rect_filled(b, crate::theme::tokens::radius::same(4), p.accent_subtle);
         }
         widgets::icon_at(ui, b, id.with(("tb2", tip)), glyph, tip, true, p)
     };
@@ -128,7 +134,7 @@ fn toolbar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>, out: 
             pos2(r.right() - 10.0, r.center().y),
             Align2::RIGHT_CENTER,
             tr!("editors-read-only"),
-            FontId::proportional(11.5),
+            crate::theme::font::ui(11.5),
             p.warning,
         );
     }
@@ -139,7 +145,7 @@ fn find_bar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>) {
     let p = env.p;
     let id = env.id;
     ui.painter().rect_filled(r, CornerRadius::ZERO, p.bg_surface2.gamma_multiply(0.5));
-    let row1 = Rect::from_min_size(r.min, vec2(r.width(), BAR_H));
+    let row1 = Rect::from_min_size(r.min, vec2(r.width(), bar_h()));
     let field_w = (r.width() - 300.0).clamp(120.0, 420.0);
     let fr = Rect::from_min_size(pos2(row1.left() + 8.0, row1.top() + 5.0), vec2(field_w, 24.0));
     let fid = id.with("find.field");
@@ -176,7 +182,7 @@ fn find_bar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>) {
     }
     let (count, is_error) = doc.find_status();
     let color = if is_error { p.danger } else { p.text_secondary };
-    ui.painter().text(pos2(x + 4.0, row1.center().y), Align2::LEFT_CENTER, &count, FontId::proportional(11.5), color);
+    ui.painter().text(pos2(x + 4.0, row1.center().y), Align2::LEFT_CENTER, &count, crate::theme::font::ui(11.5), color);
     let right = row1.right() - 8.0;
     let ir = |i: f32| Rect::from_min_size(pos2(right - 26.0 * (i + 1.0), row1.top() + 5.0), vec2(24.0, 24.0));
     if widgets::icon_at(ui, ir(0.0), id.with("find.close"), ph::X, tr!("editors-find-close"), true, p) {
@@ -190,7 +196,7 @@ fn find_bar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>) {
         doc.find_step(false);
     }
     if doc.find.replace {
-        let row2 = Rect::from_min_size(pos2(r.left(), row1.bottom() - 4.0), vec2(r.width(), BAR_H));
+        let row2 = Rect::from_min_size(pos2(r.left(), row1.bottom() - 4.0), vec2(r.width(), bar_h()));
         let rr = Rect::from_min_size(pos2(row2.left() + 8.0, row2.top() + 5.0), vec2(field_w, 24.0));
         let rid = id.with("replace.field");
         let hint = if doc.find.query.regex { tr!("editors-replace-hint-regex") } else { tr!("editors-replace-hint") };
@@ -203,7 +209,7 @@ fn find_bar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>) {
         let br = |x: f32, w: f32| Rect::from_min_size(pos2(x, row2.top() + 5.0), vec2(w, 24.0));
         // Buttons fit their (translated) labels.
         let label_w = |ui: &Ui, s: &str| {
-            let g = ui.painter().layout_no_wrap(s.to_string(), FontId::proportional(12.0), p.text_primary);
+            let g = ui.painter().layout_no_wrap(s.to_string(), crate::theme::font::ui(12.0), p.text_primary);
             (g.size().x + 20.0).max(70.0)
         };
         let (l1, l2) = (tr!("editors-replace-one"), tr!("editors-replace-all"));
@@ -213,14 +219,14 @@ fn find_bar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>) {
             let resp = ui.interact(b, id.with(("rep", all)), Sense::click());
             crate::ui::a11y::button(&resp, label);
             let fill = if resp.hovered() { p.bg_surface3 } else { p.bg_surface2 };
-            ui.painter().rect_filled(b, CornerRadius::same(4), fill);
+            ui.painter().rect_filled(b, crate::theme::tokens::radius::same(4), fill);
             ui.painter().rect_stroke(
                 b,
-                CornerRadius::same(4),
+                crate::theme::tokens::radius::same(4),
                 Stroke::new(1.0, p.border_subtle),
                 egui::StrokeKind::Inside,
             );
-            ui.painter().text(b.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), p.text_primary);
+            ui.painter().text(b.center(), Align2::CENTER_CENTER, label, crate::theme::font::ui(12.0), p.text_primary);
             if resp.clicked() && !doc.read_only {
                 if all {
                     doc.replace_all();
@@ -249,7 +255,7 @@ fn goto_bar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>) {
         pos2(fr.right() + 10.0, r.center().y),
         Align2::LEFT_CENTER,
         tr!("editors-goto-range", count = n),
-        FontId::proportional(11.5),
+        crate::theme::font::ui(11.5),
         p.text_secondary,
     );
     if (resp.has_focus() || resp.lost_focus()) && ui.input(|i| i.key_pressed(Key::Enter)) {
@@ -278,7 +284,7 @@ fn status(doc: &mut TextDoc, ui: &mut Ui, r: Rect, p: &Palette, tab: usize) {
     let right = format!("{lang}  ·  {indent}  ·  {}", doc.encoding.label());
     let eol_rect = Rect::from_min_max(pos2(r.right() - 50.0, r.top() + 2.0), pos2(r.right() - 6.0, r.bottom() - 2.0));
     // A narrow panel drops the line count / selection first, then the right-hand block.
-    let font = FontId::proportional(11.5);
+    let font = crate::theme::font::ui(11.5);
     let galley = |t: String| ui.painter().layout_no_wrap(t, font.clone(), p.text_secondary);
     let room = eol_rect.left() - 8.0 - (r.left() + 10.0);
     let mut right_g = Some(galley(right));
@@ -297,13 +303,13 @@ fn status(doc: &mut TextDoc, ui: &mut Ui, r: Rect, p: &Palette, tab: usize) {
     }
     let resp = ui.interact(eol_rect, ui.scope_id().with("eol"), Sense::click());
     if resp.hovered() {
-        ui.painter().rect_filled(eol_rect, CornerRadius::same(4), p.bg_surface2);
+        ui.painter().rect_filled(eol_rect, crate::theme::tokens::radius::same(4), p.bg_surface2);
     }
     ui.painter().text(
         eol_rect.center(),
         Align2::CENTER_CENTER,
         doc.eol.label(),
-        FontId::proportional(11.5),
+        crate::theme::font::ui(11.5),
         if doc.eol != doc.saved_eol { p.accent } else { p.text_secondary },
     );
     if resp.on_hover_text(tr!("editors-text-eol-tip")).clicked() {
@@ -491,7 +497,7 @@ fn body(doc: &mut TextDoc, ui: &mut Ui, body: Rect, env: &mut TextEnv<'_>, tab: 
             }
             let r = Rect::from_min_max(pos2(x_of(da), y + 1.0), pos2(x_of(db).max(x_of(da) + 2.0), y + row_h - 1.0));
             let cur = sa == m.start_pos() && sb == m.end_pos();
-            clip.rect_filled(r, CornerRadius::same(2), if cur { current_match } else { match_color });
+            clip.rect_filled(r, crate::theme::tokens::radius::same(2), if cur { current_match } else { match_color });
         }
         // Selection.
         if !doc.sel.is_empty() && line >= sa.line && line <= sb.line {
@@ -505,7 +511,7 @@ fn body(doc: &mut TextDoc, ui: &mut Ui, body: Rect, env: &mut TextEnv<'_>, tab: 
                 }
                 clip.rect_filled(
                     Rect::from_min_max(pos2(x0, y), pos2(x1.max(x0 + 1.0), y + row_h)),
-                    CornerRadius::same(2),
+                    crate::theme::tokens::radius::same(2),
                     sel_color,
                 );
             }
@@ -548,7 +554,7 @@ fn body(doc: &mut TextDoc, ui: &mut Ui, body: Rect, env: &mut TextEnv<'_>, tab: 
             pos2(text.left(), text.top() + row_h / 2.0),
             Align2::LEFT_CENTER,
             tr!("editors-text-empty"),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
         );
     }

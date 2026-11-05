@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use egui::{Align, FontId, Key, Layout, Margin, RichText, TextEdit, Ui};
+use egui::{Align, Key, Layout, Margin, RichText, TextEdit, Ui};
 
 use super::WsCmd;
 use crate::cmd::Cmd;
@@ -57,7 +57,7 @@ impl Dialog for SaveWorkspaceDialog {
             } else {
                 tr!("workspaces-tabs-and-groups", tabs = tabs, groups = groups)
             })
-            .font(FontId::proportional(11.5))
+            .font(crate::theme::font::ui(11.5))
             .color(p.text_tertiary),
         );
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
@@ -111,10 +111,10 @@ impl Dialog for ManageWorkspacesDialog {
                                 .margin(Margin::symmetric(8, 5)),
                         );
                     } else {
-                        ui.label(RichText::new(name).color(p.text_primary).font(FontId::proportional(13.0)));
+                        ui.label(RichText::new(name).color(p.text_primary).font(crate::theme::font::ui(13.0)));
                         ui.label(
                             RichText::new(tr!("workspaces-tabs", count = *tabs))
-                                .font(FontId::proportional(11.5))
+                                .font(crate::theme::font::ui(11.5))
                                 .color(p.text_tertiary),
                         );
                         if !hotkey.is_empty() {
@@ -157,7 +157,9 @@ impl Dialog for ManageWorkspacesDialog {
         });
         ui.add_space(6.0);
         ui.label(
-            RichText::new(tr!("workspaces-manage-slots-note")).font(FontId::proportional(11.5)).color(p.text_tertiary),
+            RichText::new(tr!("workspaces-manage-slots-note"))
+                .font(crate::theme::font::ui(11.5))
+                .color(p.text_tertiary),
         );
         !crate::ui::dialogs::close_footer(ui, tr!("common-close"))
     }

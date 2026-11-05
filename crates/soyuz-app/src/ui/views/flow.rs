@@ -4,8 +4,8 @@
 //! menu, rubber-band selection with auto-scroll and middle-click.
 
 use egui::{
-    Align2, Color32, CornerRadius, CursorIcon, FontFamily, FontId, Id, Painter, PointerButton, Pos2, Rect, Response,
-    ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2,
+    Align2, Color32, CornerRadius, CursorIcon, Id, Painter, PointerButton, Pos2, Rect, Response, ScrollArea, Sense,
+    Stroke, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2,
 };
 use soyuz_core::config::{Action, MiddleClick};
 use soyuz_core::{Column, EntryInfo, SortDir};
@@ -19,7 +19,7 @@ use crate::services::preview_gfx::Tex;
 use crate::services::thumbs::{self, ThumbKey};
 use crate::state::pane::{Band, ContextTarget, LayoutSig, Pane};
 use crate::state::selection::{BandMode, ClickMods, EntryKey, Selection};
-use crate::theme::fonts::SEMIBOLD;
+use crate::theme::font::semibold;
 use crate::theme::tokens::{alpha, radius};
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::context_menu;
@@ -48,14 +48,11 @@ impl Style {
 }
 
 const PAD_X: f32 = 6.0;
-const HEADER_H: f32 = 30.0;
-const GROUP_H: f32 = 32.0;
-const LIST_CELL_W: f32 = 250.0;
-const CHECK: f32 = 16.0;
-
-pub fn semibold(size: f32) -> FontId {
-    FontId::new(size, FontFamily::Name(SEMIBOLD.into()))
+/// The header row of the details view.
+fn header_h() -> f32 {
+    crate::theme::font::height(30.0, 12.0)
 }
+const CHECK: f32 = 16.0;
 
 /// Selection fill for focused / unfocused panes.
 pub fn selection_fill(p: &Palette, focused: bool) -> Color32 {
@@ -89,9 +86,19 @@ fn geometry(style: Style, pane: &Pane, avail_w: f32, row_h: f32, zoom: f32) -> G
         }
         Style::Grid | Style::Gallery => {
             let (base, gap, pad) = if style == Style::Grid {
-                (vec2((zoom + 30.0).max(92.0), zoom + 18.0 + 36.0), vec2(4.0, 6.0), vec2(12.0, 10.0))
+                // Two lines of caption below the icon.
+                let caption = crate::theme::font::height(18.0, 12.5);
+                (
+                    vec2((zoom + 30.0).max(crate::theme::font::grow(92.0)), zoom + 18.0 + 2.0 * caption),
+                    vec2(4.0, 6.0),
+                    vec2(12.0, 10.0),
+                )
             } else {
-                (vec2(zoom + 24.0, zoom + 40.0), vec2(10.0, 10.0), vec2(16.0, 12.0))
+                (
+                    vec2(zoom + 24.0, zoom + 22.0 + crate::theme::font::height(18.0, 12.5)),
+                    vec2(10.0, 10.0),
+                    vec2(16.0, 12.0),
+                )
             };
             // Stretch cells so each row fills the width evenly (bounded).
             let usable = avail_w - 2.0 * pad.x;
@@ -99,16 +106,18 @@ fn geometry(style: Style, pane: &Pane, avail_w: f32, row_h: f32, zoom: f32) -> G
             let stretched = ((usable - (n - 1.0) * gap.x) / n - 0.01).clamp(base.x.min(usable), base.x * 1.45);
             (vec2(stretched, base.y), gap, pad)
         }
-        Style::List => (vec2(LIST_CELL_W, row_h), vec2(6.0, 0.0), vec2(8.0, 6.0)),
-        Style::Column => (vec2((avail_w - 8.0).max(60.0), 26.0), Vec2::ZERO, vec2(4.0, 4.0)),
+        Style::List => (vec2(crate::theme::font::grow(250.0), row_h), vec2(6.0, 0.0), vec2(8.0, 6.0)),
+        Style::Column => {
+            (vec2((avail_w - 8.0).max(60.0), crate::theme::font::height(26.0, 13.0)), Vec2::ZERO, vec2(4.0, 4.0))
+        }
     };
-    let header_h = if style == Style::Details { HEADER_H } else { 0.0 };
+    let header_h = if style == Style::Details { header_h() } else { 0.0 };
     Geometry { cols, content_w, cell, gap, pad, header_h }
 }
 
 /// Draw the pane's listing into `rect`.
 pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style: Style) {
-    let row_h = v.config.appearance.density.row_height();
+    let row_h = crate::theme::font::height(v.config.appearance.density.row_height(), 13.0);
     // Icon sizes glide between zoom levels; the layout follows the animated size.
     let zoom = if matches!(style, Style::Grid | Style::Gallery) {
         ui.ctx().animate_value_with_time(
@@ -134,7 +143,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style
             crate::ui::geom::size(g.cell),
             crate::ui::geom::size(g.gap),
             crate::ui::geom::size(g.pad),
-            GROUP_H,
+            crate::theme::font::height(32.0, 12.5),
         ));
         pane.layout_sig = Some(sig);
     }
@@ -322,7 +331,7 @@ fn body(
 
     // Inline rename editor (registered after the background so it gets the clicks).
     if let Some(r) = rename_at {
-        let font = FontId::proportional(if matches!(style, Style::Grid | Style::Gallery) { 12.5 } else { 13.0 });
+        let font = crate::theme::font::ui(if matches!(style, Style::Grid | Style::Gallery) { 12.5 } else { 13.0 });
         crate::ui::views::rename::editor(ui, r, font, pane, v);
     }
 
@@ -475,10 +484,10 @@ fn body(
         }
         let screen = to_screen(band_rect);
         let painter = ui.painter_at(list_area);
-        painter.rect_filled(screen, CornerRadius::same(3), p.accent.gamma_multiply(0.10));
+        painter.rect_filled(screen, crate::theme::tokens::radius::same(3), p.accent.gamma_multiply(0.10));
         painter.rect_stroke(
             screen,
-            CornerRadius::same(3),
+            crate::theme::tokens::radius::same(3),
             Stroke::new(1.0, p.accent.gamma_multiply(0.8)),
             StrokeKind::Inside,
         );
@@ -547,7 +556,7 @@ struct ItemState {
 }
 
 fn paint_item_bg(painter: &Painter, p: &Palette, r: Rect, st: &ItemState, rounding: u8) {
-    let cr = CornerRadius::same(rounding);
+    let cr = crate::theme::tokens::radius::same(rounding);
     if st.selected {
         painter.rect_filled(r, cr, selection_fill(p, st.focused_pane));
         if st.hovered {
@@ -593,7 +602,7 @@ fn name_rect(style: Style, r: Rect, cols: &[ColGeom], origin_x: f32, checkbox: b
 }
 
 fn paint_checkbox(painter: &Painter, p: &Palette, r: Rect, checked: bool) {
-    let cr = CornerRadius::same(4);
+    let cr = crate::theme::tokens::radius::same(4);
     if checked {
         painter.rect_filled(r, cr, p.accent);
         painter.text(r.center(), Align2::CENTER_CENTER, ph::CHECK, ticons::font(11.0), Color32::WHITE);
@@ -652,7 +661,7 @@ fn paint_details_row(
                 } else {
                     painter.rect_stroke(
                         cb,
-                        CornerRadius::same(4),
+                        crate::theme::tokens::radius::same(4),
                         Stroke::new(1.0, p.border_subtle),
                         StrokeKind::Inside,
                     );
@@ -679,7 +688,7 @@ fn paint_details_row(
                 painter,
                 &super::display_name(e),
                 e.is_dir_like(),
-                FontId::proportional(13.0),
+                crate::theme::font::ui(13.0),
                 color,
                 x1 - tx - 8.0 - deco.trailing_width() - badge_w(&e.name),
             );
@@ -699,9 +708,9 @@ fn paint_details_row(
             }
             let color = p.text_secondary.gamma_multiply(a);
             let font = if columns::numeric(c.column) {
-                crate::theme::fonts::numbers(painter.ctx(), 12.5)
+                crate::theme::font::numbers(12.5)
             } else {
-                FontId::proportional(12.5)
+                crate::theme::font::ui(12.5)
             };
             let galley = trunc_galley(painter, &text, font, color, c.w - 18.0);
             let x = if columns::right_aligned(c.column) { x1 - 10.0 - galley.size().x } else { x0 + 10.0 };
@@ -796,7 +805,7 @@ fn paint_grid_cell(
         deco.paint_tags(painter, p, r.right() - 8.0 - deco.trailing_width(), r.top() + 10.0, p.bg_surface1);
     }
     let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
-    let font = FontId::proportional(if zoom < 48.0 { 12.0 } else { 12.5 });
+    let font = crate::theme::font::ui(if zoom < 48.0 { 12.0 } else { 12.5 });
     let rows = if gallery { 1 } else { 2 };
     let fitted =
         fit::wrapped_entry_name(painter, &super::display_name(e), e.is_dir_like(), font, color, r.width() - 10.0, rows);
@@ -881,7 +890,7 @@ fn paint_list_cell(
     let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
     let max_w = r.right() - x - 24.0 - right_pad - deco.trailing_width() - badge_w(&e.name);
     let fitted =
-        fit::entry_name(painter, &super::display_name(e), e.is_dir_like(), FontId::proportional(13.0), color, max_w);
+        fit::entry_name(painter, &super::display_name(e), e.is_dir_like(), crate::theme::font::ui(13.0), color, max_w);
     let galley = fitted.galley;
     let gw = galley.size().x;
     painter.galley(pos2(x + 24.0, cy - galley.size().y / 2.0), galley, color);
@@ -910,7 +919,7 @@ fn paint_group_header(painter: &Painter, p: &Palette, r: Rect, label: &str, coun
     painter.galley(pos2(lx, cy - lg.size().y / 2.0), lg, c);
     let cg = painter.layout_no_wrap(
         soyuz_core::locale::group_int(count as u64),
-        FontId::proportional(11.5),
+        crate::theme::font::numbers(11.5),
         p.text_tertiary,
     );
     let cx = lx + lw + 8.0;
@@ -940,7 +949,7 @@ fn in_name_extent(
     let Some(e) = pane.entry_at(i) else { return false };
     let Some(r) = layout.item_rect(i) else { return false };
     let x0 = origin_x + name.x + if checkbox { 8.0 + CHECK + 10.0 } else { 10.0 };
-    let w = trunc_galley(painter, &super::display_name(e), FontId::proportional(13.0), Color32::WHITE, f32::INFINITY)
+    let w = trunc_galley(painter, &super::display_name(e), crate::theme::font::ui(13.0), Color32::WHITE, f32::INFINITY)
         .size()
         .x;
     let x1 = (x0 + 24.0 + w + 6.0).min(origin_x + name.x + name.w);
@@ -951,7 +960,7 @@ fn in_name_extent(
 /// Sticky column header: sort on click, resize by the right edge, drag to reorder,
 /// right-click for the column chooser.
 fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, cols: &[ColGeom], origin_x: f32) {
-    let hr = Rect::from_min_size(vis.min, vec2(vis.width(), HEADER_H));
+    let hr = Rect::from_min_size(vis.min, vec2(vis.width(), header_h()));
     let painter = ui.painter_at(hr);
     painter.rect_filled(hr, CornerRadius::ZERO, p.bg_surface1);
     painter.line_segment(
@@ -969,7 +978,11 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
         let resp = ui.interact(r, Id::unique(("soyuz.hdr", pane.id.0, ci)), Sense::click_and_drag());
         let active = sort.column == c.column;
         if resp.hovered() && pane.col_drag.is_none() {
-            painter.rect_filled(r.shrink2(vec2(2.0, 4.0)), CornerRadius::same(radius::CONTROL), p.bg_surface2);
+            painter.rect_filled(
+                r.shrink2(vec2(2.0, 4.0)),
+                crate::theme::tokens::radius::same(radius::CONTROL),
+                p.bg_surface2,
+            );
         }
         let color = if active || resp.hovered() { p.text_primary } else { p.text_secondary };
         let label = columns::header_label(c.column);
@@ -984,7 +997,7 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
                 });
             }
         });
-        let font = if active { semibold(12.0) } else { FontId::proportional(12.0) };
+        let font = if active { semibold(12.0) } else { crate::theme::font::ui(12.0) };
         let galley = trunc_galley(&painter, &label, font, color, c.w - 34.0);
         let gw = galley.size().x;
         let right = columns::right_aligned(c.column);
@@ -1032,7 +1045,7 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
         if c.column == Column::Name && ci + 1 == cols.len() {
             continue;
         }
-        let handle = Rect::from_center_size(pos2(r.right(), r.center().y), vec2(8.0, HEADER_H));
+        let handle = Rect::from_center_size(pos2(r.right(), r.center().y), vec2(8.0, header_h()));
         let hresp = ui.interact(handle, Id::unique(("soyuz.hdr.resize", pane.id.0, ci)), Sense::drag());
         crate::ui::a11y::with(ui.ctx(), hresp.id, |n| {
             n.set_role(egui::accesskit::Role::Splitter);
@@ -1067,13 +1080,17 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
                 painter.line_segment([pos2(x, hr.top() + 4.0), pos2(x, hr.bottom() - 4.0)], Stroke::new(2.0, p.accent));
             }
             if let Some(c) = cols.get(from) {
-                let ghost = Rect::from_center_size(pos2(pos.x, hr.center().y), vec2(c.w.min(160.0), HEADER_H - 8.0));
-                painter.rect_filled(ghost, CornerRadius::same(radius::CONTROL), p.accent.gamma_multiply(0.15));
+                let ghost = Rect::from_center_size(pos2(pos.x, hr.center().y), vec2(c.w.min(160.0), header_h() - 8.0));
+                painter.rect_filled(
+                    ghost,
+                    crate::theme::tokens::radius::same(radius::CONTROL),
+                    p.accent.gamma_multiply(0.15),
+                );
                 painter.text(
                     ghost.center(),
                     Align2::CENTER_CENTER,
                     columns::header_label(c.column),
-                    FontId::proportional(12.0),
+                    crate::theme::font::ui(12.0),
                     p.text_primary,
                 );
             }

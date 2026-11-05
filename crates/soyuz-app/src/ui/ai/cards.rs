@@ -7,16 +7,16 @@
 //! the client name and a countdown. The widget never decides anything itself; it returns
 //! a [`CardAction`] the caller routes to the agent or to the MCP bridge.
 
-use egui::{Align2, CornerRadius, FontId, Frame, Margin, RichText, Sense, Stroke, TextEdit, Ui, pos2, vec2};
+use egui::{Align2, Frame, Margin, RichText, Sense, Stroke, TextEdit, Ui, pos2, vec2};
 use soyuz_ai::tools::{Plan, Risk};
 
 use super::{PanelAct, Tone, button};
 use crate::ai::agent::Decision;
 use crate::ai::state::{CardOrigin, CardState, PlanCard, PlanEdit};
 use crate::theme::Palette;
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::radius;
-use crate::ui::views::flow::semibold;
 
 /// Icon and colour of a tool.
 pub fn tool_style(tool: &str, p: &Palette) -> (&'static str, egui::Color32) {
@@ -56,10 +56,10 @@ fn state_badge(ui: &mut Ui, p: &Palette, state: &CardState, rect: egui::Rect) {
         CardState::Preview => (ph::EYE, tr!("ai-card-state-preview").into(), p.text_tertiary),
         CardState::Withdrawn(why) => (ph::CLOCK_COUNTDOWN, why.clone(), p.text_tertiary),
     };
-    let g = ui.painter().layout_no_wrap(label, FontId::proportional(10.5), color);
+    let g = ui.painter().layout_no_wrap(label, crate::theme::font::ui(10.5), color);
     let w = g.size().x + 26.0;
     let r = egui::Rect::from_min_size(pos2(rect.right() - w, rect.top()), vec2(w, 20.0));
-    ui.painter().rect_filled(r, CornerRadius::same(10), color.gamma_multiply(0.12));
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(10), color.gamma_multiply(0.12));
     if matches!(state, CardState::Running(_)) {
         crate::ui::widgets::spinner(ui, pos2(r.left() + 10.0, r.center().y), 5.0, color);
     } else {
@@ -73,10 +73,10 @@ fn origin_strip(ui: &mut Ui, p: &Palette, card: &PlanCard) {
     let CardOrigin::Mcp { client, via } = &card.origin else { return };
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        let font = FontId::proportional(10.5);
+        let font = crate::theme::font::ui(10.5);
         let g = ui.painter().layout_no_wrap(tr!("ai-card-external").into(), semibold(10.5), p.warning);
         let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 26.0, 18.0), Sense::hover());
-        ui.painter().rect_filled(r, CornerRadius::same(9), p.warning.gamma_multiply(0.14));
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(9), p.warning.gamma_multiply(0.14));
         ui.painter().text(
             pos2(r.left() + 10.0, r.center().y),
             Align2::CENTER_CENTER,
@@ -120,7 +120,7 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
     Frame::new()
         .fill(p.bg_window)
         .stroke(Stroke::new(1.0, border))
-        .corner_radius(CornerRadius::same(radius::CARD))
+        .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -143,7 +143,7 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
             ui.painter().galley(pos2(tx, hr.top() + 2.0), g, p.text_primary);
             let sub = format!("{} \u{00b7} {}", card.tool, totals(&card.plan));
             let sg =
-                crate::ui::widgets::trunc_galley(ui.painter(), &sub, FontId::proportional(11.0), p.text_tertiary, tw);
+                crate::ui::widgets::trunc_galley(ui.painter(), &sub, crate::theme::font::ui(11.0), p.text_tertiary, tw);
             ui.painter().galley(pos2(tx, hr.top() + 22.0), sg, p.text_tertiary);
             state_badge(ui, p, &card.state, hr);
             let caret = if card.expanded { ph::CARET_UP } else { ph::CARET_DOWN };
@@ -194,7 +194,11 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
             }
             if let CardState::Done { message, ok } = &card.state {
                 ui.add_space(4.0);
-                ui.label(RichText::new(message).size(11.5).color(if *ok { p.success } else { p.danger }));
+                ui.label(RichText::new(message).size(crate::theme::font::px(11.5)).color(if *ok {
+                    p.success
+                } else {
+                    p.danger
+                }));
             }
             // Buttons.
             if pending {
@@ -212,7 +216,7 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
                             card.edit = None;
                         }
                         if let Err(e) = edit::args(card, &edit) {
-                            ui.label(RichText::new(e).size(11.0).color(p.danger));
+                            ui.label(RichText::new(e).size(crate::theme::font::px(11.0)).color(p.danger));
                         }
                         return;
                     }
@@ -255,20 +259,25 @@ fn banner(ui: &mut Ui, p: &Palette, icon: &str, color: egui::Color32, text: &str
     ui.add_space(4.0);
     Frame::new()
         .fill(color.gamma_multiply(0.08))
-        .corner_radius(CornerRadius::same(radius::ROW))
+        .corner_radius(crate::theme::tokens::radius::same(radius::ROW))
         .inner_margin(Margin::symmetric(8, 5))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal_top(|ui| {
                 ui.label(icons::icon(icon, 12.5).color(color));
-                ui.add(egui::Label::new(RichText::new(text).size(11.5).color(p.text_secondary)).wrap());
+                ui.add(
+                    egui::Label::new(RichText::new(text).size(crate::theme::font::px(11.5)).color(p.text_secondary))
+                        .wrap(),
+                );
             });
         });
 }
 
 fn editor(ui: &mut Ui, p: &Palette, tool: &str, plan: &Plan, edit: &mut PlanEdit) {
     if is_rename(tool) && !edit.names.is_empty() {
-        ui.label(RichText::new(tr!("ai-card-edit-names-hint")).size(11.0).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("ai-card-edit-names-hint")).size(crate::theme::font::px(11.0)).color(p.text_tertiary),
+        );
         for (i, item) in plan.items.iter().enumerate() {
             let Some(name) = edit.names.get_mut(i) else { break };
             ui.horizontal(|ui| {
@@ -281,51 +290,59 @@ fn editor(ui: &mut Ui, p: &Palette, tool: &str, plan: &Plan, edit: &mut PlanEdit
                 let w = ui.available_width();
                 ui.add_sized(
                     vec2(w * 0.45, 20.0),
-                    egui::Label::new(RichText::new(old).size(12.0).color(p.text_secondary)).truncate(),
+                    egui::Label::new(RichText::new(old).size(crate::theme::font::px(12.0)).color(p.text_secondary))
+                        .truncate(),
                 );
                 ui.label(icons::icon(ph::ARROW_RIGHT, 11.0).color(p.text_tertiary));
-                ui.add(TextEdit::singleline(name).desired_width(f32::INFINITY).font(FontId::proportional(12.0)));
+                ui.add(TextEdit::singleline(name).desired_width(f32::INFINITY).font(crate::theme::font::ui(12.0)));
             });
         }
     } else if let Some(form) = &mut edit.form {
         // Items to keep and where they go; "Edit as JSON" for everything else.
         let mut to_json = false;
         if let Some((_, items)) = &mut form.list {
-            ui.label(RichText::new(tr!("ai-card-form-items")).size(11.0).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("ai-card-form-items")).size(crate::theme::font::px(11.0)).color(p.text_tertiary),
+            );
             egui::ScrollArea::vertical().max_height(180.0).id_salt("ai.card.form.items").show(ui, |ui| {
                 for (path, keep) in items.iter_mut() {
                     // The name; the whole path on hover.
                     let full = soyuz_fs::strip_verbatim(path).to_string_lossy().into_owned();
                     let name = soyuz_core::entry::display_name(path);
-                    ui.checkbox(keep, RichText::new(name).size(12.0).color(p.text_secondary)).on_hover_text(full);
+                    ui.checkbox(keep, RichText::new(name).size(crate::theme::font::px(12.0)).color(p.text_secondary))
+                        .on_hover_text(full);
                 }
             });
         }
         if let Some((_, dest)) = &mut form.dest {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(tr!("ai-card-form-dest")).size(12.0).color(p.text_secondary));
-                ui.add(TextEdit::singleline(dest).desired_width(f32::INFINITY).font(FontId::proportional(12.0)));
+                ui.label(
+                    RichText::new(tr!("ai-card-form-dest")).size(crate::theme::font::px(12.0)).color(p.text_secondary),
+                );
+                ui.add(TextEdit::singleline(dest).desired_width(f32::INFINITY).font(crate::theme::font::ui(12.0)));
             });
         }
         ui.add_space(2.0);
-        if ui.link(RichText::new(tr!("ai-card-form-json")).size(11.0)).clicked() {
+        if ui.link(RichText::new(tr!("ai-card-form-json")).size(crate::theme::font::px(11.0))).clicked() {
             to_json = true;
         }
         if to_json {
             edit.form = None;
         }
     } else {
-        ui.label(RichText::new(tr!("ai-card-edit-json-hint")).size(11.0).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("ai-card-edit-json-hint")).size(crate::theme::font::px(11.0)).color(p.text_tertiary),
+        );
         ui.add(
             TextEdit::multiline(&mut edit.json)
                 .code_editor()
                 .desired_rows(6)
                 .desired_width(f32::INFINITY)
-                .font(FontId::monospace(11.5)),
+                .font(crate::theme::font::mono(11.5)),
         );
     }
     if let Some(e) = &edit.error {
-        ui.label(RichText::new(e).size(11.0).color(p.danger));
+        ui.label(RichText::new(e).size(crate::theme::font::px(11.0)).color(p.danger));
     }
 }

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use egui::{Align2, CursorIcon, FontId, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, CursorIcon, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, pos2, vec2};
 use soyuz_core::config::{Bookmark, PortalPin, SidebarMode, SidebarSection};
 use soyuz_core::{Location, SizeStyle, format_size};
 use soyuz_fs::VolumeInfo;
@@ -21,11 +21,11 @@ use crate::models::devices::{
 };
 use crate::models::sidebar::{PlaceRole, section_name};
 use crate::state::pane::PaneId;
+use crate::theme::font::semibold;
 use crate::theme::tokens::size;
 use crate::theme::{icons::ph, palette};
 use crate::ui::icons::glyph;
 use crate::ui::views::computer::{volume_glyph, volume_label};
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{NavRow, collapsible_header, menu_separator, trunc_galley};
 
 /// Glyph of a standard place.
@@ -188,7 +188,7 @@ fn view_button(ui: &mut Ui, glyph: &str, name: &str, tip: &str, on: bool) -> egu
     let (rect, resp) = ui.allocate_exact_size(vec2(28.0, 24.0), Sense::click());
     crate::ui::a11y::toggle(&resp, name, on);
     if ui.is_rect_visible(rect) {
-        let rounding = egui::CornerRadius::same(crate::theme::tokens::radius::CONTROL);
+        let rounding = crate::theme::tokens::radius::same(crate::theme::tokens::radius::CONTROL);
         let hover =
             ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), crate::theme::anim(ui.ctx(), 0.10));
         if on {
@@ -237,7 +237,10 @@ fn tree_rows(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
 
 fn brand(ui: &mut Ui) {
     let p = palette(ui.ctx());
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), size::TAB_STRIP), Sense::hover());
+    let (r, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), crate::theme::font::height(size::TAB_STRIP, 13.0)),
+        Sense::hover(),
+    );
     let c = pos2(r.left() + 18.0, r.center().y);
     ui.painter().circle_stroke(c, 7.0, Stroke::new(2.0, p.accent));
     ui.painter().circle_filled(c, 2.5, p.accent);
@@ -272,7 +275,7 @@ fn footer(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
             pos2(resp.rect.right() - 10.0, resp.rect.center().y),
             Align2::RIGHT_CENTER,
             k,
-            FontId::proportional(11.0),
+            crate::theme::font::ui(11.0),
             p.text_tertiary,
         );
     }
@@ -441,7 +444,7 @@ fn system_divider(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
         let y = rect.center().y;
         let caption = crate::ui::widgets::caption_upper(tr!("app-sysfolders-section"));
         let color = if hot { p.text_secondary } else { p.text_tertiary };
-        let g = painter.layout_no_wrap(caption, FontId::proportional(10.0), color);
+        let g = painter.layout_no_wrap(caption, crate::theme::font::ui(10.0), color);
         let x0 = rect.left() + 10.0;
         let line_left = x0 + g.size().x + 8.0;
         painter.galley(pos2(x0, y - g.size().y / 2.0), g, color);
@@ -555,7 +558,7 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
             pos2(rect.left() + 34.0, rect.center().y),
             Align2::LEFT_CENTER,
             tr!("app-sidebar-scanning"),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
         );
     }
@@ -631,7 +634,7 @@ fn candidate_row(
 ) -> (egui::Response, bool) {
     use soyuz_fs::udisks::CandidateState as S;
     let p = palette(ui.ctx());
-    let base = size::ROW_COZY.max(ui.spacing().interact_size.y + 4.0);
+    let base = crate::theme::font::height(size::ROW_COZY, 13.0).max(ui.spacing().interact_size.y + 4.0);
     let height = base + 8.0;
     // Unsupported rows still take clicks: the context menu hides / copies them.
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
@@ -646,7 +649,7 @@ fn candidate_row(
     }
     if ui.is_rect_visible(rect) {
         let painter = ui.painter_at(rect.expand(3.0));
-        let rounding = egui::CornerRadius::same(crate::theme::tokens::radius::ROW);
+        let rounding = crate::theme::tokens::radius::same(crate::theme::tokens::radius::ROW);
         let hover = ui.ctx().animate_bool_with_time(resp.id.with("hover"), hovered, crate::theme::anim(ui.ctx(), 0.10));
         if hover > 0.0 && cand.state != S::Unsupported {
             painter.rect_filled(rect, rounding, p.bg_surface2.gamma_multiply(hover));
@@ -675,20 +678,24 @@ fn candidate_row(
         {
             let g = if cand.state == S::Locked { ph::LOCK_SIMPLE_OPEN } else { ph::ARROW_LINE_DOWN };
             if b.hovered() {
-                painter.rect_filled(br, egui::CornerRadius::same(crate::theme::tokens::radius::CONTROL), p.bg_surface3);
+                painter.rect_filled(
+                    br,
+                    crate::theme::tokens::radius::same(crate::theme::tokens::radius::CONTROL),
+                    p.bg_surface3,
+                );
             }
             let color = if b.hovered() { p.accent } else { p.text_secondary };
             painter.text(br.center(), Align2::CENTER_CENTER, g, crate::theme::icons::font(14.0), color);
             right = br.left() - 4.0;
         } else {
             let badge = candidate_badge(cand);
-            let font = FontId::proportional(9.5);
+            let font = crate::theme::font::ui(9.5);
             let g = painter.layout_no_wrap(badge, font, p.text_tertiary);
             let w = g.size().x + 10.0;
             let r = Rect::from_min_size(pos2(right - w, text_y - 7.5), vec2(w, 15.0));
             painter.rect_stroke(
                 r,
-                egui::CornerRadius::same(4),
+                crate::theme::tokens::radius::same(4),
                 Stroke::new(1.0, p.border_strong),
                 egui::StrokeKind::Inside,
             );
@@ -697,7 +704,7 @@ fn candidate_row(
         }
         let label_color = if cand.state == S::Unsupported { p.text_tertiary } else { p.text_secondary };
         let max_w = right - (rect.left() + 34.0);
-        let galley = trunc_galley(&painter, name, FontId::proportional(13.0), label_color, max_w);
+        let galley = trunc_galley(&painter, name, crate::theme::font::ui(13.0), label_color, max_w);
         painter.galley(pos2(rect.left() + 34.0, text_y - galley.size().y / 2.0), galley, label_color);
         // Second line, where mounted volumes show their usage bar.
         let status = devices::candidate_status(work, cand.state, cand.dev.size);
@@ -708,7 +715,7 @@ fn candidate_row(
             x += 12.0;
         }
         let status_color = if work.is_some() { p.text_secondary } else { p.text_tertiary };
-        let g = trunc_galley(&painter, &status, FontId::proportional(10.5), status_color, rect.right() - 8.0 - x);
+        let g = trunc_galley(&painter, &status, crate::theme::font::ui(10.5), status_color, rect.right() - 8.0 - x);
         painter.galley(pos2(x, line_y - g.size().y / 2.0), g, status_color);
         if resp.has_focus() {
             crate::ui::widgets::focus_ring(ui, rect);

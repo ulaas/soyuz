@@ -2,12 +2,9 @@
 //! highlighting, icon tiles (key splitting lives in `crate::palette::chips`).
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{
-    Align2, Color32, CornerRadius, FontFamily, FontId, Rect, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2,
-};
+use egui::{Align2, Color32, Rect, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 
 use crate::palette::chips::split_keys;
-use crate::theme::fonts::SEMIBOLD;
 use crate::theme::{Palette, icons};
 
 /// Paint keyboard chips for `binding` right-aligned ending at `right`, vertically centered
@@ -18,7 +15,7 @@ pub fn paint_chips(ui: &Ui, p: &Palette, binding: &str, right: f32, cy: f32, str
 
 /// [`paint_chips`] at `scale` (1.0 = 20 px tall chips).
 pub fn paint_chips_scaled(ui: &Ui, p: &Palette, binding: &str, right: f32, cy: f32, strong: bool, scale: f32) -> f32 {
-    let font = FontId::proportional(11.0 * scale);
+    let font = crate::theme::font::ui(11.0 * scale);
     let groups = split_keys(binding);
     let mut x = right;
     let painter = ui.painter();
@@ -30,11 +27,16 @@ pub fn paint_chips_scaled(ui: &Ui, p: &Palette, binding: &str, right: f32, cy: f
             let fill = if strong { p.bg_surface1 } else { p.bg_surface2 };
             painter.rect_filled(
                 r.translate(vec2(0.0, 1.0)),
-                CornerRadius::same(5),
+                crate::theme::tokens::radius::same(5),
                 p.border_strong.gamma_multiply(0.6),
             );
-            painter.rect_filled(r, CornerRadius::same(5), fill);
-            painter.rect_stroke(r, CornerRadius::same(5), Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
+            painter.rect_filled(r, crate::theme::tokens::radius::same(5), fill);
+            painter.rect_stroke(
+                r,
+                crate::theme::tokens::radius::same(5),
+                Stroke::new(1.0, p.border_subtle),
+                StrokeKind::Inside,
+            );
             painter.galley(pos2(r.center().x - g.size().x / 2.0, r.center().y - g.size().y / 2.0), g, p.text_secondary);
             x = r.left() - 3.0 * scale;
         }
@@ -44,11 +46,11 @@ pub fn paint_chips_scaled(ui: &Ui, p: &Palette, binding: &str, right: f32, cy: f
                 pos2(x, cy),
                 Align2::RIGHT_CENTER,
                 tr!("actions-palette-then"),
-                FontId::proportional(10.0),
+                crate::theme::font::ui(10.0),
                 p.text_tertiary,
             );
             let w = painter
-                .layout_no_wrap(tr!("actions-palette-then").into(), FontId::proportional(10.0), p.text_tertiary)
+                .layout_no_wrap(tr!("actions-palette-then").into(), crate::theme::font::ui(10.0), p.text_tertiary)
                 .size()
                 .x;
             x -= w + 5.0;
@@ -63,7 +65,7 @@ pub fn chips_width(ui: &Ui, binding: &str) -> f32 {
 }
 
 pub fn chips_width_scaled(ui: &Ui, binding: &str, scale: f32) -> f32 {
-    let font = FontId::proportional(11.0 * scale);
+    let font = crate::theme::font::ui(11.0 * scale);
     let groups = split_keys(binding);
     let mut w = 0.0;
     for (gi, group) in groups.iter().enumerate() {
@@ -74,7 +76,7 @@ pub fn chips_width_scaled(ui: &Ui, binding: &str, scale: f32) -> f32 {
         if gi > 0 {
             w += 4.0
                 + ui.painter()
-                    .layout_no_wrap(tr!("actions-palette-then").into(), FontId::proportional(10.0), Color32::WHITE)
+                    .layout_no_wrap(tr!("actions-palette-then").into(), crate::theme::font::ui(10.0), Color32::WHITE)
                     .size()
                     .x
                 + 5.0;
@@ -95,12 +97,8 @@ pub fn chips(ui: &mut Ui, binding: &str) -> Response {
 /// Text with the chars at `hl` (char indices) emphasized.
 pub fn highlighted(text: &str, hl: &[u32], size: f32, color: Color32, accent: Color32) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let normal = TextFormat { font_id: FontId::proportional(size), color, ..Default::default() };
-    let strong = TextFormat {
-        font_id: FontId::new(size, FontFamily::Name(SEMIBOLD.into())),
-        color: accent,
-        ..Default::default()
-    };
+    let normal = TextFormat { font_id: crate::theme::font::ui(size), color, ..Default::default() };
+    let strong = TextFormat { font_id: crate::theme::font::semibold(size), color: accent, ..Default::default() };
     let mut run = String::new();
     let mut run_hl = false;
     for (i, ch) in text.chars().enumerate() {
@@ -122,7 +120,7 @@ pub fn highlighted(text: &str, hl: &[u32], size: f32, color: Color32, accent: Co
 pub fn icon_tile(ui: &Ui, rect: Rect, glyph: &str, tint: Color32, size: f32) {
     let painter = ui.painter();
     let [r, g, b, _] = tint.to_array();
-    painter.rect_filled(rect, CornerRadius::same(7), Color32::from_rgba_unmultiplied(r, g, b, 34));
+    painter.rect_filled(rect, crate::theme::tokens::radius::same(7), Color32::from_rgba_unmultiplied(r, g, b, 34));
     painter.text(rect.center(), Align2::CENTER_CENTER, glyph, icons::font(size), tint);
 }
 

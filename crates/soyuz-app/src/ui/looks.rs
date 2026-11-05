@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use egui::{Align2, Color32, CornerRadius, FontId, Painter, Pos2, Rect, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Color32, Painter, Pos2, Rect, Stroke, Ui, pos2, vec2};
 use soyuz_core::config::Config;
 
 use crate::services::folder_colors::{self, EMBLEMS, FolderColor};
@@ -177,7 +177,11 @@ pub fn paint_ext_badge(painter: &Painter, p: &Palette, icon: Rect, label: &str, 
         return;
     }
     let size = (icon.width() * 0.15).clamp(8.5, 12.0);
-    let g = painter.layout_no_wrap(label.to_string(), crate::ui::views::flow::semibold(size), Color32::WHITE);
+    let g = painter.layout_no_wrap(
+        label.to_string(),
+        egui::FontId::new(size, crate::theme::fonts::family(soyuz_core::config::FontRoleKind::UiSemibold)),
+        Color32::WHITE,
+    );
     let w = (g.size().x + size * 0.9).max(size * 2.2);
     let h = size + 5.0;
     let r = Rect::from_min_size(
@@ -185,20 +189,20 @@ pub fn paint_ext_badge(painter: &Painter, p: &Palette, icon: Rect, label: &str, 
         vec2(w, h),
     );
     let r = r.translate(vec2((icon.right() - 2.0 - r.right()).min(0.0) + w * 0.18, 0.0));
-    painter.rect_filled(r.expand(1.5), CornerRadius::same(5), p.bg_surface1.gamma_multiply(alpha));
-    painter.rect_filled(r, CornerRadius::same(4), color.gamma_multiply(alpha));
+    painter.rect_filled(r.expand(1.5), crate::theme::tokens::radius::same(5), p.bg_surface1.gamma_multiply(alpha));
+    painter.rect_filled(r, crate::theme::tokens::radius::same(4), color.gamma_multiply(alpha));
     let text = if luminance(color) > 0.62 { Color32::from_black_alpha(200) } else { Color32::WHITE };
     painter.galley(r.center() - g.size() / 2.0, g, text.gamma_multiply(alpha));
 }
 
 /// A duration pill at the bottom-right of a video thumbnail / placeholder.
 pub fn paint_duration(painter: &Painter, r: Rect, label: &str) {
-    let g = painter.layout_no_wrap(label.to_string(), FontId::proportional(10.5), Color32::WHITE);
+    let g = painter.layout_no_wrap(label.to_string(), crate::theme::font::ui(10.5), Color32::WHITE);
     let pill = Rect::from_min_size(
         pos2(r.right() - g.size().x - 12.0, r.bottom() - g.size().y - 8.0),
         vec2(g.size().x + 8.0, g.size().y + 3.0),
     );
-    painter.rect_filled(pill, CornerRadius::same(4), Color32::from_black_alpha(170));
+    painter.rect_filled(pill, crate::theme::tokens::radius::same(4), Color32::from_black_alpha(170));
     painter.galley(pill.center() - g.size() / 2.0, g, Color32::WHITE);
 }
 
@@ -226,9 +230,9 @@ pub fn paint_skeleton(ui: &Ui, rect: Rect, grid: bool, row_h: f32) {
                 let min =
                     pos2(rect.left() + 12.0 + c as f32 * (cell.x + 6.0), rect.top() + 10.0 + r as f32 * (cell.y + 6.0));
                 let icon = Rect::from_min_size(min + vec2(16.0, 10.0), vec2(cell.x - 32.0, cell.x - 32.0));
-                painter.rect_filled(icon, CornerRadius::same(10), shade(icon.center().x));
+                painter.rect_filled(icon, crate::theme::tokens::radius::same(10), shade(icon.center().x));
                 let line = Rect::from_min_size(pos2(min.x + 22.0, icon.bottom() + 12.0), vec2(cell.x - 44.0, 9.0));
-                painter.rect_filled(line, CornerRadius::same(4), shade(line.center().x));
+                painter.rect_filled(line, crate::theme::tokens::radius::same(4), shade(line.center().x));
             }
         }
     } else {
@@ -239,14 +243,14 @@ pub fn paint_skeleton(ui: &Ui, rect: Rect, grid: bool, row_h: f32) {
             // Stable pseudo-random name widths.
             let w = 120.0 + ((i * 73 + 29) % 11) as f32 * 18.0;
             let icon = Rect::from_center_size(pos2(rect.left() + 24.0, cy), vec2(16.0, 16.0));
-            painter.rect_filled(icon, CornerRadius::same(4), shade(icon.center().x));
+            painter.rect_filled(icon, crate::theme::tokens::radius::same(4), shade(icon.center().x));
             let name = Rect::from_min_size(pos2(rect.left() + 42.0, cy - 5.0), vec2(w.min(rect.width() * 0.5), 10.0));
-            painter.rect_filled(name, CornerRadius::same(5), shade(name.center().x));
+            painter.rect_filled(name, crate::theme::tokens::radius::same(5), shade(name.center().x));
             for (k, cw) in [(0, 70.0), (1, 54.0)] {
                 let x = rect.right() - 24.0 - (k as f32 + 1.0) * 120.0;
                 if x > name.right() + 30.0 {
                     let cell = Rect::from_min_size(pos2(x, cy - 4.0), vec2(cw, 8.0));
-                    painter.rect_filled(cell, CornerRadius::same(4), shade(cell.center().x));
+                    painter.rect_filled(cell, crate::theme::tokens::radius::same(4), shade(cell.center().x));
                 }
             }
         }

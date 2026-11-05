@@ -12,8 +12,8 @@ pub mod pages;
 pub mod touch;
 
 use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Frame, Layout, Margin, Panel, Rect, Response, Sense, Stroke,
-    StrokeKind, Ui, UiBuilder, pos2, vec2,
+    Align, Align2, Color32, Frame, Layout, Margin, Panel, Rect, Response, Sense, Stroke, StrokeKind, Ui, UiBuilder,
+    pos2, vec2,
 };
 use soyuz_core::Location;
 use soyuz_core::config::{Action, AiAccess};
@@ -23,10 +23,10 @@ pub use crate::ai::panel::{self, PanelAct, tokens};
 use crate::ai::state::{self, AiCmd, PanelTab};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, palette};
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{icon_toggle, menu_item, menu_separator};
 
 /// Small rounded chip; `strong` uses the accent.
@@ -41,7 +41,7 @@ pub fn chip_menu(ui: &mut Ui, icon: Option<&str>, label: &str, strong: bool) -> 
 
 fn chip_impl(ui: &mut Ui, icon: Option<&str>, label: &str, strong: bool, caret: bool) -> Response {
     let p = palette(ui.ctx());
-    let font = FontId::proportional(11.5);
+    let font = crate::theme::font::ui(11.5);
     let g = ui.painter().layout_no_wrap(label.to_string(), font, Color32::PLACEHOLDER);
     let iw = if icon.is_some() { 16.0 } else { 0.0 };
     let cw = if caret { 14.0 } else { 0.0 };
@@ -52,9 +52,14 @@ fn chip_impl(ui: &mut Ui, icon: Option<&str>, label: &str, strong: bool, caret: 
     } else {
         (if hover { p.bg_surface3 } else { p.bg_surface2 }, p.text_secondary)
     };
-    ui.painter().rect_filled(rect, CornerRadius::same(11), bg);
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(11), bg);
     if hover {
-        ui.painter().rect_stroke(rect, CornerRadius::same(11), Stroke::new(1.0, p.border_strong), StrokeKind::Inside);
+        ui.painter().rect_stroke(
+            rect,
+            crate::theme::tokens::radius::same(11),
+            Stroke::new(1.0, p.border_strong),
+            StrokeKind::Inside,
+        );
     }
     let mut x = rect.left() + 8.0;
     if let Some(i) = icon {
@@ -143,7 +148,11 @@ pub fn properties_row(ui: &mut Ui, path: &std::path::Path, cmds: &mut Vec<Cmd>) 
     ui.horizontal(|ui| {
         ui.add_sized(
             vec2(110.0, 20.0),
-            egui::Label::new(egui::RichText::new(tr!("ai-properties-access")).color(p.text_tertiary).size(12.0)),
+            egui::Label::new(
+                egui::RichText::new(tr!("ai-properties-access"))
+                    .color(p.text_tertiary)
+                    .size(crate::theme::font::px(12.0)),
+            ),
         );
         let label = if explicit {
             access_short(access).to_string()
@@ -189,10 +198,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
         .show(root, |ui| {
             let card = ui.available_rect_before_wrap();
-            ui.painter().rect_filled(card, CornerRadius::same(radius::MODAL), p.bg_surface1);
+            ui.painter().rect_filled(card, crate::theme::tokens::radius::same(radius::MODAL), p.bg_surface1);
             ui.painter().rect_stroke(
                 card,
-                CornerRadius::same(radius::MODAL),
+                crate::theme::tokens::radius::same(radius::MODAL),
                 Stroke::new(1.0, p.border_subtle),
                 StrokeKind::Inside,
             );
@@ -253,7 +262,7 @@ fn header(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
         },
     };
     let sub_w = (r.width() - 34.0 - 100.0).max(40.0);
-    let sg = crate::ui::widgets::trunc_galley(ui.painter(), &sub, FontId::proportional(11.0), p.text_tertiary, sub_w);
+    let sg = crate::ui::widgets::trunc_galley(ui.painter(), &sub, crate::theme::font::ui(11.0), p.text_tertiary, sub_w);
     ui.painter().galley(pos2(r.left() + 34.0, r.center().y + 1.0), sg, p.text_tertiary);
     if running.is_some() {
         crate::ui::widgets::spinner(ui, pos2(r.left() + 13.0, r.center().y), 15.5, p.accent);
@@ -397,9 +406,9 @@ fn tabs(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) 
             let g = ui.painter().layout_no_wrap(label.into(), semibold(12.0), Color32::PLACEHOLDER);
             let (r, resp) = ui.allocate_exact_size(vec2(g.size().x + 34.0, 28.0), Sense::click());
             if on {
-                ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface3);
+                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface3);
             } else if resp.hovered() {
-                ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
+                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
             }
             let c = if on { p.text_primary } else { p.text_secondary };
             ui.painter().text(pos2(r.left() + 10.0, r.center().y), Align2::LEFT_CENTER, icon, icons::font(13.0), c);

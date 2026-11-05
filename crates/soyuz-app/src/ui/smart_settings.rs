@@ -88,7 +88,7 @@ pub fn index_group(ui: &mut Ui, q: &str, d: &mut Config) -> bool {
                 });
             });
             if let Some(st) = &status {
-                let small = |s: String| RichText::new(s).size(11.5).color(p.text_tertiary);
+                let small = |s: String| RichText::new(s).size(crate::theme::font::px(11.5)).color(p.text_tertiary);
                 if let Some(cur) = &st.current {
                     ui.add(egui::Label::new(small(cur.display().to_string())).truncate());
                 }
@@ -137,7 +137,7 @@ pub fn index_group(ui: &mut Ui, q: &str, d: &mut Config) -> bool {
                     "settings-index-database",
                     path = crate::services::index::index_dir().display().to_string()
                 ))
-                .size(11.0)
+                .size(crate::theme::font::px(11.0))
                 .color(p.text_tertiary),
             );
         });

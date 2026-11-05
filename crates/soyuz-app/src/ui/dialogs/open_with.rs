@@ -78,7 +78,7 @@ fn app_row(ui: &mut Ui, app: &AppInfo, on: bool, thumbs: &Thumbs) -> egui::Respo
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::click());
     let label = model::app_label(app);
     crate::ui::a11y::toggle(&resp, &label, on);
-    let corner = egui::CornerRadius::same(crate::theme::tokens::radius::ROW);
+    let corner = crate::theme::tokens::radius::same(crate::theme::tokens::radius::ROW);
     if on {
         ui.painter().rect_filled(rect, corner, p.accent_subtle);
     } else if resp.hovered() {
@@ -106,7 +106,7 @@ fn app_row(ui: &mut Ui, app: &AppInfo, on: bool, thumbs: &Thumbs) -> egui::Respo
             );
         }
     }
-    let font = egui::FontId::proportional(13.0);
+    let font = crate::theme::font::ui(13.0);
     let left = rect.left() + 34.0;
     let width = rect.right() - left - 10.0;
     let name = trunc_galley(ui.painter(), &label, font.clone(), p.text_primary, width);
@@ -187,7 +187,7 @@ impl Dialog for OpenWithDialog {
         let mut open_now = false;
         egui::Frame::new()
             .fill(p.bg_sunken)
-            .corner_radius(egui::CornerRadius::same(6))
+            .corner_radius(crate::theme::tokens::radius::same(6))
             .inner_margin(Margin::symmetric(6, 6))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());

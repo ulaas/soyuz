@@ -34,16 +34,16 @@ pub mod recovery_crash;
 pub mod unlock_volume;
 
 use crate::models::requests::{columns, pattern};
-use egui::{Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};
+use egui::{Align, Color32, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};
 use soyuz_core::config::{ActionCategory, Keymap};
 
 use crate::cmd::Cmd;
 use crate::models::dialogs::{DialogModel, DialogStack, next_seq};
 use crate::state::pane::PaneId;
 use crate::state::workspace::Workspace;
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{Btn, kbd, pill_button};
 
 /// What dialogs may touch while drawing.
@@ -259,7 +259,7 @@ impl Dialogs {
         let frame = Frame::new()
             .fill(p.bg_surface3)
             .stroke(Stroke::new(1.0, p.border_strong))
-            .corner_radius(CornerRadius::same(radius::MODAL))
+            .corner_radius(crate::theme::tokens::radius::same(radius::MODAL))
             .inner_margin(Margin::same(20))
             .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
         let width = top.width();
@@ -547,7 +547,11 @@ impl Dialog for AboutDialog {
                     RichText::new(tr!("dialogs-about-version-line", version = env!("CARGO_PKG_VERSION")))
                         .color(p.text_secondary),
                 );
-                ui.label(RichText::new(tr!("dialogs-about-tagline")).color(p.text_tertiary).size(12.0));
+                ui.label(
+                    RichText::new(tr!("dialogs-about-tagline"))
+                        .color(p.text_tertiary)
+                        .size(crate::theme::font::px(12.0)),
+                );
             });
         });
         ui.add_space(12.0);
@@ -563,8 +567,12 @@ impl Dialog for AboutDialog {
             }
         });
         ui.add_space(10.0);
-        ui.label(RichText::new(tr!("dialogs-about-license")).color(p.text_tertiary).size(11.5));
-        ui.label(RichText::new(crate::models::about::ffmpeg_notice()).color(p.text_tertiary).size(11.5));
+        ui.label(RichText::new(tr!("dialogs-about-license")).color(p.text_tertiary).size(crate::theme::font::px(11.5)));
+        ui.label(
+            RichText::new(crate::models::about::ffmpeg_notice())
+                .color(p.text_tertiary)
+                .size(crate::theme::font::px(11.5)),
+        );
         let (close, copy) = footer(ui, tr!("common-close"), tr!("dialogs-about-copy-info"));
         if copy {
             ctx.cmds.push(Cmd::CopyText(crate::models::about::copy_text(&facts)));
@@ -628,7 +636,7 @@ impl Dialog for KeybindingsDialog {
                     ui.add_space(6.0);
                     ui.label(
                         RichText::new(caption_upper(crate::i18n::labels::action_category(*cat)))
-                            .font(FontId::proportional(10.5))
+                            .font(crate::theme::font::ui(10.5))
                             .color(p.text_tertiary),
                     );
                     last = Some(*cat);

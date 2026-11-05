@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crossbeam_channel::Receiver;
-use egui::{CornerRadius, Frame, Margin, RichText, ScrollArea, Stroke, TextEdit, Ui};
+use egui::{Frame, Margin, RichText, ScrollArea, Stroke, TextEdit, Ui};
 use soyuz_ai::Secret;
 use soyuz_core::config::{AiMcpClient, AiMcpServer, AiRisk};
 use soyuz_mcp::install::{DiffLine, InstallPreview, Target};
@@ -74,7 +74,7 @@ fn card(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
     Frame::new()
         .fill(p.bg_surface2.gamma_multiply(if p.dark { 0.7 } else { 1.0 }))
         .stroke(Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(crate::theme::tokens::radius::same(10))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -157,12 +157,23 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     if !searching || matches(q, &["connections mcp", CTX, tr!("settings-mcp-connections")]) {
         ui.add_space(18.0);
         ui.label(
-            RichText::new(super::widgets::upper(tr!("settings-mcp-connections"))).size(10.5).color(p.text_tertiary),
+            RichText::new(super::widgets::upper(tr!("settings-mcp-connections")))
+                .size(crate::theme::font::px(10.5))
+                .color(p.text_tertiary),
         );
-        ui.add(egui::Label::new(RichText::new(tr!("settings-mcp-intro")).size(11.5).color(p.text_tertiary)).wrap());
+        ui.add(
+            egui::Label::new(
+                RichText::new(tr!("settings-mcp-intro")).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+            )
+            .wrap(),
+        );
         if let Some((msg, err)) = &app.gui.settings.connections.notice {
             ui.add_space(4.0);
-            ui.label(RichText::new(msg).size(11.5).color(if *err { p.danger } else { p.success }));
+            ui.label(RichText::new(msg).size(crate::theme::font::px(11.5)).color(if *err {
+                p.danger
+            } else {
+                p.success
+            }));
         }
     }
 
@@ -190,7 +201,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     parts.push((tr!("settings-mcp-waiting", count = status.waiting), false));
                 }
                 for (t, err) in parts.into_iter().rev() {
-                    ui.label(RichText::new(t).size(11.5).color(if err { p.warning } else { p.text_secondary }));
+                    ui.label(RichText::new(t).size(crate::theme::font::px(11.5)).color(if err {
+                        p.warning
+                    } else {
+                        p.text_secondary
+                    }));
                 }
             });
             r.row_kw(tr!("settings-mcp-http"), tr!("settings-mcp-http-desc"), "http port network token", |ui| {
@@ -258,7 +273,11 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let s = &mut app.gui.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.connections);
     ui.add_space(14.0);
-    ui.label(RichText::new(super::widgets::upper(tr!("settings-mcp-clients"))).size(10.5).color(p.text_tertiary));
+    ui.label(
+        RichText::new(super::widgets::upper(tr!("settings-mcp-clients")))
+            .size(crate::theme::font::px(10.5))
+            .color(p.text_tertiary),
+    );
     ui.add_space(6.0);
     let mut remove = None;
     for (i, c) in d.mcp_clients.iter_mut().enumerate() {
@@ -270,12 +289,16 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 );
                 ui.label(RichText::new(&c.name).strong().color(p.text_primary));
                 if c.pending {
-                    ui.label(RichText::new(tr!("settings-mcp-pending")).size(11.5).color(p.warning));
+                    ui.label(
+                        RichText::new(tr!("settings-mcp-pending")).size(crate::theme::font::px(11.5)).color(p.warning),
+                    );
                     if small_button(ui, Some(ph::CHECK), tr!("settings-mcp-approve"), false).clicked() {
                         c.pending = false;
                     }
                 } else {
-                    ui.label(RichText::new(tr!("settings-mcp-approved")).size(11.5).color(p.success));
+                    ui.label(
+                        RichText::new(tr!("settings-mcp-approved")).size(crate::theme::font::px(11.5)).color(p.success),
+                    );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if small_button(ui, Some(ph::TRASH), "", true)
@@ -289,7 +312,7 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.add_space(6.0);
             egui::Grid::new(("mcp_client", i)).num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
                 let lbl = |ui: &mut Ui, t: &str| {
-                    ui.label(RichText::new(t).size(12.0).color(p.text_secondary));
+                    ui.label(RichText::new(t).size(crate::theme::font::px(12.0)).color(p.text_secondary));
                 };
                 lbl(ui, tr!("settings-mcp-may"));
                 ui.horizontal(|ui| risk_picker(ui, &mut c.max_risk));
@@ -298,7 +321,11 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.horizontal(|ui| {
                     switch(ui, &mut c.require_approval);
                     if !c.require_approval {
-                        ui.label(RichText::new(tr!("settings-mcp-no-ask")).size(11.0).color(p.warning));
+                        ui.label(
+                            RichText::new(tr!("settings-mcp-no-ask"))
+                                .size(crate::theme::font::px(11.0))
+                                .color(p.warning),
+                        );
                     }
                 });
                 ui.end_row();
@@ -356,7 +383,9 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 && *name == c.name
             {
                 ui.add_space(6.0);
-                ui.label(RichText::new(tr!("settings-mcp-token-once")).size(11.5).color(p.warning));
+                ui.label(
+                    RichText::new(tr!("settings-mcp-token-once")).size(crate::theme::font::px(11.5)).color(p.warning),
+                );
                 let snippet = format!(
                     "{{\n  \"type\": \"http\",\n  \"url\": \"http://127.0.0.1:{port}/mcp\",\n  \"headers\": {{ \"Authorization\": \"Bearer {token}\" }}\n}}"
                 );
@@ -401,13 +430,15 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.label(
                 RichText::new(tr!("settings-mcp-starts-with", command = format!("soyuz --mcp --mcp-client {name}")))
                     .monospace()
-                    .size(11.0)
+                    .size(crate::theme::font::px(11.0))
                     .color(p.text_tertiary),
             );
         }
     });
     if d.mcp_clients.is_empty() {
-        ui.label(RichText::new(tr!("settings-mcp-no-clients")).size(11.5).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("settings-mcp-no-clients")).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+        );
     }
     true
 }
@@ -422,7 +453,11 @@ fn install(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let s = &mut app.gui.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.connections);
     ui.add_space(14.0);
-    ui.label(RichText::new(super::widgets::upper(tr!("settings-mcp-add-to"))).size(10.5).color(p.text_tertiary));
+    ui.label(
+        RichText::new(super::widgets::upper(tr!("settings-mcp-add-to")))
+            .size(crate::theme::font::px(10.5))
+            .color(p.text_tertiary),
+    );
     ui.add_space(6.0);
     let busy = matches!(st.install, Some(Install::Loading(..) | Install::Writing(..)));
     ui.horizontal_wrapped(|ui| {
@@ -443,7 +478,9 @@ fn install(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         card(ui, |ui| {
             subheading(ui, &format!("{} — {}", pv.target.label(), pv.path.display()));
             ui.add_space(4.0);
-            ui.label(RichText::new(tr!("settings-mcp-snippet")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("settings-mcp-snippet")).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+            );
             let mut snippet = pv.target.snippet(&exe());
             ui.add(
                 TextEdit::multiline(&mut snippet)
@@ -453,7 +490,9 @@ fn install(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             );
             ui.add_space(4.0);
             if !pv.changed() {
-                ui.label(RichText::new(tr!("settings-mcp-already")).size(11.5).color(p.success));
+                ui.label(
+                    RichText::new(tr!("settings-mcp-already")).size(crate::theme::font::px(11.5)).color(p.success),
+                );
             } else {
                 ui.label(
                     RichText::new(if pv.old_text.is_some() {
@@ -461,7 +500,7 @@ fn install(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     } else {
                         tr!("settings-mcp-new-file")
                     })
-                    .size(11.5)
+                    .size(crate::theme::font::px(11.5))
                     .color(p.text_tertiary),
                 );
                 diff_view(ui, &pv.diff);
@@ -481,7 +520,9 @@ fn install(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     cancel = true;
                 }
             });
-            ui.label(RichText::new(tr!("settings-mcp-backup")).size(11.0).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("settings-mcp-backup")).size(crate::theme::font::px(11.0)).color(p.text_tertiary),
+            );
         });
     }
     if cancel {
@@ -505,27 +546,41 @@ fn diff_view(ui: &mut Ui, diff: &[DiffLine]) {
     let p = palette(ui.ctx());
     let changed: Vec<bool> = diff.iter().map(|l| !matches!(l, DiffLine::Same(_))).collect();
     let near = |i: usize| (i.saturating_sub(3)..(i + 4).min(diff.len())).any(|j| changed[j]);
-    Frame::new().fill(p.bg_window).corner_radius(CornerRadius::same(6)).inner_margin(Margin::same(8)).show(ui, |ui| {
-        ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
-            let mut gap = false;
-            for (i, l) in diff.iter().enumerate() {
-                if !near(i) {
-                    if !gap {
-                        ui.label(RichText::new("⋯").monospace().size(11.0).color(p.text_tertiary));
-                        gap = true;
+    Frame::new()
+        .fill(p.bg_window)
+        .corner_radius(crate::theme::tokens::radius::same(6))
+        .inner_margin(Margin::same(8))
+        .show(ui, |ui| {
+            ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
+                let mut gap = false;
+                for (i, l) in diff.iter().enumerate() {
+                    if !near(i) {
+                        if !gap {
+                            ui.label(
+                                RichText::new("⋯")
+                                    .monospace()
+                                    .size(crate::theme::font::px(11.0))
+                                    .color(p.text_tertiary),
+                            );
+                            gap = true;
+                        }
+                        continue;
                     }
-                    continue;
+                    gap = false;
+                    let (sign, text, color) = match l {
+                        DiffLine::Same(t) => (" ", t, p.text_tertiary),
+                        DiffLine::Added(t) => ("+", t, p.success),
+                        DiffLine::Removed(t) => ("-", t, p.danger),
+                    };
+                    ui.label(
+                        RichText::new(format!("{sign} {text}"))
+                            .monospace()
+                            .size(crate::theme::font::px(11.0))
+                            .color(color),
+                    );
                 }
-                gap = false;
-                let (sign, text, color) = match l {
-                    DiffLine::Same(t) => (" ", t, p.text_tertiary),
-                    DiffLine::Added(t) => ("+", t, p.success),
-                    DiffLine::Removed(t) => ("-", t, p.danger),
-                };
-                ui.label(RichText::new(format!("{sign} {text}")).monospace().size(11.0).color(color));
-            }
+            });
         });
-    });
 }
 
 fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
@@ -537,8 +592,17 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let s = &mut app.gui.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.connections);
     ui.add_space(14.0);
-    ui.label(RichText::new(super::widgets::upper(tr!("settings-mcp-servers"))).size(10.5).color(p.text_tertiary));
-    ui.add(egui::Label::new(RichText::new(tr!("settings-mcp-servers-intro")).size(11.5).color(p.text_tertiary)).wrap());
+    ui.label(
+        RichText::new(super::widgets::upper(tr!("settings-mcp-servers")))
+            .size(crate::theme::font::px(10.5))
+            .color(p.text_tertiary),
+    );
+    ui.add(
+        egui::Label::new(
+            RichText::new(tr!("settings-mcp-servers-intro")).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+        )
+        .wrap(),
+    );
     let mut remove = None;
     for (i, sv) in d.mcp_servers.iter_mut().enumerate() {
         ui.add_space(6.0);
@@ -559,7 +623,7 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.add_space(6.0);
             egui::Grid::new(("mcp_server", i)).num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
                 let lbl = |ui: &mut Ui, t: &str| {
-                    ui.label(RichText::new(t).size(12.0).color(p.text_secondary));
+                    ui.label(RichText::new(t).size(crate::theme::font::px(12.0)).color(p.text_secondary));
                 };
                 lbl(ui, tr!("settings-commands-command"));
                 code(ui, &mut sv.command, tr!("settings-mcp-command-hint"), 320.0);
@@ -598,7 +662,11 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 lbl(ui, tr!("settings-mcp-trust-hints"));
                 ui.horizontal(|ui| {
                     switch(ui, &mut sv.trust_annotations);
-                    ui.label(RichText::new(tr!("settings-mcp-trust-hints-desc")).size(11.0).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("settings-mcp-trust-hints-desc"))
+                            .size(crate::theme::font::px(11.0))
+                            .color(p.text_tertiary),
+                    );
                 });
                 ui.end_row();
                 lbl(ui, tr!("settings-mcp-timeout"));
@@ -622,7 +690,9 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                         Err(e) => (ph::X_CIRCLE, p.danger, e.clone()),
                     };
                     ui.label(icons::icon(icon, 14.0).color(color));
-                    ui.add(egui::Label::new(RichText::new(text).size(11.5).color(color)).wrap());
+                    ui.add(
+                        egui::Label::new(RichText::new(text).size(crate::theme::font::px(11.5)).color(color)).wrap(),
+                    );
                 }
             });
         });

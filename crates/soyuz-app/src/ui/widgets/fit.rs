@@ -354,14 +354,15 @@ mod tests {
                     ui.painter(),
                     "a-rather-long-report-name-final-v3.pdf",
                     false,
-                    FontId::proportional(13.0),
+                    crate::theme::font::ui(13.0),
                     Color32::WHITE,
                     120.0,
                 );
                 assert!(f.elided);
                 assert!(f.galley.size().x <= 120.0, "{}", f.galley.size().x);
                 out.push(f.galley.job.text.clone());
-                let whole = entry_name(ui.painter(), "a.pdf", false, FontId::proportional(13.0), Color32::WHITE, 120.0);
+                let whole =
+                    entry_name(ui.painter(), "a.pdf", false, crate::theme::font::ui(13.0), Color32::WHITE, 120.0);
                 assert!(!whole.elided);
             });
             output.textures_delta.clear();

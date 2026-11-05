@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use egui::{Align2, CornerRadius, FontId, Id, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
+use egui::{Align2, Id, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
 use soyuz_core::{EntryInfo, Location};
 
 use super::ViewCtx;
@@ -17,8 +17,12 @@ use crate::state::pane::Pane;
 use crate::theme::{icons as ticons, icons::ph, palette};
 use crate::ui::widgets::spinner;
 
-const COL_W: f32 = 250.0;
-const ROW_H: f32 = 26.0;
+fn col_w() -> f32 {
+    crate::theme::font::grow(250.0)
+}
+fn row_h() -> f32 {
+    crate::theme::font::grow(26.0)
+}
 
 pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     let Location::Dir(cur) = pane.location.clone() else {
@@ -31,7 +35,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     let preview =
         pane.cursor.as_deref().and_then(|c| pane.entry(c)).filter(|e| e.is_dir_like()).map(|e| e.path.clone());
     let n = chain.len() + usize::from(preview.is_some());
-    let content_w = (n as f32 * COL_W).max(rect.width());
+    let content_w = (n as f32 * col_w()).max(rect.width());
     let mut child = ui.new_child(UiBuilder::new().max_rect(rect));
     ScrollArea::horizontal()
         .id_salt(("soyuz.miller", pane.id.0))
@@ -42,7 +46,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
             ui.set_min_size(vec2(content_w, rect.height()));
             for (i, dir) in chain.iter().enumerate() {
                 let col =
-                    Rect::from_min_size(pos2(origin.x + i as f32 * COL_W, rect.top()), vec2(COL_W, rect.height()));
+                    Rect::from_min_size(pos2(origin.x + i as f32 * col_w(), rect.top()), vec2(col_w(), rect.height()));
                 let last = i + 1 == chain.len();
                 if last {
                     flow::show(ui, col, pane, v, Style::Column);
@@ -58,8 +62,8 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
             }
             if let Some(dir) = preview {
                 let col = Rect::from_min_size(
-                    pos2(origin.x + chain.len() as f32 * COL_W, rect.top()),
-                    vec2(COL_W, rect.height()),
+                    pos2(origin.x + chain.len() as f32 * col_w(), rect.top()),
+                    vec2(col_w(), rect.height()),
                 );
                 aux_column(ui, col, &dir, None, pane.id, v, true);
             }
@@ -85,7 +89,7 @@ fn aux_column(
                 rect.center(),
                 Align2::CENTER_CENTER,
                 tr!("views-miller-unreadable"),
-                FontId::proportional(12.0),
+                crate::theme::font::ui(12.0),
                 p.text_tertiary,
             );
         } else {
@@ -99,7 +103,7 @@ fn aux_column(
             pos2(rect.center().x, rect.top() + 40.0),
             Align2::CENTER_CENTER,
             tr!("views-miller-empty"),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
         );
         return;
@@ -117,18 +121,18 @@ fn aux_column(
         !seen
     });
     if first_seen && let Some(r) = target_row {
-        area = area.vertical_scroll_offset((r as f32 * ROW_H - rect.height() / 2.0).max(0.0));
+        area = area.vertical_scroll_offset((r as f32 * row_h() - rect.height() / 2.0).max(0.0));
     }
-    area.show_rows(&mut child, ROW_H, shown.len(), |ui, range| {
+    area.show_rows(&mut child, row_h(), shown.len(), |ui, range| {
         for i in range {
             let e = shown[i];
-            let (r, resp) = ui.allocate_exact_size(vec2(rect.width() - 8.0, ROW_H), Sense::click());
+            let (r, resp) = ui.allocate_exact_size(vec2(rect.width() - 8.0, row_h()), Sense::click());
             let r = r.translate(vec2(4.0, 0.0));
             let on_path = highlight == Some(e.name.as_str());
             if on_path {
-                ui.painter().rect_filled(r, CornerRadius::same(6), flow::selection_fill(&p, false));
+                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(6), flow::selection_fill(&p, false));
             } else if resp.hovered() {
-                ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface2);
+                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface2);
             }
             let a = if dim { 0.75 } else { 1.0 } * if e.is_hidden() { 0.6 } else { 1.0 };
             let program_icon = if thumbs::has_program_icon(&e.path) {
@@ -156,7 +160,7 @@ fn aux_column(
                 ui.painter(),
                 &super::display_name(e),
                 e.is_dir_like(),
-                FontId::proportional(13.0),
+                crate::theme::font::ui(13.0),
                 color,
                 r.width() - 56.0 - if hidden { 14.0 } else { 0.0 },
             );

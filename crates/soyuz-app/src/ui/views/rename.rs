@@ -3,7 +3,7 @@
 
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
-use egui::{CornerRadius, FontId, Id, Key, Margin, Modifiers, Order, Rect, Stroke, TextEdit, Ui, pos2, vec2};
+use egui::{FontId, Id, Key, Margin, Modifiers, Order, Rect, Stroke, TextEdit, Ui, pos2, vec2};
 
 use crate::ops::fileops::rename::{InlineRename, Outcome, finish, next_sel, revalidate, sel_range};
 use crate::state::pane::Pane;
@@ -55,7 +55,7 @@ pub fn editor(ui: &mut Ui, rect: Rect, font: FontId, pane: &mut Pane, v: &mut Vi
         }
     }
     // Opaque backing so the painted name underneath does not show through.
-    ui.painter().rect_filled(rect.expand(1.0), CornerRadius::same(radius::CONTROL), p.bg_surface1);
+    ui.painter().rect_filled(rect.expand(1.0), crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface1);
     let te = TextEdit::singleline(&mut r.text)
         .id(id)
         .font(font)
@@ -71,7 +71,7 @@ pub fn editor(ui: &mut Ui, rect: Rect, font: FontId, pane: &mut Pane, v: &mut Vi
     let stroke = if r.error.is_some() { p.danger } else { p.accent };
     ui.painter().rect_stroke(
         rect.expand(1.0),
-        CornerRadius::same(radius::CONTROL),
+        crate::theme::tokens::radius::same(radius::CONTROL),
         Stroke::new(1.5, stroke),
         egui::StrokeKind::Outside,
     );
@@ -99,14 +99,14 @@ pub fn editor(ui: &mut Ui, rect: Rect, font: FontId, pane: &mut Pane, v: &mut Vi
 fn error_bubble(ui: &Ui, rect: Rect, msg: &str, p: &crate::theme::Palette) {
     let painter = ui.ctx().layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("soyuz.rename.err")));
     let fg = p.on_color(p.danger);
-    let galley = painter.layout(msg.to_string(), FontId::proportional(11.5), fg, 280.0);
+    let galley = painter.layout(msg.to_string(), crate::theme::font::ui(11.5), fg, 280.0);
     let size = galley.size() + vec2(16.0, 10.0);
     let screen = ui.ctx().content_rect();
     let flip = rect.bottom() + 5.0 + size.y > screen.bottom();
     let top = if flip { rect.top() - 5.0 - size.y } else { rect.bottom() + 5.0 };
     let left = rect.left().min(screen.right() - size.x - 4.0).max(screen.left() + 4.0);
     let r = Rect::from_min_size(pos2(left, top), size);
-    painter.rect_filled(r, CornerRadius::same(radius::ROW), p.danger);
+    painter.rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), p.danger);
     painter.galley(r.min + vec2(8.0, 5.0), galley, fg);
     // The caret points at the field.
     let (x, edge, tip) = if flip {

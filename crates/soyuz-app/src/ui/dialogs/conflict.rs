@@ -12,8 +12,7 @@
 use std::time::SystemTime;
 
 use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Key, Layout, Margin, Rect, RichText, Sense, Stroke, StrokeKind,
-    TextEdit, Ui, pos2, vec2,
+    Align, Align2, Color32, Key, Layout, Margin, Rect, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
 };
 use soyuz_core::{ConflictResolution, EntryInfo, format_size};
 use soyuz_jobs::{ConflictInfo, ConflictKind, JobPrompt};
@@ -21,17 +20,17 @@ use soyuz_jobs::{ConflictInfo, ConflictKind, JobPrompt};
 use super::DialogCtx;
 pub use crate::models::dialogs::PromptShared;
 use crate::models::dialogs::{PromptAnswer as Answer, PromptModel};
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
-use crate::ui::views::flow::semibold;
 use crate::ui::views::icons;
 use crate::ui::widgets::{Btn, fit, pill_button};
 
 /// Small rounded tag ("Newer", "Larger").
 pub(crate) fn tag(ui: &Ui, pos: egui::Pos2, text: &str, color: Color32) -> f32 {
-    let g = ui.painter().layout_no_wrap(text.to_string(), FontId::proportional(10.5), color);
+    let g = ui.painter().layout_no_wrap(text.to_string(), crate::theme::font::ui(10.5), color);
     let r = Rect::from_min_size(pos2(pos.x, pos.y - 8.0), vec2(g.size().x + 12.0, 16.0));
-    ui.painter().rect_filled(r, CornerRadius::same(8), color.gamma_multiply(0.16));
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(8), color.gamma_multiply(0.16));
     ui.painter().galley(pos2(r.left() + 6.0, r.center().y - g.size().y / 2.0), g, color);
     r.width()
 }
@@ -43,11 +42,11 @@ fn count_badge(ui: &Ui, total: usize) {
     }
     let p = palette(ui.ctx());
     let text = tr!("dialogs-prompt-waiting", total = total);
-    let g = ui.painter().layout_no_wrap(text, FontId::proportional(11.0), p.warning);
+    let g = ui.painter().layout_no_wrap(text, crate::theme::font::ui(11.0), p.warning);
     let top_right = ui.max_rect().right_top();
     let r =
         Rect::from_min_size(pos2(top_right.x - g.size().x - 16.0, top_right.y - 34.0), vec2(g.size().x + 16.0, 20.0));
-    ui.painter().rect_filled(r, CornerRadius::same(10), p.warning.gamma_multiply(0.15));
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(10), p.warning.gamma_multiply(0.15));
     ui.painter().galley(r.center() - g.size() / 2.0, g, p.warning);
 }
 
@@ -77,7 +76,7 @@ pub(crate) fn show(ui: &mut Ui, m: &mut PromptModel, ctx: &mut DialogCtx<'_>) ->
     }
     let p = palette(ui.ctx());
     count_badge(ui, m.total());
-    ui.label(RichText::new(&m.job_title).font(FontId::proportional(11.5)).color(p.text_tertiary));
+    ui.label(RichText::new(&m.job_title).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
     ui.add_space(8.0);
     let answer = match m.prompt.clone() {
         JobPrompt::Conflict(info) => conflict(ui, m, &info, &p),
@@ -144,7 +143,7 @@ fn conflict(ui: &mut Ui, m: &mut PromptModel, c: &ConflictInfo, p: &Palette) -> 
     let blocked = matches!(c.kind, ConflictKind::MoveIntoSelf);
     if m.rename.is_some() {
         ui.label(
-            RichText::new(tr!("dialogs-conflict-new-name")).font(FontId::proportional(11.5)).color(p.text_secondary),
+            RichText::new(tr!("dialogs-conflict-new-name")).font(crate::theme::font::ui(11.5)).color(p.text_secondary),
         );
         let focus = std::mem::take(&mut m.focus_rename);
         let text = m.rename.get_or_insert_with(String::new);
@@ -297,7 +296,7 @@ fn cmp_time(a: Option<SystemTime>, b: Option<SystemTime>) -> Option<std::cmp::Or
 
 /// Thumbnail for small images (decoded by egui's image loaders), else the type glyph.
 fn preview(ui: &mut Ui, r: Rect, e: &EntryInfo, p: &Palette) {
-    ui.painter().rect_filled(r, CornerRadius::same(8), p.bg_sunken);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(8), p.bg_sunken);
     let img = !e.is_dir_like()
         && e.size > 0
         && e.size < 12 * 1024 * 1024
@@ -323,10 +322,10 @@ fn entry_card(
     p: &Palette,
 ) {
     let highlight = newer || larger;
-    ui.painter().rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface2);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::CARD), p.bg_surface2);
     ui.painter().rect_stroke(
         r,
-        CornerRadius::same(radius::CARD),
+        crate::theme::tokens::radius::same(radius::CARD),
         Stroke::new(1.0, if highlight { p.accent.gamma_multiply(0.6) } else { p.border_subtle }),
         StrokeKind::Inside,
     );
@@ -334,7 +333,7 @@ fn entry_card(
         pos2(r.left() + 12.0, r.top() + 14.0),
         Align2::LEFT_CENTER,
         super::caption_upper(caption),
-        FontId::proportional(10.0),
+        crate::theme::font::ui(10.0),
         p.text_tertiary,
     );
     let thumb = Rect::from_min_size(pos2(r.left() + 12.0, r.top() + 28.0), vec2(64.0, 64.0));
@@ -347,12 +346,12 @@ fn entry_card(
     ui.painter().galley(pos2(x, thumb.top() + 2.0), g, p.text_primary);
     crate::ui::widgets::paint_hidden_badge(ui.painter(), p, pos2(x + gw, thumb.top() + 2.0 + gh / 2.0), &e.name);
     let dir = e.path.parent().map(|d| soyuz_fs::strip_verbatim(d).to_string_lossy().into_owned()).unwrap_or_default();
-    let g = fit::ends(ui.painter(), &dir, FontId::proportional(11.0), p.text_tertiary, tw).galley;
+    let g = fit::ends(ui.painter(), &dir, crate::theme::font::ui(11.0), p.text_tertiary, tw).galley;
     ui.painter().galley(pos2(x, thumb.top() + 20.0), g, p.text_tertiary);
     let size =
         if e.is_dir_like() { tr!("dialogs-conflict-folder").to_string() } else { format_size(e.size, m.size_style) };
     let sy = thumb.top() + 46.0;
-    let sg = ui.painter().layout_no_wrap(size, FontId::proportional(12.0), p.text_secondary);
+    let sg = ui.painter().layout_no_wrap(size, crate::theme::font::ui(12.0), p.text_secondary);
     let sw = sg.size().x;
     ui.painter().galley(pos2(x, sy - sg.size().y / 2.0), sg, p.text_secondary);
     if larger {
@@ -360,7 +359,7 @@ fn entry_card(
     }
     let date = e.modified.map_or_else(|| "\u{2014}".into(), |t| soyuz_core::format_time(t, &m.date_format));
     let dy = thumb.top() + 64.0;
-    let dg = ui.painter().layout_no_wrap(date, FontId::proportional(12.0), p.text_secondary);
+    let dg = ui.painter().layout_no_wrap(date, crate::theme::font::ui(12.0), p.text_secondary);
     let dw = dg.size().x;
     ui.painter().galley(pos2(x, dy - dg.size().y / 2.0), dg, p.text_secondary);
     if newer {

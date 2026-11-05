@@ -7,17 +7,17 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike};
 use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Id, Layout, PopupCloseBehavior, Rect, Response, RichText, Sense,
-    Stroke, StrokeKind, Ui, pos2, vec2,
+    Align, Align2, Color32, Id, Layout, PopupCloseBehavior, Rect, Response, RichText, Sense, Stroke, StrokeKind, Ui,
+    pos2, vec2,
 };
 
 use soyuz_core::Locale;
 use soyuz_core::locale::{month_names, weekday_abbr};
 
 use crate::cmd::Cmd;
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons, icons::ph, palette};
-use crate::ui::views::flow::semibold;
 
 /// Underlined text tabs with icons; returns `true` when the selection changed.
 pub fn tab_strip(ui: &mut Ui, tabs: &[(&str, &str)], selected: &mut usize) -> bool {
@@ -29,7 +29,7 @@ pub fn tab_strip(ui: &mut Ui, tabs: &[(&str, &str)], selected: &mut usize) -> bo
         Stroke::new(1.0, p.border_subtle),
     );
     let mut x = full.left();
-    let font = FontId::proportional(12.5);
+    let font = crate::theme::font::ui(12.5);
     for (i, (glyph, label)) in tabs.iter().enumerate() {
         let g = ui.painter().layout_no_wrap(label.to_string(), font.clone(), p.text_primary);
         let w = g.size().x + 20.0 + 18.0;
@@ -44,14 +44,18 @@ pub fn tab_strip(ui: &mut Ui, tabs: &[(&str, &str)], selected: &mut usize) -> bo
             p.text_tertiary
         };
         if resp.hovered() && !on {
-            ui.painter().rect_filled(r.shrink2(vec2(2.0, 4.0)), CornerRadius::same(radius::ROW), p.bg_surface2);
+            ui.painter().rect_filled(
+                r.shrink2(vec2(2.0, 4.0)),
+                crate::theme::tokens::radius::same(radius::ROW),
+                p.bg_surface2,
+            );
         }
         ui.painter().text(pos2(r.left() + 10.0, r.center().y), Align2::LEFT_CENTER, *glyph, icons::font(14.0), color);
         let tg = ui.painter().layout_no_wrap(label.to_string(), font.clone(), color);
         ui.painter().galley(pos2(r.left() + 28.0, r.center().y - tg.size().y / 2.0), tg, color);
         if on {
             let bar = Rect::from_min_max(pos2(r.left() + 6.0, r.bottom() - 2.0), pos2(r.right() - 6.0, r.bottom()));
-            ui.painter().rect_filled(bar, CornerRadius::same(1), p.accent);
+            ui.painter().rect_filled(bar, crate::theme::tokens::radius::same(1), p.accent);
         }
         if resp.clicked() && !on {
             *selected = i;
@@ -64,7 +68,9 @@ pub fn tab_strip(ui: &mut Ui, tabs: &[(&str, &str)], selected: &mut usize) -> bo
 }
 
 /// Width of the label column of [`kv_row`].
-pub const KV_LABEL_W: f32 = 118.0;
+pub fn kv_label_w() -> f32 {
+    crate::theme::font::grow(118.0)
+}
 
 /// `label   value` row; the value is selectable (copyable) text.
 pub fn kv_row(ui: &mut Ui, label: &str, value: &str) -> Response {
@@ -78,12 +84,12 @@ pub fn kv_row(ui: &mut Ui, label: &str, value: &str) -> Response {
 pub fn kv_row_with<R>(ui: &mut Ui, label: &str, value: impl FnOnce(&mut Ui) -> R) -> R {
     let p = palette(ui.ctx());
     ui.horizontal_top(|ui| {
-        let (r, _) = ui.allocate_exact_size(vec2(KV_LABEL_W, 20.0), Sense::hover());
+        let (r, _) = ui.allocate_exact_size(vec2(kv_label_w(), crate::theme::font::height(20.0, 11.5)), Sense::hover());
         ui.painter().text(
             pos2(r.left(), r.center().y),
             Align2::LEFT_CENTER,
             label,
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
         );
         ui.vertical(|ui| {
@@ -103,7 +109,7 @@ pub fn caption(ui: &mut Ui, text: &str) {
     if vertical {
         ui.add_space(6.0);
     }
-    ui.label(RichText::new(super::caption_upper(text)).font(FontId::proportional(10.5)).color(p.text_tertiary));
+    ui.label(RichText::new(super::caption_upper(text)).font(crate::theme::font::ui(10.5)).color(p.text_tertiary));
     if vertical {
         ui.add_space(2.0);
     }
@@ -120,11 +126,11 @@ pub fn rule(ui: &mut Ui) {
 
 /// Small rounded badge (`Match`, `3 conflicts`).
 pub fn badge(ui: &mut Ui, icon: Option<&str>, text: &str, color: Color32) -> Response {
-    let font = FontId::proportional(11.0);
+    let font = crate::theme::font::ui(11.0);
     let g = ui.painter().layout_no_wrap(text.to_string(), font, color);
     let icon_w = if icon.is_some() { 15.0 } else { 0.0 };
     let (r, resp) = ui.allocate_exact_size(vec2(g.size().x + 14.0 + icon_w, 20.0), Sense::hover());
-    ui.painter().rect_filled(r, CornerRadius::same(10), color.gamma_multiply(0.16));
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(10), color.gamma_multiply(0.16));
     let mut x = r.left() + 7.0;
     if let Some(i) = icon {
         ui.painter().text(pos2(x, r.center().y), Align2::LEFT_CENTER, i, icons::font(11.5), color);
@@ -148,7 +154,7 @@ pub fn small_icon_button(ui: &mut Ui, glyph: &str, tip: &str) -> Response {
     let p = palette(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
     if resp.hovered() {
-        ui.painter().rect_filled(r, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface2);
     }
     let c = if resp.hovered() { p.text_primary } else { p.text_secondary };
     ui.painter().text(r.center(), Align2::CENTER_CENTER, glyph, icons::font(13.0), c);
@@ -161,7 +167,7 @@ pub use crate::models::attrs_edit::Tri;
 /// Checkbox with a third "mixed" state (dash). A click turns mixed/off on, on off.
 pub fn tri_check(ui: &mut Ui, state: &mut Tri, label: &str, enabled: bool) -> Response {
     let p = palette(ui.ctx());
-    let font = FontId::proportional(12.5);
+    let font = crate::theme::font::ui(12.5);
     let g = ui.painter().layout_no_wrap(label.to_string(), font, p.text_primary);
     let (r, resp) = ui.allocate_exact_size(
         vec2(18.0 + 8.0 + g.size().x, 22.0),
@@ -171,11 +177,20 @@ pub fn tri_check(ui: &mut Ui, state: &mut Tri, label: &str, enabled: bool) -> Re
     let on = *state != Tri::Off;
     let alpha = if enabled { 1.0 } else { 0.45 };
     if on {
-        ui.painter().rect_filled(bx, CornerRadius::same(radius::CONTROL), p.accent.gamma_multiply(alpha));
+        ui.painter().rect_filled(
+            bx,
+            crate::theme::tokens::radius::same(radius::CONTROL),
+            p.accent.gamma_multiply(alpha),
+        );
     } else {
-        ui.painter().rect_filled(bx, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+        ui.painter().rect_filled(bx, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface2);
         let stroke = if resp.hovered() { p.text_tertiary } else { p.border_strong };
-        ui.painter().rect_stroke(bx, CornerRadius::same(radius::CONTROL), Stroke::new(1.0, stroke), StrokeKind::Inside);
+        ui.painter().rect_stroke(
+            bx,
+            crate::theme::tokens::radius::same(radius::CONTROL),
+            Stroke::new(1.0, stroke),
+            StrokeKind::Inside,
+        );
     }
     match state {
         Tri::On => {
@@ -183,12 +198,12 @@ pub fn tri_check(ui: &mut Ui, state: &mut Tri, label: &str, enabled: bool) -> Re
         }
         Tri::Mixed => {
             let l = Rect::from_center_size(bx.center(), vec2(7.0, 2.0));
-            ui.painter().rect_filled(l, CornerRadius::same(1), Color32::WHITE);
+            ui.painter().rect_filled(l, crate::theme::tokens::radius::same(1), Color32::WHITE);
         }
         Tri::Off => {}
     }
     let tc = if enabled { p.text_primary } else { p.text_tertiary };
-    let tg = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.5), tc);
+    let tg = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(12.5), tc);
     ui.painter().galley(pos2(bx.right() + 8.0, r.center().y - tg.size().y / 2.0), tg, tc);
     if resp.clicked() {
         *state = if *state == Tri::On { Tri::Off } else { Tri::On };
@@ -267,8 +282,8 @@ pub fn datetime_field(ui: &mut Ui, id: Id, value: &mut Option<SystemTime>, place
             enabled,
             egui::TextEdit::singleline(&mut text)
                 .hint_text(placeholder)
-                .desired_width(162.0)
-                .font(FontId::monospace(12.0))
+                .desired_width(crate::theme::font::grow(162.0))
+                .font(crate::theme::font::mono(12.0))
                 .margin(egui::Margin::symmetric(8, 4)),
         );
         if resp.changed() {
@@ -278,7 +293,7 @@ pub fn datetime_field(ui: &mut Ui, id: Id, value: &mut Option<SystemTime>, place
         if bad {
             ui.painter().rect_stroke(
                 resp.rect,
-                CornerRadius::same(radius::CONTROL),
+                crate::theme::tokens::radius::same(radius::CONTROL),
                 Stroke::new(1.0, p.danger),
                 StrokeKind::Outside,
             );
@@ -347,7 +362,7 @@ fn calendar(ui: &mut Ui, st: &mut PickerState, value: &mut Option<SystemTime>) -
     };
     for (i, d) in days.iter().enumerate() {
         let c = pos2(grid.left() + cell.x * (i as f32 + 0.5), grid.top() + cell.y * 0.5);
-        ui.painter().text(c, Align2::CENTER_CENTER, *d, FontId::proportional(10.5), p.text_tertiary);
+        ui.painter().text(c, Align2::CENTER_CENTER, *d, crate::theme::font::ui(10.5), p.text_tertiary);
     }
     let offset = month.weekday().num_days_from_monday() as usize;
     for day in 1..=days_in_month(month) {
@@ -360,20 +375,20 @@ fn calendar(ui: &mut Ui, st: &mut PickerState, value: &mut Option<SystemTime>) -
         let today = date == now.date();
         let inner = r.shrink(2.0);
         if selected {
-            ui.painter().rect_filled(inner, CornerRadius::same(radius::ROW), p.accent);
+            ui.painter().rect_filled(inner, crate::theme::tokens::radius::same(radius::ROW), p.accent);
         } else if resp.hovered() {
-            ui.painter().rect_filled(inner, CornerRadius::same(radius::ROW), p.bg_surface2);
+            ui.painter().rect_filled(inner, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
         }
         if today && !selected {
             ui.painter().rect_stroke(
                 inner,
-                CornerRadius::same(radius::ROW),
+                crate::theme::tokens::radius::same(radius::ROW),
                 Stroke::new(1.0, p.accent),
                 StrokeKind::Inside,
             );
         }
         let c = if selected { Color32::WHITE } else { p.text_primary };
-        ui.painter().text(r.center(), Align2::CENTER_CENTER, day.to_string(), FontId::proportional(12.0), c);
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, day.to_string(), crate::theme::font::ui(12.0), c);
         if resp.clicked() {
             set(date.and_time(cur.time()), value);
         }

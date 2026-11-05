@@ -12,15 +12,14 @@
 use std::path::{Path, PathBuf};
 
 use egui::{
-    Align, Align2, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke,
-    TextEdit, Ui, vec2,
+    Align, Align2, Frame, Id, Key, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke, TextEdit, Ui, vec2,
 };
 
 use crate::models::file_browser::{BrowseFilter, FileBrowser};
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::theme::tokens::radius;
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{Btn, chip, fit, icon_button, pill_button};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -236,7 +235,7 @@ impl PathPicker {
         let frame = Frame::new()
             .fill(p.bg_surface3)
             .stroke(Stroke::new(1.0, p.border_strong))
-            .corner_radius(CornerRadius::same(radius::MODAL))
+            .corner_radius(crate::theme::tokens::radius::same(radius::MODAL))
             .inner_margin(Margin::same(18))
             .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
         let mut result = PickResult::Pending;
@@ -324,7 +323,9 @@ impl PathPicker {
                     ui.add_space(4.0);
                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                         ui.label(
-                            RichText::new(tr!("app-picker-saves-as", name = name)).size(11.5).color(p.text_tertiary),
+                            RichText::new(tr!("app-picker-saves-as", name = name))
+                                .size(crate::theme::font::px(11.5))
+                                .color(p.text_tertiary),
                         );
                     });
                 }
@@ -423,7 +424,7 @@ impl PathPicker {
         Frame::new()
             .fill(p.bg_sunken)
             .stroke(Stroke::new(1.0, p.border_subtle))
-            .corner_radius(CornerRadius::same(radius::CARD))
+            .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
             .inner_margin(Margin::same(4))
             .show(ui, |ui| {
                 ui.set_min_height(280.0);
@@ -466,9 +467,17 @@ impl PathPicker {
                         );
                         let sel = self.selected == Some(i);
                         if sel {
-                            ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.accent_subtle);
+                            ui.painter().rect_filled(
+                                rect,
+                                crate::theme::tokens::radius::same(radius::ROW),
+                                p.accent_subtle,
+                            );
                         } else if resp.hovered() {
-                            ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.bg_surface2);
+                            ui.painter().rect_filled(
+                                rect,
+                                crate::theme::tokens::radius::same(radius::ROW),
+                                p.bg_surface2,
+                            );
                         }
                         if resp.has_focus() {
                             crate::ui::widgets::focus_ring(ui, rect.shrink(1.0));
@@ -496,7 +505,7 @@ impl PathPicker {
                             ui.painter(),
                             &e.name,
                             e.is_dir,
-                            FontId::proportional(13.0),
+                            crate::theme::font::ui(13.0),
                             p.text_primary,
                             rect.width() - 40.0,
                         )

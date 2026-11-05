@@ -77,7 +77,7 @@ pub fn offset_text(s: &mut egui::Style, ui: f32, semibold: f32, code: f32) {
             }
             _ => 0.0,
         };
-        f.size = (f.size + add).max(4.0);
+        f.size = super::font::snap(f.size + add).max(4.0);
     }
 }
 
@@ -124,19 +124,20 @@ pub fn preference_from_config(theme: &str) -> ThemePreference {
 pub fn style(p: &Palette, font_size: f32, reduced_motion: bool) -> egui::Style {
     let base = if p.dark { Theme::Dark } else { Theme::Light };
     let mut s = base.default_style();
-    let k = if font_size > 4.0 { font_size / type_scale::BODY } else { 1.0 };
-    let prop = |size: f32| FontId::new(size * k, FontFamily::Proportional);
-    let semi = |size: f32| FontId::new(size * k, FontFamily::Name(SEMIBOLD.into()));
+    let k = super::font::factor(font_size);
+    let sized = |size: f32| super::font::snap(size * k);
+    let prop = |size: f32| FontId::new(sized(size), FontFamily::Proportional);
+    let semi = |size: f32| FontId::new(sized(size), FontFamily::Name(SEMIBOLD.into()));
     // Small text and large headings have families of their own so a variable ui font
     // can draw them at another optical size (`fonts::CAPTION` / `fonts::DISPLAY`).
-    let caption = |size: f32| FontId::new(size * k, FontFamily::Name(CAPTION_FAMILY.into()));
-    let display = |size: f32| FontId::new(size * k, FontFamily::Name(DISPLAY_FAMILY.into()));
+    let caption = |size: f32| FontId::new(sized(size), FontFamily::Name(CAPTION_FAMILY.into()));
+    let display = |size: f32| FontId::new(sized(size), FontFamily::Name(DISPLAY_FAMILY.into()));
     s.text_styles = [
         (TextStyle::Small, caption(type_scale::SMALL)),
         (TextStyle::Body, prop(type_scale::BODY)),
         (TextStyle::Button, prop(type_scale::BUTTON)),
         (TextStyle::Heading, display(type_scale::HEADING)),
-        (TextStyle::Monospace, FontId::new(type_scale::MONOSPACE * k, FontFamily::Monospace)),
+        (TextStyle::Monospace, FontId::new(sized(type_scale::MONOSPACE), FontFamily::Monospace)),
         (TextStyle::Name(TITLE.into()), semi(type_scale::TITLE)),
         (TextStyle::Name(CAPTION.into()), caption(type_scale::CAPTION)),
         (TextStyle::Name(DISPLAY.into()), display(type_scale::DISPLAY)),

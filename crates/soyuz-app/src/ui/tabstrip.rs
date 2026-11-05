@@ -10,8 +10,8 @@
 //! strip to tear it off into a new window, or onto another window to move it there.
 
 use egui::{
-    Align2, Color32, CornerRadius, CursorIcon, FontId, Frame, Id, LayerId, Margin, Order, Panel, Pos2, Rect, Sense,
-    Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
+    Align2, Color32, CursorIcon, Frame, Id, LayerId, Margin, Order, Panel, Pos2, Rect, Sense, Stroke, StrokeKind, Ui,
+    Vec2, pos2, vec2,
 };
 use soyuz_core::config::Action;
 
@@ -27,9 +27,15 @@ use crate::ui::widgets::trunc_galley;
 use crate::ui::workspaces::WsCmd;
 
 const PINNED_W: f32 = 40.0;
-const MAX_W: f32 = 220.0;
-const MIN_W: f32 = 96.0;
-const CHIP_H: f32 = 22.0;
+fn max_w() -> f32 {
+    crate::theme::font::grow(220.0)
+}
+fn min_w() -> f32 {
+    crate::theme::font::grow(96.0)
+}
+fn chip_h() -> f32 {
+    crate::theme::font::grow(22.0)
+}
 
 #[derive(Clone, Copy, Debug)]
 struct Drag {
@@ -45,7 +51,7 @@ struct Drag {
 pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     let p = palette(root.ctx());
     Panel::top("soyuz.tabstrip")
-        .exact_size(size::TAB_STRIP)
+        .exact_size(crate::theme::font::height(size::TAB_STRIP, 13.0))
         .show_separator_line(false)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 6, right: 8, top: 4, bottom: 0 }))
         .show(root, |ui| {
@@ -144,7 +150,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     }
 
     // ---- widths ----
-    let chip_font = FontId::proportional(11.5);
+    let chip_font = crate::theme::font::ui(11.5);
     let groups_of: Vec<Option<GroupId>> = app.core.ws.tabs.iter().map(|t| t.group).collect();
     let collapsed = |g: GroupId| app.core.ws.group(g).is_some_and(|x| x.collapsed);
     let hidden: Vec<bool> = groups_of.iter().map(|g| g.is_some_and(collapsed)).collect();
@@ -159,19 +165,19 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
             let w = if renaming.as_ref().is_some_and(|(r, _, _)| *r == g.id) {
                 130.0
             } else if label.is_empty() {
-                CHIP_H
+                chip_h()
             } else {
                 ui.painter().layout_no_wrap(label, chip_font.clone(), Color32::WHITE).size().x + 20.0
             };
             (g.id, w.min(160.0))
         })
         .collect();
-    let chip_w = |g: GroupId| chip_widths.iter().find(|(x, _)| *x == g).map_or(CHIP_H, |(_, w)| *w);
+    let chip_w = |g: GroupId| chip_widths.iter().find(|(x, _)| *x == g).map_or(chip_h(), |(_, w)| *w);
     let chips_total: f32 = app.core.ws.groups.iter().map(|g| chip_w(g.id) + 4.0).sum();
     let pinned = app.core.ws.tabs.iter().filter(|t| t.pinned).count();
     let avail = full.width() - plus_w - 4.0 - chips_total;
     let shown_unpinned = (0..n).filter(|&i| !app.core.ws.tabs[i].pinned && !hidden[i]).count().max(1) as f32;
-    let w = ((avail - pinned as f32 * (PINNED_W + 2.0)) / shown_unpinned - 2.0).clamp(MIN_W, MAX_W);
+    let w = ((avail - pinned as f32 * (PINNED_W + 2.0)) / shown_unpinned - 2.0).clamp(min_w(), max_w());
     let widths: Vec<f32> = (0..n)
         .map(|i| {
             if hidden[i] {
@@ -240,17 +246,17 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         let cw = chip_w(g);
         let spring = Id::unique(("soyuz.chip.x", g.0));
         let x = crate::ui::motion::spring_to(&ctx, spring, left);
-        let r = Rect::from_min_size(pos2(x, full.center().y - CHIP_H / 2.0 - 2.0), vec2(cw, CHIP_H));
+        let r = Rect::from_min_size(pos2(x, full.center().y - chip_h() / 2.0 - 2.0), vec2(cw, chip_h()));
         let color = p.tags[(group.color as usize).min(7)];
         let resp = ui.interact(r, Id::unique(("soyuz.chip", g.0)), Sense::click());
         let editing = renaming.as_ref().is_some_and(|(x, _, _)| *x == g);
         let fill = if group.collapsed { color.gamma_multiply(0.35) } else { color };
         if !editing {
-            painter.rect_filled(r, CornerRadius::same(radius::CONTROL), fill);
+            painter.rect_filled(r, crate::theme::tokens::radius::same(radius::CONTROL), fill);
             if resp.hovered() {
                 painter.rect_stroke(
                     r,
-                    CornerRadius::same(radius::CONTROL),
+                    crate::theme::tokens::radius::same(radius::CONTROL),
                     Stroke::new(1.0, p.text_primary.gamma_multiply(0.5)),
                     StrokeKind::Outside,
                 );
@@ -285,7 +291,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
             hovered_chip = Some((g, r));
             painter.rect_stroke(
                 r.expand(2.0),
-                CornerRadius::same(radius::CONTROL),
+                crate::theme::tokens::radius::same(radius::CONTROL),
                 Stroke::new(1.5, p.accent),
                 StrokeKind::Outside,
             );
@@ -350,7 +356,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
             let cresp = ui.interact(cr, Id::unique(("soyuz.tab.close", tab_id.0)), Sense::click());
             crate::ui::a11y::button(&cresp, &tr!("app-tabs-close-named", title = &title));
             if cresp.hovered() {
-                painter.rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface3);
+                painter.rect_filled(cr, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface3);
             }
             painter.text(
                 cr.center(),
@@ -429,7 +435,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     let presp = ui.interact(pr, Id::unique("soyuz.tab.new"), Sense::click());
     crate::ui::a11y::button(&presp, tr!("app-tabs-new"));
     if presp.hovered() {
-        ui.painter().rect_filled(pr, CornerRadius::same(radius::ROW), p.bg_surface2);
+        ui.painter().rect_filled(pr, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
     }
     ui.painter().text(
         pr.center(),
@@ -482,17 +488,17 @@ fn paint_tab(
                 spread: 0,
                 color: Color32::from_black_alpha(if p.dark { 70 } else { 24 }),
             };
-            painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));
+            painter.add(shadow.as_shape(r, crate::theme::tokens::radius::same(radius::CARD)));
         }
         paint_well(painter, &p, r);
     } else if hover_t > 0.0 {
-        painter.rect_filled(r, CornerRadius::same(radius::CARD), p.tab_hover().gamma_multiply(hover_t));
+        painter.rect_filled(r, crate::theme::tokens::radius::same(radius::CARD), p.tab_hover().gamma_multiply(hover_t));
     }
     // Group color: a bar along the bottom edge.
     if let Some(g) = tab.group.and_then(|g| app.core.ws.group(g)) {
         let c = p.tags[(g.color as usize).min(7)];
         let bar = Rect::from_min_max(pos2(r.left() + 6.0, r.bottom() - 4.5), pos2(r.right() - 6.0, r.bottom() - 2.5));
-        painter.rect_filled(bar, CornerRadius::same(1), c);
+        painter.rect_filled(bar, crate::theme::tokens::radius::same(1), c);
     }
     let pane = tab.active();
     let title = location_title(&pane.location);
@@ -533,7 +539,7 @@ fn paint_tab(
         let text_right = r.right() - if show_close { 30.0 } else { 12.0 };
         let color = if active { p.text_primary } else { p.text_secondary };
         let room = text_right - (r.left() + 32.0);
-        let g = crate::ui::widgets::fit::ends(painter, &title, FontId::proportional(12.5), color, room).galley;
+        let g = crate::ui::widgets::fit::ends(painter, &title, crate::theme::font::ui(12.5), color, room).galley;
         painter.galley(pos2(r.left() + 32.0, r.center().y - g.size().y / 2.0), g, color);
     }
     if let Some(c) = folder_color
@@ -549,7 +555,7 @@ fn paint_tab(
 /// follow the rounded corners. High contrast themes add an outline.
 fn paint_well(painter: &egui::Painter, p: &crate::theme::Palette, r: Rect) {
     let (fill, shadow, highlight) = p.tab_well();
-    let cr = CornerRadius::same(radius::CARD);
+    let cr = crate::theme::tokens::radius::same(radius::CARD);
     painter.rect_filled(r, cr, highlight);
     painter.rect_filled(Rect::from_min_max(r.min, pos2(r.max.x, r.max.y - 1.0)), cr, shadow);
     painter.rect_filled(Rect::from_min_max(pos2(r.min.x, r.min.y + 1.0), pos2(r.max.x, r.max.y - 1.0)), cr, fill);
@@ -583,8 +589,8 @@ fn paint_ghost(ctx: &egui::Context, app: &SoyuzApp, d: Drag, target: Option<&Dro
     let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::unique("soyuz.tab.ghost")));
     let r = Rect::from_min_size(d.last - d.grab, vec2(200.0, 30.0));
     let shadow = p.shadow(crate::theme::tokens::shadow::POPUP);
-    painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));
-    painter.rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface1);
+    painter.add(shadow.as_shape(r, crate::theme::tokens::radius::same(radius::CARD)));
+    painter.rect_filled(r, crate::theme::tokens::radius::same(radius::CARD), p.bg_surface1);
     let title = app.core.ws.tabs.get(d.from).map(|t| location_title(&t.active().location)).unwrap_or_default();
     painter.text(
         pos2(r.left() + 18.0, r.center().y),
@@ -593,7 +599,7 @@ fn paint_ghost(ctx: &egui::Context, app: &SoyuzApp, d: Drag, target: Option<&Dro
         icons::font_fill(15.0),
         p.glyph_folder,
     );
-    let g = trunc_galley(&painter, &title, FontId::proportional(12.5), p.text_primary, r.width() - 44.0);
+    let g = trunc_galley(&painter, &title, crate::theme::font::ui(12.5), p.text_primary, r.width() - 44.0);
     painter.galley(pos2(r.left() + 32.0, r.center().y - g.size().y / 2.0), g, p.text_primary);
     let hint = match target {
         Some(DropTarget::TearOff { .. }) => tr!("app-tabs-drop-new-window"),
@@ -606,7 +612,7 @@ fn paint_ghost(ctx: &egui::Context, app: &SoyuzApp, d: Drag, target: Option<&Dro
             pos2(r.left() + 4.0, r.bottom() + 8.0),
             Align2::LEFT_TOP,
             hint,
-            FontId::proportional(11.5),
+            crate::theme::font::ui(11.5),
             p.text_secondary,
         );
     }
@@ -658,7 +664,7 @@ fn group_rename(ui: &mut Ui, app: &mut SoyuzApp, g: GroupId, r: Rect) {
             .hint_text(tr!("app-tabs-group-name"))
             .desired_width(r.width())
             .margin(Margin::symmetric(6, 2))
-            .font(FontId::proportional(11.5)),
+            .font(crate::theme::font::ui(11.5)),
     );
     if *focus {
         resp.request_focus();

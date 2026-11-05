@@ -6,8 +6,8 @@
 use std::path::PathBuf;
 
 use egui::{
-    Align, Align2, CornerRadius, DragAndDrop, FontId, Frame, Id, Key, Layout, Margin, Modifiers, Panel, RichText,
-    ScrollArea, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
+    Align, Align2, CornerRadius, DragAndDrop, Frame, Id, Key, Layout, Margin, Modifiers, Panel, RichText, ScrollArea,
+    Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
 };
 
 use super::{PanelAct, Tone, button, chip, tokens};
@@ -15,10 +15,10 @@ use crate::ai::agent::Finish;
 use crate::ai::state::{self, CardState, ChatItem, TaskEnd, ToolStatus, UndoState};
 use crate::app::SoyuzApp;
 use crate::theme::Palette;
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::radius;
 use crate::ui::dnd::DragPayload;
-use crate::ui::views::flow::semibold;
 
 const COMPOSER_ID: &str = "soyuz.ai.composer";
 
@@ -76,7 +76,7 @@ fn empty(ui: &mut Ui, app: &SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
         ui.label(icons::icon_fill(ph::SPARKLE, 30.0).color(p.accent));
         ui.add_space(4.0);
         ui.label(RichText::new(tr!("ai-empty-title")).font(semibold(15.0)).color(p.text_primary));
-        ui.label(RichText::new(tr!("ai-empty-body")).size(11.5).color(p.text_tertiary));
+        ui.label(RichText::new(tr!("ai-empty-body")).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
     });
     ui.add_space(14.0);
     let has_sel = !app.core.ws.pane().selection.is_empty();
@@ -94,12 +94,12 @@ fn empty(ui: &mut Ui, app: &SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
         let hover = resp.hovered();
         ui.painter().rect_filled(
             r,
-            CornerRadius::same(radius::CARD),
+            crate::theme::tokens::radius::same(radius::CARD),
             if hover { p.bg_surface3 } else { p.bg_surface2 },
         );
         ui.painter().rect_stroke(
             r,
-            CornerRadius::same(radius::CARD),
+            crate::theme::tokens::radius::same(radius::CARD),
             Stroke::new(1.0, p.border_subtle),
             StrokeKind::Inside,
         );
@@ -108,14 +108,14 @@ fn empty(ui: &mut Ui, app: &SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
             pos2(r.left() + 36.0, r.center().y),
             Align2::LEFT_CENTER,
             label,
-            FontId::proportional(12.5),
+            crate::theme::font::ui(12.5),
             p.text_primary,
         );
         ui.painter().text(
             pos2(r.right() - 12.0, r.center().y),
             Align2::RIGHT_CENTER,
             &prompt,
-            FontId::monospace(11.0),
+            crate::theme::font::mono(11.0),
             p.text_tertiary,
         );
         if resp.clicked() {
@@ -129,21 +129,32 @@ fn user(ui: &mut Ui, p: &Palette, text: &str, mentions: &[PathBuf]) {
         let max = ui.available_width() * 0.86;
         Frame::new()
             .fill(p.accent_subtle)
-            .corner_radius(CornerRadius { nw: 12, ne: 4, sw: 12, se: 12 })
+            .corner_radius(CornerRadius {
+                nw: crate::theme::tokens::radius::scaled(12),
+                ne: crate::theme::tokens::radius::scaled(4),
+                sw: crate::theme::tokens::radius::scaled(12),
+                se: crate::theme::tokens::radius::scaled(12),
+            })
             .inner_margin(Margin::symmetric(12, 8))
             .show(ui, |ui| {
                 ui.set_max_width(max);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(text).size(13.0).color(p.text_primary));
+                    ui.label(RichText::new(text).size(crate::theme::font::px(13.0)).color(p.text_primary));
                     if !mentions.is_empty() {
                         ui.horizontal_wrapped(|ui| {
                             for m in mentions.iter().take(8) {
                                 let name = soyuz_core::entry::display_name(m);
-                                ui.label(RichText::new(format!("@{name}")).size(11.0).color(p.accent));
+                                ui.label(
+                                    RichText::new(format!("@{name}"))
+                                        .size(crate::theme::font::px(11.0))
+                                        .color(p.accent),
+                                );
                             }
                             if mentions.len() > 8 {
                                 ui.label(
-                                    RichText::new(format!("+{}", mentions.len() - 8)).size(11.0).color(p.text_tertiary),
+                                    RichText::new(format!("+{}", mentions.len() - 8))
+                                        .size(crate::theme::font::px(11.0))
+                                        .color(p.text_tertiary),
                                 );
                             }
                         });
@@ -161,12 +172,19 @@ fn assistant(ui: &mut Ui, p: &Palette, text: &str, reasoning: &str, streaming: b
         ui.vertical(|ui| {
             ui.set_width(ui.available_width());
             if !reasoning.trim().is_empty() {
-                egui::CollapsingHeader::new(RichText::new(tr!("ai-thinking")).size(11.0).color(p.text_tertiary))
-                    .id_salt(ui.next_auto_id())
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        ui.label(RichText::new(reasoning.trim()).size(11.5).italics().color(p.text_tertiary));
-                    });
+                egui::CollapsingHeader::new(
+                    RichText::new(tr!("ai-thinking")).size(crate::theme::font::px(11.0)).color(p.text_tertiary),
+                )
+                .id_salt(ui.next_auto_id())
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new(reasoning.trim())
+                            .size(crate::theme::font::px(11.5))
+                            .italics()
+                            .color(p.text_tertiary),
+                    );
+                });
             }
             if text.trim().is_empty() && streaming {
                 dots(ui, p, reduced);
@@ -178,7 +196,11 @@ fn assistant(ui: &mut Ui, p: &Palette, text: &str, reasoning: &str, streaming: b
                 let t = ui.input(|i| i.time);
                 let (cr, _) = ui.allocate_exact_size(vec2(8.0, 14.0), Sense::hover());
                 if reduced || (t * 2.0) as i64 % 2 == 0 {
-                    ui.painter().rect_filled(cr.shrink2(vec2(1.0, 0.0)), CornerRadius::same(1), p.accent);
+                    ui.painter().rect_filled(
+                        cr.shrink2(vec2(1.0, 0.0)),
+                        crate::theme::tokens::radius::same(1),
+                        p.accent,
+                    );
                 }
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
             }
@@ -227,7 +249,7 @@ fn tool_row(ui: &mut Ui, p: &Palette, tool: &str, detail: &str, status: &ToolSta
             );
         }
     }
-    let name = ui.painter().layout_no_wrap(tool.to_string(), FontId::monospace(11.5), p.text_secondary);
+    let name = ui.painter().layout_no_wrap(tool.to_string(), crate::theme::font::mono(11.5), p.text_secondary);
     let nw = name.size().x;
     ui.painter().galley(pos2(x0, r.center().y - name.size().y / 2.0), name, p.text_secondary);
     let brief = match status {
@@ -238,7 +260,7 @@ fn tool_row(ui: &mut Ui, p: &Palette, tool: &str, detail: &str, status: &ToolSta
     let g = crate::ui::widgets::trunc_galley(
         ui.painter(),
         brief,
-        FontId::proportional(11.5),
+        crate::theme::font::ui(11.5),
         color,
         (r.right() - x0 - nw - 10.0).max(20.0),
     );
@@ -253,7 +275,7 @@ fn notice(ui: &mut Ui, p: &Palette, text: &str, warn: bool) {
     ui.horizontal_top(|ui| {
         ui.add_space(4.0);
         ui.label(icons::icon(if warn { ph::WARNING } else { ph::INFO }, 12.0).color(c));
-        ui.add(egui::Label::new(RichText::new(text).size(11.5).color(c)).wrap());
+        ui.add(egui::Label::new(RichText::new(text).size(crate::theme::font::px(11.5)).color(c)).wrap());
     });
 }
 
@@ -261,7 +283,7 @@ fn confirm(ui: &mut Ui, p: &Palette, estimate: f64, model: &str, acts: &mut Vec<
     Frame::new()
         .fill(p.warning.gamma_multiply(0.08))
         .stroke(Stroke::new(1.0, p.warning.gamma_multiply(0.4)))
-        .corner_radius(CornerRadius::same(radius::CARD))
+        .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -273,7 +295,11 @@ fn confirm(ui: &mut Ui, p: &Palette, estimate: f64, model: &str, acts: &mut Vec<
                         .color(p.text_primary),
                 );
             });
-            ui.label(RichText::new(tr!("ai-confirm-body", model = model)).size(11.5).color(p.text_secondary));
+            ui.label(
+                RichText::new(tr!("ai-confirm-body", model = model))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_secondary),
+            );
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if button(ui, Some(ph::PLAY), tr!("ai-start"), Tone::Primary, true).clicked() {
@@ -311,10 +337,10 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
         parts.push(tr!("ai-end-cost", cost = soyuz_core::locale::format_decimal(c, 3)));
     }
     let label = parts.join(" \u{00b7} ");
-    let g = ui.painter().layout_no_wrap(label, FontId::proportional(11.0), color);
+    let g = ui.painter().layout_no_wrap(label, crate::theme::font::ui(11.0), color);
     let gw = g.size().x + 26.0;
     let pill = egui::Rect::from_center_size(r.center(), vec2(gw.min(w), 18.0));
-    ui.painter().rect_filled(pill, CornerRadius::same(9), p.bg_surface1);
+    ui.painter().rect_filled(pill, crate::theme::tokens::radius::same(9), p.bg_surface1);
     ui.painter().text(pos2(pill.left() + 9.0, pill.center().y), Align2::CENTER_CENTER, icon, icons::font(11.0), color);
     ui.painter().galley(pos2(pill.left() + 19.0, pill.center().y - g.size().y / 2.0), g, color);
     if let Finish::Error(e) = &t.reason
@@ -343,7 +369,7 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
                 button(ui, Some(ph::HOURGLASS), tr!("ai-undoing"), Tone::Normal, false);
             }
             UndoState::Done(msg) => {
-                ui.label(RichText::new(msg).size(11.5).color(p.text_secondary));
+                ui.label(RichText::new(msg).size(crate::theme::font::px(11.5)).color(p.text_secondary));
             }
         }
         if !t.recipe_run && ok {
@@ -362,7 +388,7 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
                         TextEdit::singleline(name)
                             .hint_text(tr!("ai-recipe-name-hint"))
                             .desired_width(150.0)
-                            .font(FontId::proportional(12.0)),
+                            .font(crate::theme::font::ui(12.0)),
                     );
                     resp.request_focus();
                     let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
@@ -382,7 +408,7 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
             }
         }
         if let Some(s) = &t.saved {
-            ui.label(RichText::new(s).size(11.5).color(p.success));
+            ui.label(RichText::new(s).size(crate::theme::font::px(11.5)).color(p.success));
         }
     });
 }
@@ -410,7 +436,7 @@ fn footer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
         if pending.len() > 1 {
             Frame::new()
                 .fill(p.warning.gamma_multiply(0.08))
-                .corner_radius(CornerRadius::same(radius::CARD))
+                .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
                 .inner_margin(Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -418,7 +444,7 @@ fn footer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
                         ui.label(icons::icon(ph::HOURGLASS, 13.0).color(p.warning));
                         ui.label(
                             RichText::new(tr!("ai-pending-plans", count = pending.len()))
-                                .size(12.0)
+                                .size(crate::theme::font::px(12.0))
                                 .color(p.text_primary),
                         );
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -531,7 +557,7 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
     let frame_rect = Frame::new()
         .fill(p.bg_sunken)
         .stroke(Stroke::new(1.0, if has_focus { p.accent.gamma_multiply(0.7) } else { p.border_subtle }))
-        .corner_radius(CornerRadius::same(radius::CARD))
+        .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
         .inner_margin(Margin { left: 10, right: 6, top: 8, bottom: 6 })
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -543,14 +569,18 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                     .desired_rows(2)
                     .desired_width(f32::INFINITY)
                     .frame(Frame::NONE)
-                    .font(FontId::proportional(13.0)),
+                    .font(crate::theme::font::ui(13.0)),
             );
             if std::mem::take(&mut app.core.ai.panel.focus_composer) {
                 resp.request_focus();
             }
             ui.horizontal(|ui| {
                 if ui.available_width() > 420.0 {
-                    ui.label(RichText::new(tr!("ai-composer-keys")).size(10.5).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("ai-composer-keys"))
+                            .size(crate::theme::font::px(10.5))
+                            .color(p.text_tertiary),
+                    );
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if running {
@@ -584,11 +614,15 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
         if hover {
             ui.painter().rect_stroke(
                 frame_rect.expand(2.0),
-                CornerRadius::same(radius::CARD + 2),
+                crate::theme::tokens::radius::same(radius::CARD + 2),
                 Stroke::new(2.0, p.accent),
                 StrokeKind::Outside,
             );
-            ui.painter().rect_filled(frame_rect, CornerRadius::same(radius::CARD), p.accent.gamma_multiply(0.06));
+            ui.painter().rect_filled(
+                frame_rect,
+                crate::theme::tokens::radius::same(radius::CARD),
+                p.accent.gamma_multiply(0.06),
+            );
             let n = payload.paths.len();
             ui.painter().text(
                 frame_rect.center(),
@@ -631,12 +665,14 @@ fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Panel
             soyuz_ai::tools::Risk::Destructive => "destructive",
         };
         ui.label(
-            RichText::new(tr!("ai-tools-builtin", count = builtin, risk = ceiling)).size(11.0).color(p.text_tertiary),
+            RichText::new(tr!("ai-tools-builtin", count = builtin, risk = ceiling))
+                .size(crate::theme::font::px(11.0))
+                .color(p.text_tertiary),
         );
         crate::ui::widgets::menu_separator(ui);
         crate::ui::widgets::menu_caption(ui, tr!("ai-tools-caption-connected"));
         if status.is_empty() {
-            ui.label(RichText::new(tr!("ai-tools-none")).size(11.0).color(p.text_tertiary));
+            ui.label(RichText::new(tr!("ai-tools-none")).size(crate::theme::font::px(11.0)).color(p.text_tertiary));
         }
         for (name, st) in &status {
             let (icon, color, text) = match st {
@@ -656,7 +692,10 @@ fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Panel
             ui.horizontal(|ui| {
                 ui.label(icons::icon(icon, 12.5).color(color));
                 ui.label(RichText::new(name).font(semibold(12.0)).color(p.text_primary));
-                ui.add(egui::Label::new(RichText::new(text).size(11.0).color(p.text_tertiary)).truncate());
+                ui.add(
+                    egui::Label::new(RichText::new(text).size(crate::theme::font::px(11.0)).color(p.text_tertiary))
+                        .truncate(),
+                );
             });
             for t in ext.iter().filter(|t| &t.server == name) {
                 let allowed = t.risk <= max_risk;
@@ -709,7 +748,7 @@ fn popup_frame(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui)) {
     Frame::new()
         .fill(p.bg_surface2)
         .stroke(Stroke::new(1.0, p.border_strong))
-        .corner_radius(CornerRadius::same(radius::CARD))
+        .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
         .inner_margin(Margin::same(4))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -722,17 +761,17 @@ fn pick_row(ui: &mut Ui, p: &Palette, icon: &str, label: &str, desc: &str) -> bo
     let w = ui.available_width();
     let (r, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::click());
     if resp.hovered() {
-        ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface3);
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface3);
     }
     ui.painter().text(pos2(r.left() + 12.0, r.center().y), Align2::CENTER_CENTER, icon, icons::font(12.5), p.accent);
-    let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.5), p.text_primary);
+    let g = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(12.5), p.text_primary);
     let lw = g.size().x;
     ui.painter().galley(pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, p.text_primary);
     if !desc.is_empty() {
         let d = crate::ui::widgets::trunc_galley(
             ui.painter(),
             desc,
-            FontId::proportional(11.0),
+            crate::theme::font::ui(11.0),
             p.text_tertiary,
             (w - lw - 40.0).max(10.0),
         );

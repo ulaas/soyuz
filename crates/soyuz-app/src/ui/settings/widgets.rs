@@ -3,11 +3,10 @@
 //! text field, color swatch).
 
 use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Frame, Layout, Margin, Response, RichText, Sense, Stroke, StrokeKind,
-    TextEdit, Ui, pos2, vec2,
+    Align, Align2, Color32, Frame, Layout, Margin, Response, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2,
+    vec2,
 };
 
-use crate::theme::fonts::SEMIBOLD;
 use crate::theme::palette;
 pub use crate::ui::widgets::dropdown as dd;
 
@@ -65,9 +64,12 @@ impl Rows<'_> {
             let left = ui.allocate_ui_with_layout(vec2(left_w, 0.0), Layout::top_down(Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.add_space(9.0);
-                ui.label(RichText::new(label).size(13.0).color(p.text_primary));
+                ui.label(RichText::new(label).size(crate::theme::font::px(13.0)).color(p.text_primary));
                 if !desc.is_empty() {
-                    ui.add(egui::Label::new(RichText::new(desc).size(11.5).color(p.text_tertiary)).wrap());
+                    ui.add(
+                        egui::Label::new(RichText::new(desc).size(crate::theme::font::px(11.5)).color(p.text_tertiary))
+                            .wrap(),
+                    );
                 }
                 ui.add_space(9.0);
             });
@@ -98,10 +100,12 @@ impl Rows<'_> {
         let p = palette(ui.ctx());
         ui.add_space(8.0);
         if !label.is_empty() {
-            ui.label(RichText::new(label).size(13.0).color(p.text_primary));
+            ui.label(RichText::new(label).size(crate::theme::font::px(13.0)).color(p.text_primary));
         }
         if !desc.is_empty() {
-            ui.add(egui::Label::new(RichText::new(desc).size(11.5).color(p.text_tertiary)).wrap());
+            ui.add(
+                egui::Label::new(RichText::new(desc).size(crate::theme::font::px(11.5)).color(p.text_tertiary)).wrap(),
+            );
         }
         if !label.is_empty() || !desc.is_empty() {
             ui.add_space(6.0);
@@ -146,13 +150,13 @@ pub fn group(ui: &mut Ui, query: &str, context: &str, title: &str, mut body: imp
     let p = palette(ui.ctx());
     ui.add_space(14.0);
     if !title.is_empty() {
-        ui.label(RichText::new(upper(title)).font(FontId::proportional(10.5)).color(p.text_tertiary));
+        ui.label(RichText::new(upper(title)).font(crate::theme::font::ui(10.5)).color(p.text_tertiary));
         ui.add_space(6.0);
     }
     Frame::new()
         .fill(p.bg_surface2.gamma_multiply(if p.dark { 0.7 } else { 1.0 }))
         .stroke(Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(crate::theme::tokens::radius::same(10))
         .inner_margin(Margin::symmetric(14, 2))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -176,7 +180,7 @@ pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, state, &label));
     let t = ui.ctx().animate_bool_with_time(resp.id, *on, crate::theme::anim(ui.ctx(), 0.12));
     let bg = lerp_color(p.border_strong, p.accent, t);
-    let r = CornerRadius::same(10);
+    let r = crate::theme::tokens::radius::same(10);
     ui.painter().rect_filled(rect, r, bg);
     if resp.hovered() {
         ui.painter().rect_stroke(rect, r, Stroke::new(1.0, p.accent.gamma_multiply(0.5)), StrokeKind::Outside);
@@ -198,7 +202,7 @@ pub fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
 /// Segmented control with text labels. Returns `true` when the selection changed.
 pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T, &str)]) -> bool {
     let p = palette(ui.ctx());
-    let font = FontId::proportional(12.0);
+    let font = crate::theme::font::ui(12.0);
     let widths: Vec<f32> = options
         .iter()
         .map(|(_, l)| ui.painter().layout_no_wrap(l.to_string(), font.clone(), p.text_primary).size().x + 20.0)
@@ -206,15 +210,24 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
     let total = vec2(widths.iter().sum::<f32>() + 4.0, 28.0);
     let (rect, _) = ui.allocate_exact_size(total, Sense::hover());
     let painter = ui.painter();
-    painter.rect_filled(rect, CornerRadius::same(7), p.bg_surface1.gamma_multiply(if p.dark { 0.8 } else { 1.0 }));
-    painter.rect_stroke(rect, CornerRadius::same(7), Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
+    painter.rect_filled(
+        rect,
+        crate::theme::tokens::radius::same(7),
+        p.bg_surface1.gamma_multiply(if p.dark { 0.8 } else { 1.0 }),
+    );
+    painter.rect_stroke(
+        rect,
+        crate::theme::tokens::radius::same(7),
+        Stroke::new(1.0, p.border_subtle),
+        StrokeKind::Inside,
+    );
     let sel = options.iter().position(|(v, _)| v == value).unwrap_or(0);
     let id = ui.scope_id().with(("seg", rect.min.x as i32, rect.min.y as i32));
     let target_x: f32 = widths[..sel].iter().sum();
     let x = ui.ctx().animate_value_with_time(id, target_x, crate::theme::anim(ui.ctx(), 0.14));
     let w = ui.ctx().animate_value_with_time(id.with("w"), widths[sel], crate::theme::anim(ui.ctx(), 0.14));
     let thumb = egui::Rect::from_min_size(pos2(rect.left() + 2.0 + x, rect.top() + 2.0), vec2(w, 24.0));
-    ui.painter().rect_filled(thumb, CornerRadius::same(5), p.accent);
+    ui.painter().rect_filled(thumb, crate::theme::tokens::radius::same(5), p.accent);
     let mut changed = false;
     let mut cx = rect.left() + 2.0;
     for (i, ((v, label), w)) in options.iter().zip(&widths).enumerate() {
@@ -369,9 +382,7 @@ pub fn to_hex(c: Color32) -> String {
 /// Heading used inside blocks.
 pub fn subheading(ui: &mut Ui, text: &str) {
     let p = palette(ui.ctx());
-    ui.label(
-        RichText::new(text).font(FontId::new(12.5, egui::FontFamily::Name(SEMIBOLD.into()))).color(p.text_secondary),
-    );
+    ui.label(RichText::new(text).font(crate::theme::font::semibold(12.5)).color(p.text_secondary));
 }
 
 #[cfg(test)]

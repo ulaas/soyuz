@@ -19,14 +19,16 @@ pub struct ColGeom {
 /// Lay out columns left to right starting at `pad`. The name column always takes the
 /// free width (its stored width is ignored), so the table fills `avail`; it shrinks down
 /// to [`MIN_NAME_W`] as other columns grow, and only then does the content get wider
-/// than `avail` (horizontal scrolling). Returns the geometry and content width.
+/// than `avail` (horizontal scrolling). Returns the geometry and content width. Stored
+/// widths are for the default text size: columns grow with larger text ([`resize_target`]
+/// stores them back the same way).
 pub fn geometry(cols: &[ColumnSpec], avail: f32, pad: f32) -> (Vec<ColGeom>, f32) {
-    let others: f32 = cols.iter().filter(|c| c.column != Column::Name).map(|c| c.width.max(MIN_COL_W)).sum();
+    let shown = |c: &ColumnSpec| (c.width * crate::theme::font::growth()).max(MIN_COL_W);
+    let others: f32 = cols.iter().filter(|c| c.column != Column::Name).map(shown).sum();
     let mut x = pad;
     let mut out = Vec::with_capacity(cols.len());
     for c in cols {
-        let w =
-            if c.column == Column::Name { MIN_NAME_W.max(avail - 2.0 * pad - others) } else { c.width.max(MIN_COL_W) };
+        let w = if c.column == Column::Name { MIN_NAME_W.max(avail - 2.0 * pad - others) } else { shown(c) };
         out.push(ColGeom { column: c.column, x, w });
         x += w;
     }
@@ -40,11 +42,12 @@ pub fn geometry(cols: &[ColumnSpec], avail: f32, pad: f32) -> (Vec<ColGeom>, f32
 /// name column is the last one).
 pub fn resize_target(cols: &[ColGeom], ci: usize, dx: f32) -> Option<(Column, f32)> {
     let c = cols.get(ci)?;
+    let stored = |w: f32| w.max(MIN_COL_W) / crate::theme::font::growth();
     if c.column == Column::Name {
         let next = cols.get(ci + 1)?;
-        Some((next.column, (next.w - dx).max(MIN_COL_W)))
+        Some((next.column, stored(next.w - dx)))
     } else {
-        Some((c.column, (c.w + dx).max(MIN_COL_W)))
+        Some((c.column, stored(c.w + dx)))
     }
 }
 

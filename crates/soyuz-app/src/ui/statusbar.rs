@@ -1,9 +1,7 @@
 //! Bottom status bar: item / selection counts, free space, view-mode switcher, zoom
 //! slider and theme switcher. Describes the focused pane.
 
-use egui::{
-    Align, Align2, CornerRadius, FontId, Frame, Layout, Margin, Panel, Rect, RichText, Sense, ThemePreference, Ui, vec2,
-};
+use egui::{Align, Align2, Frame, Layout, Margin, Panel, Rect, RichText, Sense, ThemePreference, Ui, vec2};
 use soyuz_core::config::Action;
 use soyuz_core::{SizeStyle, ViewMode, format_size};
 
@@ -48,7 +46,7 @@ const MODES: [(ViewMode, &str, Action); 4] = [
 
 /// Height of the bar: grows with the controls of the density.
 pub fn height(ctx: &egui::Context) -> f32 {
-    (ctx.global_style().spacing.interact_size.y + 4.0).max(size::STATUS_BAR + 4.0)
+    (ctx.global_style().spacing.interact_size.y + 4.0).max(crate::theme::font::height(size::STATUS_BAR + 4.0, 11.5))
 }
 
 /// Edge of a control in the bar: fills it, whatever the density.
@@ -65,7 +63,7 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
         .show(root, |ui| {
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                let small = |s: &str| RichText::new(s).font(FontId::proportional(11.5)).color(p.text_secondary);
+                let small = |s: &str| RichText::new(s).font(crate::theme::font::numbers(11.5)).color(p.text_secondary);
                 if info.loading {
                     let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
                     spinner(ui, r.center(), 5.0, p.accent);
@@ -79,7 +77,7 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                 if info.hidden > 0 {
                     ui.label(
                         RichText::new(tr!("app-status-hidden", count = info.hidden))
-                            .font(FontId::proportional(11.5))
+                            .font(crate::theme::font::numbers(11.5))
                             .color(p.text_tertiary),
                     );
                 }
@@ -94,7 +92,7 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                     } else {
                         tr!("app-status-selected", count = info.selected)
                     };
-                    ui.label(RichText::new(s).font(FontId::proportional(11.5)).color(p.accent));
+                    ui.label(RichText::new(s).font(crate::theme::font::numbers(11.5)).color(p.accent));
                 }
                 crate::ui::tools::git_chip(ui, info.git_dir.as_deref(), info.pane, cmds);
 
@@ -166,9 +164,9 @@ fn theme_switch(ui: &mut Ui, current: crate::host::ThemePref, cmds: &mut Vec<Cmd
         let active = current == *pref;
         crate::ui::a11y::toggle(&resp, tip, active);
         if active {
-            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2);
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_surface2);
         } else if resp.hovered() {
-            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2.gamma_multiply(0.6));
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_surface2.gamma_multiply(0.6));
         }
         let color = if active { p.accent } else { p.text_tertiary };
         ui.painter().text(r.center(), Align2::CENTER_CENTER, *glyph, icons::font(12.0), color);

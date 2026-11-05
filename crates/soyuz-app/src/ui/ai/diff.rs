@@ -3,7 +3,7 @@
 //! preview it) and the rename diff table with the changed characters highlighted.
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{Align2, Color32, CornerRadius, FontId, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Color32, Rect, Sense, Stroke, Ui, pos2, vec2};
 use soyuz_ai::tools::Plan;
 use soyuz_core::{EntryInfo, EntryKind};
 
@@ -27,7 +27,9 @@ pub fn change_color(c: Change, p: &Palette) -> Color32 {
     }
 }
 
-const ROW: f32 = 21.0;
+fn row() -> f32 {
+    crate::theme::font::grow(21.0)
+}
 const MAX_ROWS: usize = 160;
 
 fn rows(ui: &mut Ui, p: &Palette, node: &Node, depth: usize, budget: &mut usize, acts: &mut Vec<PanelAct>, width: f32) {
@@ -36,19 +38,19 @@ fn rows(ui: &mut Ui, p: &Palette, node: &Node, depth: usize, budget: &mut usize,
             return;
         }
         *budget -= 1;
-        let (r, resp) = ui.allocate_exact_size(vec2(width, ROW), Sense::click());
+        let (r, resp) = ui.allocate_exact_size(vec2(width, row()), Sense::click());
         let change = child.change.unwrap_or(Change::Context);
         let color = change_color(change, p);
         if resp.hovered() {
-            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface3);
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_surface3);
         }
         if child.change.is_some() {
             ui.painter().rect_filled(
                 Rect::from_min_size(r.min, vec2(2.5, r.height())),
-                CornerRadius::same(1),
+                crate::theme::tokens::radius::same(1),
                 color.gamma_multiply(0.9),
             );
-            ui.painter().rect_filled(r, CornerRadius::same(4), color.gamma_multiply(0.06));
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), color.gamma_multiply(0.06));
         }
         let x = r.left() + 6.0 + depth as f32 * 14.0;
         let e = EntryInfo::minimal(child.path.clone(), if child.dir { EntryKind::Dir } else { EntryKind::File });
@@ -60,7 +62,7 @@ fn rows(ui: &mut Ui, p: &Palette, node: &Node, depth: usize, budget: &mut usize,
             name,
             0.0,
             TextFormat {
-                font_id: FontId::proportional(12.0),
+                font_id: crate::theme::font::ui(12.0),
                 color: text_color,
                 strikethrough: if change == Change::Deleted { Stroke::new(1.0, p.danger) } else { Stroke::NONE },
                 ..Default::default()
@@ -76,7 +78,7 @@ fn rows(ui: &mut Ui, p: &Palette, node: &Node, depth: usize, budget: &mut usize,
                 pos2(r.right() - 6.0, r.center().y),
                 Align2::RIGHT_CENTER,
                 change.label(),
-                FontId::proportional(10.5),
+                crate::theme::font::ui(10.5),
                 color,
             );
         }
@@ -91,7 +93,7 @@ fn rows(ui: &mut Ui, p: &Palette, node: &Node, depth: usize, budget: &mut usize,
 fn column(ui: &mut Ui, p: &Palette, title: &str, node: &Node, acts: &mut Vec<PanelAct>, width: f32) {
     ui.vertical(|ui| {
         ui.set_width(width);
-        ui.label(egui::RichText::new(title).size(10.5).color(p.text_tertiary));
+        ui.label(egui::RichText::new(title).size(crate::theme::font::px(10.5)).color(p.text_tertiary));
         if node.children.is_empty() {
             ui.label(egui::RichText::new("\u{2014}").color(p.text_tertiary));
             return;
@@ -101,7 +103,9 @@ fn column(ui: &mut Ui, p: &Palette, title: &str, node: &Node, acts: &mut Vec<Pan
         let total = node.count();
         if total > MAX_ROWS {
             ui.label(
-                egui::RichText::new(tr!("ai-diff-more", count = total - MAX_ROWS)).size(11.0).color(p.text_tertiary),
+                egui::RichText::new(tr!("ai-diff-more", count = total - MAX_ROWS))
+                    .size(crate::theme::font::px(11.0))
+                    .color(p.text_tertiary),
             );
         }
     });
@@ -122,7 +126,7 @@ pub fn tree_diff(ui: &mut Ui, p: &Palette, plan: &Plan, acts: &mut Vec<PanelAct>
     let g = crate::ui::widgets::trunc_galley(
         ui.painter(),
         &root_text,
-        FontId::proportional(11.0),
+        crate::theme::font::ui(11.0),
         p.text_tertiary,
         hr.width() - 18.0,
     );
@@ -160,14 +164,14 @@ fn legend(ui: &mut Ui, p: &Palette, plan: &Plan) {
         for c in seen {
             let (r, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
             ui.painter().circle_filled(r.center(), 3.5, change_color(c, p));
-            ui.label(egui::RichText::new(c.label()).size(10.5).color(p.text_tertiary));
+            ui.label(egui::RichText::new(c.label()).size(crate::theme::font::px(10.5)).color(p.text_tertiary));
         }
     });
 }
 
 fn diff_job(parts: (&str, &str, &str), base: Color32, hl: Color32, bg: Color32, strike: bool, max_w: f32) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let font = FontId::proportional(12.0);
+    let font = crate::theme::font::ui(12.0);
     let plain = TextFormat { font_id: font.clone(), color: base, ..Default::default() };
     job.append(parts.0, 0.0, plain.clone());
     job.append(
@@ -197,23 +201,23 @@ pub fn rename_table(ui: &mut Ui, p: &Palette, plan: &Plan, acts: &mut Vec<PanelA
         pos2(h.left() + 24.0, h.center().y),
         Align2::LEFT_CENTER,
         tr!("ai-diff-current-name"),
-        FontId::proportional(10.5),
+        crate::theme::font::ui(10.5),
         p.text_tertiary,
     );
     ui.painter().text(
         pos2(h.left() + 30.0 + col, h.center().y),
         Align2::LEFT_CENTER,
         tr!("ai-diff-new-name"),
-        FontId::proportional(10.5),
+        crate::theme::font::ui(10.5),
         p.text_tertiary,
     );
     for (n, it) in plan.items.iter().enumerate().take(MAX_ROWS) {
-        let (r, resp) = ui.allocate_exact_size(vec2(w, ROW + 2.0), Sense::click());
+        let (r, resp) = ui.allocate_exact_size(vec2(w, row() + 2.0), Sense::click());
         if n % 2 == 1 {
-            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2.gamma_multiply(0.5));
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_surface2.gamma_multiply(0.5));
         }
         if resp.hovered() {
-            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface3);
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_surface3);
         }
         let (glyph, color) = match &it.conflict {
             Some(c) if c.is_blocking() => (ph::WARNING, p.danger),
@@ -256,7 +260,7 @@ pub fn rename_table(ui: &mut Ui, p: &Palette, plan: &Plan, acts: &mut Vec<PanelA
     if plan.items.len() > MAX_ROWS {
         ui.label(
             egui::RichText::new(tr!("ai-diff-more", count = plan.items.len() - MAX_ROWS))
-                .size(11.0)
+                .size(crate::theme::font::px(11.0))
                 .color(p.text_tertiary),
         );
     }

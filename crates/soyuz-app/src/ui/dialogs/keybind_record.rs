@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use egui::{Align2, Color32, CornerRadius, FontId, Frame, Id, Margin, Modal, RichText, Sense, Stroke, vec2};
+use egui::{Align2, Color32, Frame, Id, Margin, Modal, RichText, Sense, Stroke, vec2};
 use soyuz_core::config::{Action, KeyChord, Keymap, format_sequence};
 
 use crate::keys::conflicts::users_of;
@@ -81,7 +81,7 @@ impl Recorder {
         let frame = Frame::new()
             .fill(p.bg_surface3)
             .stroke(Stroke::new(1.0, p.border_strong))
-            .corner_radius(CornerRadius::same(12))
+            .corner_radius(crate::theme::tokens::radius::same(12))
             .inner_margin(Margin::same(20))
             .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
         let binding = self.binding();
@@ -106,7 +106,7 @@ impl Recorder {
                 ui.label(icons::icon(ph::KEYBOARD, 18.0).color(p.accent));
                 ui.label(
                     RichText::new(tr!("dialogs-record-title"))
-                        .font(FontId::new(16.0, egui::FontFamily::Name(crate::theme::fonts::SEMIBOLD.into())))
+                        .font(crate::theme::font::semibold(16.0))
                         .color(p.text_primary),
                 );
             });
@@ -114,11 +114,11 @@ impl Recorder {
             ui.add_space(14.0);
             let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 72.0), Sense::hover());
             let painter = ui.painter();
-            painter.rect_filled(rect, CornerRadius::same(10), p.bg_sunken);
+            painter.rect_filled(rect, crate::theme::tokens::radius::same(10), p.bg_sunken);
             let pulse = (ui.input(|i| i.time) * 3.0).sin() as f32 * 0.5 + 0.5;
             painter.rect_stroke(
                 rect,
-                CornerRadius::same(10),
+                crate::theme::tokens::radius::same(10),
                 Stroke::new(1.5, p.accent.gamma_multiply(0.35 + 0.4 * pulse)),
                 egui::StrokeKind::Inside,
             );
@@ -127,7 +127,7 @@ impl Recorder {
                     rect.center(),
                     Align2::CENTER_CENTER,
                     tr!("dialogs-record-press"),
-                    FontId::proportional(14.0),
+                    crate::theme::font::ui(14.0),
                     p.text_tertiary,
                 );
                 ui.ctx().request_repaint();
@@ -142,7 +142,7 @@ impl Recorder {
                 } else {
                     tr!("dialogs-record-unused")
                 };
-                ui.label(RichText::new(msg).size(11.5).color(p.text_tertiary));
+                ui.label(RichText::new(msg).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
             } else {
                 let names: Vec<String> = users
                     .iter()
@@ -158,14 +158,18 @@ impl Recorder {
                     ui.label(icons::icon(ph::WARNING, 13.0).color(p.warning));
                     ui.label(
                         RichText::new(tr!("dialogs-record-conflict", users = names.join(", ")))
-                            .size(11.5)
+                            .size(crate::theme::font::px(11.5))
                             .color(p.warning),
                     );
                 });
             }
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(tr!("dialogs-record-keys-hint")).size(11.0).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("dialogs-record-keys-hint"))
+                        .size(crate::theme::font::px(11.0))
+                        .color(p.text_tertiary),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if pill_button(ui, Some(ph::CHECK), tr!("common-save"), Btn::Primary).clicked()
                         && !self.chords.is_empty()

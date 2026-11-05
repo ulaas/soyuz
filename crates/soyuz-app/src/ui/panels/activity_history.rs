@@ -1,15 +1,15 @@
 //! History tab of the activity panel: finished operations (newest first) with Undo /
 //! Redo / Retry failed.
 
-use egui::{Align2, Color32, CornerRadius, FontId, Id, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Align2, Color32, Id, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_jobs::HistoryEntry;
 
 use super::activity::op_style;
 use crate::app::SoyuzApp;
 use crate::models::jobs_rows::{self, HistoryRow, RowButton};
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons as ticons, icons::ph};
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::trunc_galley;
 
 pub use crate::models::panels::{describe, is_verified};
@@ -23,23 +23,23 @@ fn small_button(ui: &mut Ui, r: Rect, id: Id, label: &str, enabled: bool, p: &Pa
     } else {
         p.bg_surface2
     };
-    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), fill);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), fill);
     if enabled {
         ui.painter().rect_stroke(
             r,
-            CornerRadius::same(radius::ROW),
+            crate::theme::tokens::radius::same(radius::ROW),
             Stroke::new(1.0, p.border_subtle),
             StrokeKind::Inside,
         );
     }
     let c = if enabled { p.text_primary } else { p.text_tertiary.gamma_multiply(0.7) };
-    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), c);
+    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, crate::theme::font::ui(12.0), c);
     enabled && resp.clicked()
 }
 
 /// Width of a [`small_button`] for `label`: at least `min`, wider for longer translations.
 fn button_width(ui: &Ui, label: &str, min: f32) -> f32 {
-    let w = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), Color32::WHITE).size().x;
+    let w = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(12.0), Color32::WHITE).size().x;
     (w + 20.0).max(min)
 }
 
@@ -69,7 +69,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
             c + vec2(0.0, 30.0),
             Align2::CENTER_CENTER,
             tr!("panels-history-empty-hint"),
-            FontId::proportional(11.5),
+            crate::theme::font::ui(11.5),
             p.text_tertiary,
         );
         ui.allocate_rect(r, Sense::hover());
@@ -87,7 +87,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 50.0), Sense::hover());
                 let row = r.shrink2(vec2(0.0, 2.0));
                 if resp.hovered() {
-                    ui.painter().rect_filled(row, CornerRadius::same(radius::CARD), p.bg_surface2);
+                    ui.painter().rect_filled(row, crate::theme::tokens::radius::same(radius::CARD), p.bg_surface2);
                 }
                 let (op, title) = (h.op, &h.title);
                 let (glyph, color) = op_style(op, p);
@@ -100,7 +100,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                 let verified = h.verified;
                 let tag_w = if verified {
                     ui.painter()
-                        .layout_no_wrap(tr!("panels-verified").to_string(), FontId::proportional(10.5), p.success)
+                        .layout_no_wrap(tr!("panels-verified").to_string(), crate::theme::font::ui(10.5), p.success)
                         .size()
                         .x
                         + 20.0
@@ -134,7 +134,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                     .on_hover_text(tr!("panels-history-verified-tip"));
                 }
                 let sc = if h.failed { p.warning } else { p.text_tertiary };
-                let sg = trunc_galley(ui.painter(), &h.sub, FontId::proportional(11.5), sc, tw);
+                let sg = trunc_galley(ui.painter(), &h.sub, crate::theme::font::ui(11.5), sc, tw);
                 ui.painter().galley(pos2(tx, row.top() + 27.0), sg, sc);
                 // Buttons.
                 let mut bx = row.right() - 8.0;

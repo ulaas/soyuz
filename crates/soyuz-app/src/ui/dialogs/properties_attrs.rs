@@ -4,7 +4,7 @@
 //! two-way octal field). The state, the octal / symbolic forms and the conversion of the
 //! edits into `SetMeta` jobs live in the core.
 
-use egui::{Align2, FontId, Margin, RichText, Sense, TextEdit, Ui, pos2, vec2};
+use egui::{Align2, Margin, RichText, Sense, TextEdit, Ui, pos2, vec2};
 
 use super::properties_widgets::{caption, tri_check};
 use crate::theme::palette;
@@ -31,11 +31,11 @@ impl AttrEditUi for AttrEdit {
                 }
                 if row.1 != row.2 {
                     ui.label(
-                        RichText::new(tr!("dialogs-props-changed")).font(FontId::proportional(10.5)).color(p.accent),
+                        RichText::new(tr!("dialogs-props-changed")).font(crate::theme::font::ui(10.5)).color(p.accent),
                     );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(*hint).font(FontId::proportional(11.0)).color(p.text_tertiary));
+                    ui.label(RichText::new(*hint).font(crate::theme::font::ui(11.0)).color(p.text_tertiary));
                 });
             });
         }
@@ -60,7 +60,7 @@ impl ModeEditUi for ModeEdit {
                 pos2(head.left() + label_w + col_w * i as f32 + 8.0, head.center().y),
                 Align2::LEFT_CENTER,
                 *h,
-                FontId::proportional(11.0),
+                crate::theme::font::ui(11.0),
                 p.text_tertiary,
             );
         }
@@ -74,7 +74,7 @@ impl ModeEditUi for ModeEdit {
                     pos2(r.left(), r.center().y),
                     Align2::LEFT_CENTER,
                     *who,
-                    FontId::proportional(12.5),
+                    crate::theme::font::ui(12.5),
                     p.text_secondary,
                 );
                 for col in 0..3 {
@@ -107,8 +107,8 @@ impl ModeEditUi for ModeEdit {
             ui.label(RichText::new(tr!("dialogs-mode-octal")).color(p.text_tertiary));
             let r = ui.add(
                 TextEdit::singleline(&mut self.octal)
-                    .desired_width(64.0)
-                    .font(FontId::monospace(12.5))
+                    .desired_width(crate::theme::font::grow(64.0))
+                    .font(crate::theme::font::mono(12.5))
                     .hint_text(tr!("dialogs-mode-mixed"))
                     .margin(Margin::symmetric(8, 4)),
             );
@@ -121,10 +121,12 @@ impl ModeEditUi for ModeEdit {
                 }
             }
             if let Some(m) = self.uniform() {
-                ui.label(RichText::new(mode_string(m)).font(FontId::monospace(12.5)).color(p.text_secondary));
+                ui.label(RichText::new(mode_string(m)).font(crate::theme::font::mono(12.5)).color(p.text_secondary));
             }
             if self.changed() {
-                ui.label(RichText::new(tr!("dialogs-props-changed")).font(FontId::proportional(10.5)).color(p.accent));
+                ui.label(
+                    RichText::new(tr!("dialogs-props-changed")).font(crate::theme::font::ui(10.5)).color(p.accent),
+                );
             }
         });
         if changed && !self.octal_focus {

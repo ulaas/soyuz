@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use egui::{Align, Align2, CornerRadius, FontId, Layout, Rect, RichText, ScrollArea, Sense, Ui, pos2, vec2};
+use egui::{Align, Align2, Layout, Rect, RichText, ScrollArea, Sense, Ui, pos2, vec2};
 use soyuz_core::config::DragDefault;
 use soyuz_core::{format_size, format_time};
 use soyuz_fs::snapshots::PathVersion;
@@ -72,7 +72,7 @@ impl VersionsPanel {
         let c = cfg();
         let mut out = None;
         ui.horizontal(|ui| {
-            ui.label(RichText::new(intro_text()).font(FontId::proportional(11.5)).color(p.text_tertiary));
+            ui.label(RichText::new(intro_text()).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if crate::ui::widgets::icon_button(
                     ui,
@@ -90,7 +90,7 @@ impl VersionsPanel {
         let report = match &self.model.report {
             None => {
                 super::progress_bar(ui, ui.available_width(), None);
-                ui.label(RichText::new(looking_text()).font(FontId::proportional(12.0)).color(p.text_secondary));
+                ui.label(RichText::new(looking_text()).font(crate::theme::font::ui(12.0)).color(p.text_secondary));
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
                 return None;
             }
@@ -121,7 +121,9 @@ impl VersionsPanel {
             return out;
         }
         if report.denied > 0 {
-            ui.label(RichText::new(denied_more_text(report.denied)).font(FontId::proportional(11.5)).color(p.warning));
+            ui.label(
+                RichText::new(denied_more_text(report.denied)).font(crate::theme::font::ui(11.5)).color(p.warning),
+            );
         }
         // List.
         let row_h = 40.0;
@@ -141,9 +143,13 @@ impl VersionsPanel {
                     }
                     let sel = self.model.selected == Some(i);
                     if sel {
-                        ui.painter().rect_filled(r, CornerRadius::same(6), p.accent.gamma_multiply(0.16));
+                        ui.painter().rect_filled(
+                            r,
+                            crate::theme::tokens::radius::same(6),
+                            p.accent.gamma_multiply(0.16),
+                        );
                     } else if resp.hovered() {
-                        ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface2);
+                        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface2);
                     }
                     let painter = ui.painter();
                     painter.text(
@@ -157,13 +163,14 @@ impl VersionsPanel {
                     let g = trunc_galley(
                         painter,
                         &when,
-                        crate::ui::views::flow::semibold(12.5),
+                        crate::theme::font::semibold(12.5),
                         p.text_primary,
                         r.width() - 50.0,
                     );
                     painter.galley(pos2(r.left() + 34.0, r.top() + 5.0), g, p.text_primary);
                     let sub = version_detail(v, &c.date, c.size);
-                    let g = trunc_galley(painter, &sub, FontId::proportional(11.5), p.text_secondary, r.width() - 50.0);
+                    let g =
+                        trunc_galley(painter, &sub, crate::theme::font::ui(11.5), p.text_secondary, r.width() - 50.0);
                     painter.galley(pos2(r.left() + 34.0, r.top() + 22.0), g, p.text_secondary);
                     if resp.clicked() {
                         clicked = Some(i);
@@ -224,10 +231,10 @@ impl VersionsPanel {
                 (tr!("tools-versions-this"), Some(v.size), v.modified, p.warning),
             ] {
                 let (r, _) = ui.allocate_exact_size(vec2(w, 62.0), Sense::hover());
-                ui.painter().rect_filled(r, CornerRadius::same(8), p.bg_surface2);
+                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(8), p.bg_surface2);
                 ui.painter().rect_filled(
                     Rect::from_min_size(r.min + vec2(0.0, 8.0), vec2(3.0, r.height() - 16.0)),
-                    CornerRadius::same(1),
+                    crate::theme::tokens::radius::same(1),
                     color,
                 );
                 let painter = ui.painter();
@@ -235,7 +242,7 @@ impl VersionsPanel {
                     r.min + vec2(12.0, 8.0),
                     Align2::LEFT_TOP,
                     title,
-                    crate::ui::views::flow::semibold(12.0),
+                    crate::theme::font::semibold(12.0),
                     p.text_primary,
                 );
                 let s = match size {
@@ -246,7 +253,7 @@ impl VersionsPanel {
                     r.min + vec2(12.0, 26.0),
                     Align2::LEFT_TOP,
                     s,
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     p.text_secondary,
                 );
                 let m = modified
@@ -256,7 +263,7 @@ impl VersionsPanel {
                     r.min + vec2(12.0, 42.0),
                     Align2::LEFT_TOP,
                     m,
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     p.text_secondary,
                 );
             }
@@ -266,7 +273,7 @@ impl VersionsPanel {
             Some(Comparison { same_content: Some(false), .. }) => p.warning,
             _ => p.text_tertiary,
         };
-        ui.label(RichText::new(Comparison::text(res)).font(FontId::proportional(11.5)).color(col));
+        ui.label(RichText::new(Comparison::text(res)).font(crate::theme::font::ui(11.5)).color(col));
     }
 }
 
@@ -276,9 +283,9 @@ fn note(ui: &mut Ui, glyph: &str, title: &str, body: &str) {
     ui.horizontal(|ui| {
         ui.label(icons::icon(glyph, 26.0).color(p.text_tertiary));
         ui.vertical(|ui| {
-            ui.label(RichText::new(title).font(crate::ui::views::flow::semibold(13.0)).color(p.text_primary));
+            ui.label(RichText::new(title).font(crate::theme::font::semibold(13.0)).color(p.text_primary));
             ui.add(
-                egui::Label::new(RichText::new(body).font(FontId::proportional(12.0)).color(p.text_secondary)).wrap(),
+                egui::Label::new(RichText::new(body).font(crate::theme::font::ui(12.0)).color(p.text_secondary)).wrap(),
             );
         });
     });

@@ -10,9 +10,7 @@
 
 use std::path::PathBuf;
 
-use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui, pos2, vec2,
-};
+use egui::{Align, Align2, Color32, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui, pos2, vec2};
 use soyuz_core::{SizeStyle, format_size, format_time};
 use soyuz_jobs::{SyncAction, SyncPlan};
 
@@ -103,7 +101,7 @@ impl CompareWindow {
         ui.add_space(4.0);
         // Method, preset, compare, profiles.
         ui.horizontal(|ui| {
-            ui.label(RichText::new(tr!("tools-compare-by")).font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(RichText::new(tr!("tools-compare-by")).font(crate::theme::font::ui(12.0)).color(p.text_tertiary));
             for m in Method::ALL {
                 let mut on = self.m.method == m;
                 if super::toggle_chip(ui, m.label(), &mut on, p.accent).clicked() {
@@ -112,7 +110,7 @@ impl CompareWindow {
             }
             ui.add_space(10.0);
             ui.label(
-                RichText::new(tr!("tools-compare-sync-mode")).font(FontId::proportional(12.0)).color(p.text_tertiary),
+                RichText::new(tr!("tools-compare-sync-mode")).font(crate::theme::font::ui(12.0)).color(p.text_tertiary),
             );
             for pr in Preset::ALL {
                 let mut on = self.m.preset == pr;
@@ -149,7 +147,7 @@ impl CompareWindow {
                         "tools-compare-running",
                         secs = soyuz_core::locale::format_decimal(started.elapsed().as_secs_f64(), 1)
                     ))
-                    .font(FontId::proportional(12.0))
+                    .font(crate::theme::font::ui(12.0))
                     .color(p.text_secondary),
                 );
                 return None;
@@ -162,7 +160,7 @@ impl CompareWindow {
                 progress_bar(ui, ui.available_width(), frac);
                 ui.label(
                     RichText::new(tr!("tools-compare-syncing"))
-                        .font(FontId::proportional(12.0))
+                        .font(crate::theme::font::ui(12.0))
                         .color(p.text_secondary),
                 );
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
@@ -172,7 +170,7 @@ impl CompareWindow {
                 progress_bar(ui, ui.available_width(), None);
                 ui.label(
                     RichText::new(tr!("tools-compare-recording"))
-                        .font(FontId::proportional(12.0))
+                        .font(crate::theme::font::ui(12.0))
                         .color(p.text_secondary),
                 );
                 return None;
@@ -199,7 +197,7 @@ impl CompareWindow {
             }
             ui.label(
                 RichText::new(tr!("tools-compare-identical", count = self.m.same()))
-                    .font(FontId::proportional(12.0))
+                    .font(crate::theme::font::ui(12.0))
                     .color(p.text_tertiary),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -209,7 +207,7 @@ impl CompareWindow {
         ui.add_space(4.0);
         if self.m.first_run() && !self.m.rows().is_empty() {
             ui.label(
-                RichText::new(tr!("tools-compare-first-run")).font(FontId::proportional(11.5)).color(p.text_tertiary),
+                RichText::new(tr!("tools-compare-first-run")).font(crate::theme::font::ui(11.5)).color(p.text_tertiary),
             );
         }
         if self.m.rows().is_empty() {
@@ -288,7 +286,7 @@ impl CompareWindow {
             menu_separator(ui);
             ui.label(
                 RichText::new(tr!("tools-profiles-save-as"))
-                    .font(FontId::proportional(11.0))
+                    .font(crate::theme::font::ui(11.0))
                     .color(palette(ui.ctx()).text_tertiary),
             );
             ui.horizontal(|ui| {
@@ -300,7 +298,7 @@ impl CompareWindow {
             });
             ui.label(
                 RichText::new(tr!("tools-profiles-delete-hint"))
-                    .font(FontId::proportional(10.5))
+                    .font(crate::theme::font::ui(10.5))
                     .color(palette(ui.ctx()).text_tertiary),
             );
             menu_separator(ui);
@@ -320,7 +318,7 @@ impl CompareWindow {
         // Header with bulk actions.
         let (hr, _) = ui.allocate_exact_size(vec2(width, 26.0), Sense::hover());
         let painter = ui.painter();
-        let hfont = FontId::proportional(11.0);
+        let hfont = crate::theme::font::ui(11.0);
         painter.text(
             pos2(hr.left() + 10.0, hr.center().y),
             Align2::LEFT_CENTER,
@@ -383,7 +381,7 @@ impl CompareWindow {
                     }
                     let painter = ui.painter();
                     if resp.hovered() {
-                        painter.rect_filled(r, CornerRadius::same(6), p.bg_surface2);
+                        painter.rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface2);
                     }
                     let color = row.cat.color(&p);
                     // Left meta.
@@ -413,15 +411,15 @@ impl CompareWindow {
                     } else {
                         p.text_secondary
                     };
-                    let g = trunc_galley(painter, &meta(&row.left), FontId::proportional(11.5), lc, meta_w - 16.0);
+                    let g = trunc_galley(painter, &meta(&row.left), crate::theme::font::ui(11.5), lc, meta_w - 16.0);
                     painter.galley(pos2(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, lc);
-                    let g = trunc_galley(painter, &meta(&row.right), FontId::proportional(11.5), rc, meta_w - 16.0);
+                    let g = trunc_galley(painter, &meta(&row.right), crate::theme::font::ui(11.5), rc, meta_w - 16.0);
                     painter.galley(pos2(r.right() - 10.0 - g.size().x, r.center().y - g.size().y / 2.0), g, rc);
                     // Name with category bar.
                     let nx = r.left() + meta_w;
                     painter.rect_filled(
                         Rect::from_min_size(pos2(nx, r.top() + 6.0), vec2(3.0, row_h - 12.0)),
-                        CornerRadius::same(1),
+                        crate::theme::tokens::radius::same(1),
                         color,
                     );
                     let is_dir = row.is_dir();
@@ -436,7 +434,7 @@ impl CompareWindow {
                     let name = row.rel.to_string_lossy();
                     let skipped = row.action == RowAction::Skip;
                     let ncolor = if skipped { p.text_secondary } else { p.text_primary };
-                    let g = trunc_galley(painter, &name, FontId::proportional(12.5), ncolor, name_w - 40.0 - 80.0);
+                    let g = trunc_galley(painter, &name, crate::theme::font::ui(12.5), ncolor, name_w - 40.0 - 80.0);
                     let gw = g.size().x;
                     painter.galley(pos2(nx + 30.0, r.center().y - g.size().y / 2.0), g, ncolor);
                     let (tag_text, tag_color) = match row.conflict {
@@ -445,7 +443,7 @@ impl CompareWindow {
                         None if two_way => (two_way_reason(row), color),
                         None => (row.cat.label(), color),
                     };
-                    let tag = trunc_galley(painter, tag_text, FontId::proportional(10.5), tag_color, 96.0);
+                    let tag = trunc_galley(painter, tag_text, crate::theme::font::ui(10.5), tag_color, 96.0);
                     let tag_rect =
                         Rect::from_min_size(pos2(nx + 36.0 + gw, r.center().y - tag.size().y / 2.0), tag.size());
                     painter.galley(tag_rect.min, tag, tag_color);
@@ -476,20 +474,20 @@ impl CompareWindow {
         let (_, open) = self.m.conflict_counts();
         ui.label(
             RichText::new(tr!("tools-compare-plan-title"))
-                .font(crate::ui::views::flow::semibold(14.0))
+                .font(crate::theme::font::semibold(14.0))
                 .color(p.text_primary),
         );
         ui.add_space(4.0);
         ui.horizontal(|ui| plan_line(ui, &p, &stats));
         if stats.deletes() {
             ui.label(
-                RichText::new(tr!("tools-compare-plan-trash-note")).font(FontId::proportional(12.0)).color(p.warning),
+                RichText::new(tr!("tools-compare-plan-trash-note")).font(crate::theme::font::ui(12.0)).color(p.warning),
             );
         }
         if open > 0 {
             ui.label(
                 RichText::new(tr!("tools-compare-plan-open-conflicts", count = open))
-                    .font(FontId::proportional(12.0))
+                    .font(crate::theme::font::ui(12.0))
                     .color(p.warning),
             );
         }
@@ -528,7 +526,7 @@ impl CompareWindow {
                         pos2(row.left() + 28.0, row.center().y),
                         Align2::LEFT_CENTER,
                         verb,
-                        FontId::proportional(12.0),
+                        crate::theme::font::ui(12.0),
                         p.text_secondary,
                     );
                     // Paths line up at 140 px unless a (translated) verb is wider.
@@ -536,7 +534,7 @@ impl CompareWindow {
                     let g = trunc_galley(
                         painter,
                         &rel.to_string_lossy(),
-                        FontId::proportional(12.5),
+                        crate::theme::font::ui(12.5),
                         p.text_primary,
                         row.right() - rel_x - 20.0,
                     );
@@ -571,12 +569,12 @@ impl CompareWindow {
         let (_, open) = self.m.conflict_counts();
         ui.label(
             RichText::new(tr!("tools-compare-conflicts-title"))
-                .font(crate::ui::views::flow::semibold(14.0))
+                .font(crate::theme::font::semibold(14.0))
                 .color(p.text_primary),
         );
         ui.label(
             RichText::new(tr!("tools-compare-conflicts-body", count = idx.len()))
-                .font(FontId::proportional(12.0))
+                .font(crate::theme::font::ui(12.0))
                 .color(p.text_secondary),
         );
         ui.add_space(4.0);
@@ -584,7 +582,7 @@ impl CompareWindow {
         let mut all: Option<Option<Resolution>> = None;
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(tr!("tools-compare-apply-all")).font(FontId::proportional(12.0)).color(p.text_tertiary),
+                RichText::new(tr!("tools-compare-apply-all")).font(crate::theme::font::ui(12.0)).color(p.text_tertiary),
             );
             for r in RESOLUTIONS {
                 if button(ui, None, r.label(), 0, true).clicked() {
@@ -603,7 +601,7 @@ impl CompareWindow {
                 } else {
                     (tr!("tools-compare-n-open", count = open), p.warning)
                 };
-                ui.label(RichText::new(t).font(FontId::proportional(12.0)).color(c));
+                ui.label(RichText::new(t).font(crate::theme::font::ui(12.0)).color(c));
             });
         });
         if let Some(choice) = all {
@@ -635,21 +633,21 @@ impl CompareWindow {
                     let row = &self.m.rows()[i];
                     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::hover());
                     if resp.hovered() {
-                        ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface2);
+                        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface2);
                     }
                     let painter = ui.painter();
                     let current = row_resolution(row);
                     let decided = current != Resolution::Skip;
                     painter.rect_filled(
                         Rect::from_min_size(pos2(r.left() + 2.0, r.top() + 8.0), vec2(3.0, row_h - 16.0)),
-                        CornerRadius::same(1),
+                        crate::theme::tokens::radius::same(1),
                         if decided { p.success } else { p.danger },
                     );
                     // Choice buttons: at least 78 px, wider for longer (translated) labels.
                     let choice_w = |res: Resolution| {
                         let g = painter.layout_no_wrap(
                             res.label().to_string(),
-                            FontId::proportional(11.5),
+                            crate::theme::font::ui(11.5),
                             p.text_secondary,
                         );
                         (g.size().x + 16.0).max(78.0)
@@ -659,20 +657,19 @@ impl CompareWindow {
                     let choices_w = widths.iter().sum::<f32>() + 4.0 * (choices.len() as f32 - 1.0) + 6.0;
                     let text_w = (r.width() - choices_w - 24.0).max(120.0);
                     let name = row.rel.to_string_lossy();
-                    let g =
-                        trunc_galley(painter, &name, crate::ui::views::flow::semibold(12.5), p.text_primary, text_w);
+                    let g = trunc_galley(painter, &name, crate::theme::font::semibold(12.5), p.text_primary, text_w);
                     let gw = g.size().x;
                     painter.galley(pos2(r.left() + 14.0, r.top() + 7.0), g, p.text_primary);
                     if let Some(kind) = row.conflict {
-                        let t = trunc_galley(painter, kind.label(), FontId::proportional(10.5), p.danger, 200.0);
+                        let t = trunc_galley(painter, kind.label(), crate::theme::font::ui(10.5), p.danger, 200.0);
                         painter.galley(pos2(r.left() + 22.0 + gw, r.top() + 9.0), t, p.danger);
                     }
                     let lm = tr!("tools-compare-meta-left", meta = meta(&row.left));
                     let rm = tr!("tools-compare-meta-right", meta = meta(&row.right));
                     let half = (text_w / 2.0 - 6.0).max(60.0);
-                    let lg = trunc_galley(painter, &lm, FontId::proportional(11.5), p.text_secondary, half);
+                    let lg = trunc_galley(painter, &lm, crate::theme::font::ui(11.5), p.text_secondary, half);
                     painter.galley(pos2(r.left() + 14.0, r.top() + 28.0), lg, p.text_secondary);
-                    let rg = trunc_galley(painter, &rm, FontId::proportional(11.5), p.text_secondary, half);
+                    let rg = trunc_galley(painter, &rm, crate::theme::font::ui(11.5), p.text_secondary, half);
                     painter.galley(pos2(r.left() + 14.0 + half + 12.0, r.top() + 28.0), rg, p.text_secondary);
                     // Choices.
                     let mut x = r.right() - choices_w;
@@ -695,7 +692,7 @@ impl CompareWindow {
                         } else {
                             p.bg_surface2
                         };
-                        ui.painter().rect_filled(cr, CornerRadius::same(6), fill);
+                        ui.painter().rect_filled(cr, crate::theme::tokens::radius::same(6), fill);
                         let fg = if !ok {
                             p.text_tertiary.gamma_multiply(0.4)
                         } else if on {
@@ -707,7 +704,7 @@ impl CompareWindow {
                             cr.center(),
                             Align2::CENTER_CENTER,
                             res.label(),
-                            FontId::proportional(11.5),
+                            crate::theme::font::ui(11.5),
                             fg,
                         );
                         let tip = resolution_tip(row, res);
@@ -753,7 +750,7 @@ fn action_buttons(
     let w = rect.width() / items.len() as f32;
     let mut out = None;
     if current.is_some() {
-        ui.painter().rect_filled(rect, CornerRadius::same(6), p.bg_surface2.gamma_multiply(0.6));
+        ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(6), p.bg_surface2.gamma_multiply(0.6));
     }
     for (k, (a, glyph, label)) in items.iter().enumerate() {
         let r = Rect::from_min_size(pos2(rect.left() + k as f32 * w, rect.top()), vec2(w, rect.height())).shrink(1.0);
@@ -767,9 +764,9 @@ fn action_buttons(
             _ => p.accent,
         };
         if on {
-            ui.painter().rect_filled(r, CornerRadius::same(5), color.gamma_multiply(0.22));
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(5), color.gamma_multiply(0.22));
         } else if resp.hovered() && ok {
-            ui.painter().rect_filled(r, CornerRadius::same(5), p.bg_surface3);
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(5), p.bg_surface3);
         }
         let fg = if !ok {
             p.text_tertiary.gamma_multiply(0.35)
@@ -788,7 +785,7 @@ fn action_buttons(
 }
 
 fn plan_line(ui: &mut Ui, p: &Palette, s: &PlanStats) {
-    let small = |t: String, c: Color32| RichText::new(t).font(FontId::proportional(12.0)).color(c);
+    let small = |t: String, c: Color32| RichText::new(t).font(crate::theme::font::ui(12.0)).color(c);
     ui.label(small(
         tr!("tools-plan-to-right", count = s.to_right),
         if s.to_right > 0 { p.accent } else { p.text_tertiary },
@@ -817,9 +814,9 @@ pub fn empty_note(ui: &mut Ui, glyph: &str, title: &str, sub: &str) {
         c + vec2(0.0, 8.0),
         Align2::CENTER_CENTER,
         title,
-        crate::ui::views::flow::semibold(14.0),
+        crate::theme::font::semibold(14.0),
         p.text_primary,
     );
-    let g = ui.painter().layout(sub.to_string(), FontId::proportional(12.0), p.text_secondary, r.width() * 0.7);
+    let g = ui.painter().layout(sub.to_string(), crate::theme::font::ui(12.0), p.text_secondary, r.width() * 0.7);
     ui.painter().galley(pos2(c.x - g.size().x / 2.0, c.y + 22.0), g, p.text_secondary);
 }

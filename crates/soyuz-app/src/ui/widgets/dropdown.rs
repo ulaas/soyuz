@@ -11,8 +11,8 @@
 use egui::accesskit::Role;
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{
-    Align, Align2, Color32, CornerRadius, EventFilter, FontFamily, FontId, Id, Key, Margin, Modifiers, Order, Rect,
-    Response, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
+    Align, Align2, Color32, EventFilter, FontFamily, FontId, Id, Key, Margin, Modifiers, Order, Rect, Response, Sense,
+    Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
 };
 
 use crate::palette::fuzzy::Fuzzy;
@@ -317,12 +317,22 @@ pub const SEARCH_THRESHOLD: usize = 8;
 // ---------------------------------------------------------------------------------------
 // Widget
 
-const BUTTON_H: f32 = 28.0;
-const ROW_H: f32 = 28.0;
-const HEADER_H: f32 = 24.0;
-const SEARCH_H: f32 = 34.0;
+fn button_h() -> f32 {
+    crate::theme::font::grow(28.0)
+}
+fn row_h() -> f32 {
+    crate::theme::font::grow(28.0)
+}
+fn header_h() -> f32 {
+    crate::theme::font::grow(24.0)
+}
+fn search_h() -> f32 {
+    crate::theme::font::grow(34.0)
+}
 const MAX_POPUP_H: f32 = 380.0;
-const MAX_POPUP_W: f32 = 460.0;
+fn max_popup_w() -> f32 {
+    crate::theme::font::grow(460.0)
+}
 
 #[derive(Clone, Default)]
 struct PopupState {
@@ -458,7 +468,7 @@ impl Dropdown {
 
         // ---- button
         let sense = if self.enabled { Sense::click() } else { Sense::hover() };
-        let (rect, resp) = ui.allocate_exact_size(vec2(self.width, BUTTON_H), sense);
+        let (rect, resp) = ui.allocate_exact_size(vec2(self.width, button_h()), sense);
         let current_label = match selected {
             Some(i) => items[i].label.clone(),
             None => self.placeholder.clone().unwrap_or_else(|| tr!("settings-custom").to_string()),
@@ -550,7 +560,7 @@ impl Dropdown {
             if let Some(evs) = ctx.data_mut(|d| d.remove_temp::<Vec<egui::Event>>(id.with("fwd"))) {
                 ctx.input_mut(|i| i.events.extend(evs));
             }
-            let page = ((MAX_POPUP_H - SEARCH_H) / ROW_H) as usize;
+            let page = ((MAX_POPUP_H - search_h()) / row_h()) as usize;
             let (nav, enter, esc, tab) = ctx.input_mut(|i| {
                 let mut nav = None;
                 for (k, n) in [
@@ -674,8 +684,8 @@ impl Dropdown {
 }
 
 fn popup_width<T>(ui: &Ui, items: &[Item<T>], min: f32, custom: Option<&str>) -> f32 {
-    let font = FontId::proportional(13.0);
-    let small = FontId::proportional(11.5);
+    let font = crate::theme::font::ui(13.0);
+    let small = crate::theme::font::ui(11.5);
     let p = palette(ui.ctx());
     let mut w: f32 = min;
     // Long lists (system fonts): measuring the first few hundred is plenty.
@@ -686,7 +696,7 @@ fn popup_width<T>(ui: &Ui, items: &[Item<T>], min: f32, custom: Option<&str>) ->
         } else if it.icon.is_some() {
             x += 20.0;
         }
-        let f = it.font.clone().map_or(font.clone(), |fam| FontId::new(13.0, fam));
+        let f = it.font.clone().map_or(font.clone(), |fam| FontId::new(crate::theme::font::px(13.0), fam));
         x += ui.painter().layout_no_wrap(it.label.clone(), f, p.text_primary).size().x;
         if !it.secondary.is_empty() {
             x += 16.0 + ui.painter().layout_no_wrap(it.secondary.clone(), small.clone(), p.text_primary).size().x;
@@ -696,7 +706,7 @@ fn popup_width<T>(ui: &Ui, items: &[Item<T>], min: f32, custom: Option<&str>) ->
     if let Some(c) = custom {
         w = w.max(60.0 + ui.painter().layout_no_wrap(c.to_string(), font, p.text_primary).size().x);
     }
-    w.min(MAX_POPUP_W.max(min))
+    w.min(max_popup_w().max(min))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -720,7 +730,7 @@ fn paint_button<T>(
         resp.hovered() && enabled,
         crate::theme::anim(ui.ctx(), 0.10),
     );
-    let cr = CornerRadius::same(7);
+    let cr = crate::theme::tokens::radius::same(7);
     let fill = super::super::settings::widgets::lerp_color(
         p.bg_surface1.gamma_multiply(if p.dark { 0.8 } else { 1.0 }),
         p.bg_surface2,
@@ -744,7 +754,9 @@ fn paint_button<T>(
     }
     let caret_w = 22.0;
     let max_w = (rect.right() - caret_w - x).max(8.0);
-    let font = item.and_then(|it| it.font.clone()).map_or(FontId::proportional(12.5), |f| FontId::new(13.0, f));
+    let font = item
+        .and_then(|it| it.font.clone())
+        .map_or(crate::theme::font::ui(12.5), |f| FontId::new(crate::theme::font::px(13.0), f));
     let g = crate::ui::widgets::trunc_galley(painter, label, font, fg, max_w);
     painter.galley(pos2(x, cy - g.size().y / 2.0), g, fg);
     let caret = if open { ph::CARET_UP } else { ph::CARET_DOWN };
@@ -826,10 +838,10 @@ fn popup<T: PartialEq>(
     let p = palette(&ctx);
     let screen = ctx.content_rect();
     let pad = 4.0;
-    let list_h: f32 = rows.iter().map(|r| if matches!(r, Row::Header(_)) { HEADER_H } else { ROW_H }).sum::<f32>();
-    let search_h = if search { SEARCH_H + 4.0 } else { 0.0 };
+    let list_h: f32 = rows.iter().map(|r| if matches!(r, Row::Header(_)) { header_h() } else { row_h() }).sum::<f32>();
+    let search_h = if search { search_h() + 4.0 } else { 0.0 };
     let no_items = !rows.iter().any(|r| matches!(r, Row::Item(_)));
-    let empty_h = if no_items { ROW_H } else { 0.0 };
+    let empty_h = if no_items { row_h() } else { 0.0 };
     let want = list_h + search_h + empty_h + pad * 2.0;
     let below = screen.bottom() - button.bottom() - 10.0;
     let above = button.top() - screen.top() - 10.0;
@@ -841,7 +853,7 @@ fn popup<T: PartialEq>(
     let h = if native {
         want.min(MAX_POPUP_H)
     } else {
-        want.min(MAX_POPUP_H).min(room).max((ROW_H * 3.0 + search_h + pad * 2.0).min(want))
+        want.min(MAX_POPUP_H).min(room).max((row_h() * 3.0 + search_h + pad * 2.0).min(want))
     };
     let w = st.width.max(button.width()).min(screen.width() - 16.0);
     let x = button.left().clamp(screen.left() + 8.0, (screen.right() - 8.0 - w).max(screen.left() + 8.0));
@@ -856,7 +868,7 @@ fn popup<T: PartialEq>(
     let frame = egui::Frame::new()
         .fill(p.bg_surface1)
         .stroke(Stroke::new(1.0, p.border_strong))
-        .corner_radius(CornerRadius::same(9))
+        .corner_radius(crate::theme::tokens::radius::same(9))
         .inner_margin(Margin::same(pad as i8));
     let shadow = p.shadow(crate::theme::tokens::shadow::POPUP);
     let mut draw = |ui: &mut Ui| {
@@ -869,12 +881,12 @@ fn popup<T: PartialEq>(
             ui.add_space(4.0);
         }
         if no_items {
-            let (r, _) = ui.allocate_exact_size(vec2(inner_w, ROW_H), Sense::hover());
+            let (r, _) = ui.allocate_exact_size(vec2(inner_w, row_h()), Sense::hover());
             ui.painter().text(
                 pos2(r.left() + 12.0, r.center().y),
                 Align2::LEFT_CENTER,
                 tr!("dropdown-no-matches"),
-                FontId::proportional(12.5),
+                crate::theme::font::ui(12.5),
                 p.text_tertiary,
             );
         }
@@ -892,9 +904,9 @@ fn popup<T: PartialEq>(
                 let mut y = 0.0;
                 let mut pos_in_set = 0usize;
                 for (ri, row) in rows.iter().enumerate() {
-                    let rh = if matches!(row, Row::Header(_)) { HEADER_H } else { ROW_H };
+                    let rh = if matches!(row, Row::Header(_)) { header_h() } else { row_h() };
                     let r = Rect::from_min_size(origin + vec2(0.0, y), vec2(inner_w, rh));
-                    let visible = y + rh >= viewport.top() - ROW_H && y <= viewport.bottom() + ROW_H;
+                    let visible = y + rh >= viewport.top() - row_h() && y <= viewport.bottom() + row_h();
                     let wants_scroll = st.scroll.is_some() && st.cursor == Some(ri);
                     y += rh;
                     if !matches!(row, Row::Header(_)) {
@@ -915,7 +927,7 @@ fn popup<T: PartialEq>(
                                 pos2(r.left() + 10.0, r.bottom() - 6.0),
                                 Align2::LEFT_BOTTOM,
                                 text,
-                                FontId::proportional(10.5),
+                                crate::theme::font::ui(10.5),
                                 p.text_tertiary,
                             );
                         }
@@ -930,9 +942,9 @@ fn popup<T: PartialEq>(
                             let is_cursor = st.cursor == Some(ri);
                             let is_sel = selected == Some(i);
                             if is_cursor {
-                                ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface3);
+                                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface3);
                             } else if resp.hovered() && enabled {
-                                ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface2);
+                                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface2);
                             }
                             let painter = ui.painter_at(r);
                             let cy = r.center().y;
@@ -940,12 +952,14 @@ fn popup<T: PartialEq>(
                             let right = r.right() - 30.0;
                             let mut sec_w = 0.0;
                             if !it.secondary.is_empty() {
-                                let lf = it.font.clone().map_or(FontId::proportional(13.0), |f| FontId::new(13.0, f));
+                                let lf = it.font.clone().map_or(crate::theme::font::ui(13.0), |f| {
+                                    FontId::new(crate::theme::font::px(13.0), f)
+                                });
                                 let label_w = painter.layout_no_wrap(it.label.clone(), lf, p.text_primary).size().x;
                                 let g = crate::ui::widgets::trunc_galley(
                                     &painter,
                                     &it.secondary,
-                                    FontId::proportional(11.5),
+                                    crate::theme::font::ui(11.5),
                                     p.text_tertiary,
                                     (right - lx - label_w - 16.0).max((right - lx) * 0.35),
                                 );
@@ -953,7 +967,10 @@ fn popup<T: PartialEq>(
                                 painter.galley(pos2(right - g.size().x, cy - g.size().y / 2.0), g, p.text_tertiary);
                             }
                             let color = if enabled { p.text_primary } else { p.text_tertiary.gamma_multiply(0.8) };
-                            let font = it.font.clone().map_or(FontId::proportional(13.0), |f| FontId::new(13.0, f));
+                            let font = it
+                                .font
+                                .clone()
+                                .map_or(crate::theme::font::ui(13.0), |f| FontId::new(crate::theme::font::px(13.0), f));
                             let matched = match_indices(&it.label, &st.query);
                             let hl = if p.dark { p.accent_hover } else { p.accent };
                             let job = label_job(&it.label, font, color, hl, &matched, right - lx - sec_w);
@@ -997,7 +1014,7 @@ fn popup<T: PartialEq>(
                                 st.cursor = Some(ri);
                             }
                             if st.cursor == Some(ri) {
-                                ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface3);
+                                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface3);
                             }
                             if ri > 0 {
                                 ui.painter().hline(r.x_range().shrink(6.0), r.top(), Stroke::new(1.0, p.border_subtle));
@@ -1017,7 +1034,7 @@ fn popup<T: PartialEq>(
                             let g = crate::ui::widgets::trunc_galley(
                                 &painter,
                                 &text,
-                                FontId::proportional(13.0),
+                                crate::theme::font::ui(13.0),
                                 p.text_primary,
                                 r.width() - 44.0,
                             );
@@ -1064,9 +1081,14 @@ fn popup<T: PartialEq>(
 
 fn search_box(ui: &mut Ui, st: &mut PopupState, search_id: Id, w: f32) {
     let p = palette(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(vec2(w, SEARCH_H), Sense::hover());
-    ui.painter().rect_filled(rect, CornerRadius::same(6), p.bg_sunken);
-    ui.painter().rect_stroke(rect, CornerRadius::same(6), Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
+    let (rect, _) = ui.allocate_exact_size(vec2(w, search_h()), Sense::hover());
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(6), p.bg_sunken);
+    ui.painter().rect_stroke(
+        rect,
+        crate::theme::tokens::radius::same(6),
+        Stroke::new(1.0, p.border_subtle),
+        StrokeKind::Inside,
+    );
     ui.painter().text(
         pos2(rect.left() + 14.0, rect.center().y),
         Align2::CENTER_CENTER,

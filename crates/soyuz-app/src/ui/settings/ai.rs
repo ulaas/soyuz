@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crossbeam_channel::Receiver;
-use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText, Stroke, TextEdit, Ui};
+use egui::{Align, Frame, Layout, Margin, RichText, Stroke, TextEdit, Ui};
 use soyuz_ai::{BudgetStatus, PriceTable, ProbeReport, Secret, UsageLedger};
 use soyuz_core::config::{
     Ai, AiAccess, AiApproval, AiFolderRule, AiPrice, AiPrivacy, AiProfile, AiProviderKind, AiRiskCeiling, AiTaskModel,
@@ -135,7 +135,7 @@ fn card(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
     Frame::new()
         .fill(p.bg_surface2.gamma_multiply(if p.dark { 0.7 } else { 1.0 }))
         .stroke(Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(crate::theme::tokens::radius::same(10))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -225,15 +225,23 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     if !searching || matches(q, &["provider profile model api key test connection", CTX, tr!("settings-ai-profiles")]) {
         any = true;
         ui.add_space(14.0);
-        ui.label(RichText::new(super::widgets::upper(tr!("settings-ai-profiles"))).size(10.5).color(p.text_tertiary));
+        ui.label(
+            RichText::new(super::widgets::upper(tr!("settings-ai-profiles")))
+                .size(crate::theme::font::px(10.5))
+                .color(p.text_tertiary),
+        );
         ui.add_space(6.0);
         if let Some((msg, err)) = &app.gui.settings.ai.notice {
             let color = if *err { p.danger } else { p.success };
-            ui.label(RichText::new(msg).size(11.5).color(color));
+            ui.label(RichText::new(msg).size(crate::theme::font::px(11.5)).color(color));
             ui.add_space(4.0);
         }
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(tr!("settings-views-add-column")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("settings-views-add-column"))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_tertiary),
+            );
             for kind in AiProviderKind::ALL {
                 let icon = if kind.is_local() { ph::DESKTOP_TOWER } else { ph::CLOUD };
                 if small_button(ui, Some(icon), crate::i18n::labels::ai_provider(kind), false).clicked() {
@@ -278,7 +286,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.vertical_centered(|ui| {
                 ui.label(icons::icon(ph::SPARKLE, 28.0).color(p.text_tertiary));
                 ui.label(RichText::new(tr!("settings-ai-empty")).color(p.text_secondary));
-                ui.label(RichText::new(tr!("settings-ai-empty-hint")).size(11.5).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("settings-ai-empty-hint"))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_tertiary),
+                );
             });
         }
     }
@@ -512,7 +524,11 @@ fn agent_settings(ui: &mut Ui, d: &mut Ai, q: &str) -> bool {
                 d.folders.remove(i);
             }
             if d.folders.is_empty() {
-                ui.label(RichText::new(tr!("settings-ai-no-rules")).size(11.5).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("settings-ai-no-rules"))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_tertiary),
+                );
             }
             if small_button(ui, Some(ph::PLUS), tr!("settings-ai-add-rule"), false).clicked() {
                 d.folders.push(AiFolderRule { path: soyuz_fs::home(), access: AiAccess::None });
@@ -573,7 +589,9 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
                 make_default = true;
             }
             if prof.name.trim().is_empty() || names_taken.contains(&prof.name) {
-                ui.label(RichText::new(tr!("settings-ai-name-unique")).size(11.0).color(p.warning));
+                ui.label(
+                    RichText::new(tr!("settings-ai-name-unique")).size(crate::theme::font::px(11.0)).color(p.warning),
+                );
             }
             let mut kind = prof.kind;
             let opts: Vec<(AiProviderKind, &str)> =
@@ -592,7 +610,11 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
                     delete = true;
                 }
                 if is_default {
-                    ui.label(RichText::new(tr!("settings-ai-default-tag")).size(11.5).color(p.accent));
+                    ui.label(
+                        RichText::new(tr!("settings-ai-default-tag"))
+                            .size(crate::theme::font::px(11.5))
+                            .color(p.accent),
+                    );
                     ui.label(icons::icon(ph::STAR, 12.0).color(p.accent));
                 } else if small_button(ui, Some(ph::STAR), tr!("settings-ai-make-default"), false).clicked() {
                     make_default = true;
@@ -608,7 +630,7 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
         ui.add_space(6.0);
         egui::Grid::new(("ai_profile_grid", i)).num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
             let lbl = |ui: &mut Ui, t: &str| {
-                ui.label(RichText::new(t).size(12.0).color(p.text_secondary));
+                ui.label(RichText::new(t).size(crate::theme::font::px(12.0)).color(p.text_secondary));
             };
             lbl(ui, tr!("settings-ai-base-url"));
             code(ui, &mut prof.base_url, prof.kind.default_base_url(), 320.0);
@@ -641,7 +663,11 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
             lbl(ui, tr!("settings-ai-vision"));
             ui.horizontal(|ui| {
                 switch(ui, &mut prof.vision);
-                ui.label(RichText::new(tr!("settings-ai-vision-desc")).size(11.0).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("settings-ai-vision-desc"))
+                        .size(crate::theme::font::px(11.0))
+                        .color(p.text_tertiary),
+                );
             });
             ui.end_row();
             lbl(ui, tr!("settings-ai-budget"));
@@ -650,7 +676,11 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
                     egui::DragValue::new(&mut prof.monthly_budget_usd).range(0.0..=100_000.0).speed(1.0).prefix("$ "),
                 );
                 super::widgets::named(&dv, tr!("settings-ai-budget"));
-                ui.label(RichText::new(tr!("settings-ai-budget-hint")).size(11.0).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("settings-ai-budget-hint"))
+                        .size(crate::theme::font::px(11.0))
+                        .color(p.text_tertiary),
+                );
             });
             ui.end_row();
             lbl(ui, tr!("settings-ai-this-month"));
@@ -736,7 +766,7 @@ fn key_row(ui: &mut Ui, st: &mut AiPageState, prof: &mut AiProfile) {
             ui.add(
                 egui::Label::new(
                     RichText::new(tr!("settings-ai-store-unavailable", store = store_name()))
-                        .size(11.5)
+                        .size(crate::theme::font::px(11.5))
                         .color(p.warning),
                 )
                 .wrap(),
@@ -750,28 +780,44 @@ fn key_row(ui: &mut Ui, st: &mut AiPageState, prof: &mut AiProfile) {
                 ui.add(egui::Spinner::new().size(12.0));
             }
             Some(KeyStatus::None) if prof.kind.is_local() => {
-                ui.label(RichText::new(tr!("settings-ai-key-not-needed")).size(11.5).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("settings-ai-key-not-needed"))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_tertiary),
+                );
             }
             Some(KeyStatus::None) => {
-                ui.label(RichText::new(tr!("settings-ai-no-key")).size(11.5).color(p.warning));
+                ui.label(RichText::new(tr!("settings-ai-no-key")).size(crate::theme::font::px(11.5)).color(p.warning));
             }
             Some(KeyStatus::Stored) => {
                 ui.label(icons::icon(ph::LOCK_KEY, 13.0).color(p.success));
                 ui.label(
-                    RichText::new(tr!("settings-ai-key-stored", store = store_name())).size(11.5).color(p.success),
+                    RichText::new(tr!("settings-ai-key-stored", store = store_name()))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.success),
                 );
             }
             Some(KeyStatus::Missing) => {
-                ui.label(RichText::new(tr!("settings-ai-key-missing")).size(11.5).color(p.warning));
+                ui.label(
+                    RichText::new(tr!("settings-ai-key-missing")).size(crate::theme::font::px(11.5)).color(p.warning),
+                );
             }
             Some(KeyStatus::FromEnv(v)) => {
-                ui.label(RichText::new(tr!("settings-ai-key-env", var = v)).size(11.5).color(p.success));
+                ui.label(
+                    RichText::new(tr!("settings-ai-key-env", var = v))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.success),
+                );
             }
             Some(KeyStatus::EnvMissing(v)) => {
-                ui.label(RichText::new(tr!("settings-ai-key-env-missing", var = v)).size(11.5).color(p.warning));
+                ui.label(
+                    RichText::new(tr!("settings-ai-key-env-missing", var = v))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.warning),
+                );
             }
             Some(KeyStatus::Invalid(e)) => {
-                ui.label(RichText::new(e).size(11.5).color(p.danger));
+                ui.label(RichText::new(e).size(crate::theme::font::px(11.5)).color(p.danger));
             }
         }
         let input = st.key_input.entry(prof.name.clone()).or_default();
@@ -804,9 +850,13 @@ fn key_row(ui: &mut Ui, st: &mut AiPageState, prof: &mut AiProfile) {
             st.cred_ops.push((tr!("settings-ai-key-deleted").into(), ai_service::delete_secret(name, wake_of(ui))));
         }
         ui.menu_button(icons::icon(ph::DOTS_THREE, 14.0), |ui| {
-            ui.label(RichText::new(tr!("settings-ai-key-ref")).size(11.5));
+            ui.label(RichText::new(tr!("settings-ai-key-ref")).size(crate::theme::font::px(11.5)));
             code(ui, &mut prof.key, tr!("settings-ai-key-ref-hint"), 240.0);
-            ui.label(RichText::new(tr!("settings-ai-key-ref-desc")).size(11.0).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("settings-ai-key-ref-desc"))
+                    .size(crate::theme::font::px(11.0))
+                    .color(p.text_tertiary),
+            );
         });
     });
 }
@@ -852,7 +902,7 @@ fn spend_row(ui: &mut Ui, st: &AiPageState, prof: &AiProfile, prices: &PriceTabl
     let p = palette(ui.ctx());
     let Some(ledger) = &st.ledger else {
         let msg = st.ledger_error.as_deref().unwrap_or(tr!("settings-ai-loading"));
-        ui.label(RichText::new(msg).size(11.5).color(p.text_tertiary));
+        ui.label(RichText::new(msg).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
         return;
     };
     let month = soyuz_ai::pricing::current_month();
@@ -884,7 +934,7 @@ fn spend_row(ui: &mut Ui, st: &AiPageState, prof: &AiProfile, prices: &PriceTabl
                 p.danger
             }
         };
-        ui.label(RichText::new(parts.join(" · ")).size(11.5).color(color));
+        ui.label(RichText::new(parts.join(" · ")).size(crate::theme::font::px(11.5)).color(color));
     });
 }
 
@@ -918,7 +968,7 @@ fn headers_editor(ui: &mut Ui, prof: &mut AiProfile, i: usize) {
             new_key.clear();
         }
     });
-    ui.label(RichText::new(tr!("settings-ai-headers-desc")).size(11.0).color(p.text_tertiary));
+    ui.label(RichText::new(tr!("settings-ai-headers-desc")).size(crate::theme::font::px(11.0)).color(p.text_tertiary));
     ui.data_mut(|d| d.insert_temp(id, new_key));
 }
 
@@ -928,7 +978,9 @@ fn test_row(ui: &mut Ui, st: &mut AiPageState, prof: &AiProfile, ai: &Ai) {
         let running = matches!(st.tests.get(&prof.name), Some(Test::Running(_)));
         if running {
             ui.add(egui::Spinner::new().size(14.0));
-            ui.label(RichText::new(tr!("settings-ai-testing")).size(12.0).color(p.text_secondary));
+            ui.label(
+                RichText::new(tr!("settings-ai-testing")).size(crate::theme::font::px(12.0)).color(p.text_secondary),
+            );
         } else if small_button(ui, Some(ph::PLUGS_CONNECTED), tr!("settings-ai-test"), false)
             .on_hover_text(tr!("settings-ai-test-tooltip"))
             .clicked()
@@ -943,23 +995,29 @@ fn test_row(ui: &mut Ui, st: &mut AiPageState, prof: &AiProfile, ai: &Ai) {
             let (icon, color) =
                 if r.error.is_none() { (ph::CHECK_CIRCLE, p.success) } else { (ph::X_CIRCLE, p.danger) };
             ui.label(icons::icon(icon, 14.0).color(color));
-            ui.label(RichText::new(r.summary()).size(12.0).color(color));
+            ui.label(RichText::new(r.summary()).size(crate::theme::font::px(12.0)).color(color));
             if r.model_listed == Some(false) {
                 ui.label(icons::icon(ph::WARNING, 13.0).color(p.warning));
-                ui.label(RichText::new(tr!("settings-ai-model-unlisted")).size(11.5).color(p.warning));
+                ui.label(
+                    RichText::new(tr!("settings-ai-model-unlisted"))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.warning),
+                );
             }
             if let Some(e) = &r.models_error
                 && r.error.is_none()
             {
                 ui.label(
                     RichText::new(tr!("settings-ai-test-models-error", error = e.to_string()))
-                        .size(11.0)
+                        .size(crate::theme::font::px(11.0))
                         .color(p.text_tertiary),
                 );
             }
             if r.usage.total() > 0 {
                 ui.label(
-                    RichText::new(tr!("settings-ai-tokens", count = r.usage.total())).size(11.0).color(p.text_tertiary),
+                    RichText::new(tr!("settings-ai-tokens", count = r.usage.total()))
+                        .size(crate::theme::font::px(11.0))
+                        .color(p.text_tertiary),
                 );
             }
         }
@@ -982,7 +1040,7 @@ fn prices(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     tr!("settings-ai-price-cache-write"),
                     "",
                 ] {
-                    ui.label(RichText::new(h).size(11.0));
+                    ui.label(RichText::new(h).size(crate::theme::font::px(11.0)));
                 }
                 ui.end_row();
                 for (i, row) in d.prices.iter_mut().enumerate() {

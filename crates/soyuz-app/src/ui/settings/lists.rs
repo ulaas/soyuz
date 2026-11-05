@@ -1,6 +1,6 @@
 //! Custom commands and bookmarks editors.
 
-use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText, Stroke, Ui};
+use egui::{Align, Frame, Layout, Margin, RichText, Stroke, Ui};
 use soyuz_core::config::{Bookmark, CommandContext, CustomCommand};
 
 use super::widgets::{code, group, matches, small_button, subheading, text};
@@ -46,7 +46,7 @@ fn card(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
     Frame::new()
         .fill(p.bg_surface2.gamma_multiply(if p.dark { 0.7 } else { 1.0 }))
         .stroke(Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(crate::theme::tokens::radius::same(10))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -68,12 +68,14 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.horizontal_wrapped(|ui| {
                 for (k, v) in placeholders() {
                     ui.label(RichText::new(k).monospace().color(p.accent));
-                    ui.label(RichText::new(v).size(11.5).color(p.text_secondary));
+                    ui.label(RichText::new(v).size(crate::theme::font::px(11.5)).color(p.text_secondary));
                     ui.add_space(10.0);
                 }
             });
             ui.add_space(4.0);
-            ui.label(RichText::new(tr!("settings-commands-help")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("settings-commands-help")).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+            );
         });
         ui.add_space(10.0);
         ui.horizontal_wrapped(|ui| {
@@ -84,7 +86,11 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     .custom_commands
                     .push(CustomCommand { name: tr!("settings-commands-new").into(), ..Default::default() });
             }
-            ui.label(RichText::new(tr!("settings-commands-or-template")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("settings-commands-or-template"))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_tertiary),
+            );
             for (name, cmd, args, term) in templates() {
                 if small_button(ui, Some(if term { ph::TERMINAL } else { ph::LIGHTNING }), name, false).clicked() {
                     app.gui.settings.draft.custom_commands.push(CustomCommand {
@@ -122,7 +128,7 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.add(
                     egui::TextEdit::singleline(&mut c.name)
                         .hint_text(tr!("settings-name"))
-                        .font(egui::FontId::proportional(14.0))
+                        .font(crate::theme::font::ui(14.0))
                         .desired_width(220.0)
                         .margin(Margin::symmetric(8, 4)),
                 );
@@ -148,16 +154,28 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             });
             ui.add_space(8.0);
             egui::Grid::new(("soyuz.cc", i)).num_columns(2).spacing(egui::vec2(12.0, 8.0)).show(ui, |ui| {
-                ui.label(RichText::new(tr!("settings-commands-command")).size(12.0).color(p.text_secondary));
+                ui.label(
+                    RichText::new(tr!("settings-commands-command"))
+                        .size(crate::theme::font::px(12.0))
+                        .color(p.text_secondary),
+                );
                 code(ui, &mut c.command, tr!("settings-commands-command-hint"), ui.available_width().min(460.0));
                 ui.end_row();
-                ui.label(RichText::new(tr!("settings-terminal-args")).size(12.0).color(p.text_secondary));
+                ui.label(
+                    RichText::new(tr!("settings-terminal-args"))
+                        .size(crate::theme::font::px(12.0))
+                        .color(p.text_secondary),
+                );
                 let buf = &mut s.args_text[i];
                 if code(ui, buf, tr!("settings-commands-args-hint"), ui.available_width().min(460.0)).changed() {
                     c.args = crate::commands::split_args(buf);
                 }
                 ui.end_row();
-                ui.label(RichText::new(tr!("settings-commands-show-for")).size(12.0).color(p.text_secondary));
+                ui.label(
+                    RichText::new(tr!("settings-commands-show-for"))
+                        .size(crate::theme::font::px(12.0))
+                        .color(p.text_secondary),
+                );
                 ui.horizontal(|ui| {
                     for (k, label) in [
                         (CommandContext::File, tr!("settings-general-files")),
@@ -184,14 +202,22 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     }
                 });
                 ui.end_row();
-                ui.label(RichText::new(tr!("settings-commands-run-in")).size(12.0).color(p.text_secondary));
+                ui.label(
+                    RichText::new(tr!("settings-commands-run-in"))
+                        .size(crate::theme::font::px(12.0))
+                        .color(p.text_secondary),
+                );
                 super::widgets::segmented(
                     ui,
                     &mut c.terminal,
                     &[(false, tr!("settings-commands-run-background")), (true, tr!("settings-commands-run-terminal"))],
                 );
                 ui.end_row();
-                ui.label(RichText::new(tr!("settings-commands-hotkey")).size(12.0).color(p.text_secondary));
+                ui.label(
+                    RichText::new(tr!("settings-commands-hotkey"))
+                        .size(crate::theme::font::px(12.0))
+                        .color(p.text_secondary),
+                );
                 ui.horizontal(|ui| {
                     if c.hotkey.trim().is_empty() {
                         if small_button(ui, Some(ph::KEYBOARD), tr!("settings-commands-record"), false).clicked() {
@@ -221,7 +247,10 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.horizontal(|ui| {
                     ui.label(icons::icon(ph::EYE, 12.0).color(p.text_tertiary));
                     ui.add(
-                        egui::Label::new(RichText::new(line).monospace().size(11.0).color(p.text_tertiary)).truncate(),
+                        egui::Label::new(
+                            RichText::new(line).monospace().size(crate::theme::font::px(11.0)).color(p.text_tertiary),
+                        )
+                        .truncate(),
                     );
                 });
             }
@@ -298,7 +327,9 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     .bookmarks
                     .push(Bookmark { name: tr!("settings-bookmarks-default-name").into(), ..Default::default() });
             }
-            ui.label(RichText::new(tr!("settings-bookmarks-help")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("settings-bookmarks-help")).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+            );
         });
     }
     let n = app.gui.settings.draft.bookmarks.len();

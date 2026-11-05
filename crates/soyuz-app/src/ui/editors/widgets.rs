@@ -1,7 +1,7 @@
 //! Small shared pieces of the editor UI: slim custom scrollbars (the editors virtualize
 //! their content and keep their own scroll position), banners and inline input fields.
 
-use egui::{Align2, Color32, CornerRadius, FontId, Id, Rect, Response, Sense, Stroke, TextEdit, Ui, pos2, vec2};
+use egui::{Align2, Color32, Id, Rect, Response, Sense, Stroke, TextEdit, Ui, pos2, vec2};
 
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons};
@@ -66,7 +66,7 @@ fn scrollbar(
     let shrink = if active { 1.5 } else { 2.5 };
     let r = if vertical { thumb.shrink2(vec2(shrink, 1.0)) } else { thumb.shrink2(vec2(1.0, shrink)) };
     let color = if active { p.text_tertiary } else { p.border_strong };
-    ui.painter().rect_filled(r, CornerRadius::same(4), color);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), color);
     resp.dragged()
 }
 
@@ -81,10 +81,10 @@ pub fn banner(
     text: &str,
     buttons: &[&str],
 ) -> Option<usize> {
-    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), color.gamma_multiply(0.14));
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(radius::ROW), color.gamma_multiply(0.14));
     ui.painter().rect_stroke(
         rect,
-        CornerRadius::same(radius::ROW),
+        crate::theme::tokens::radius::same(radius::ROW),
         Stroke::new(1.0, color.gamma_multiply(0.45)),
         egui::StrokeKind::Inside,
     );
@@ -98,16 +98,16 @@ pub fn banner(
     let mut x = rect.right() - 6.0;
     let mut clicked = None;
     for (i, label) in buttons.iter().enumerate().rev() {
-        let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), p.text_primary);
+        let g = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(12.0), p.text_primary);
         let w = g.size().x + 18.0;
         let r = Rect::from_min_max(pos2(x - w, rect.top() + 4.0), pos2(x, rect.bottom() - 4.0));
         let resp = ui.interact(r, ui.scope_id().with(("banner", text, i)), Sense::click());
         crate::ui::a11y::button(&resp, label);
         let fill = if resp.hovered() { p.bg_surface3 } else { p.bg_surface2 };
-        ui.painter().rect_filled(r, CornerRadius::same(radius::CONTROL), fill);
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::CONTROL), fill);
         ui.painter().rect_stroke(
             r,
-            CornerRadius::same(radius::CONTROL),
+            crate::theme::tokens::radius::same(radius::CONTROL),
             Stroke::new(1.0, p.border_subtle),
             egui::StrokeKind::Inside,
         );
@@ -118,7 +118,7 @@ pub fn banner(
         x -= w + 6.0;
     }
     let max_w = (x - rect.left() - 30.0).max(40.0);
-    let g = crate::ui::widgets::trunc_galley(ui.painter(), text, FontId::proportional(12.0), p.text_primary, max_w);
+    let g = crate::ui::widgets::trunc_galley(ui.painter(), text, crate::theme::font::ui(12.0), p.text_primary, max_w);
     ui.painter().galley(pos2(rect.left() + 28.0, rect.center().y - g.size().y / 2.0), g, p.text_primary);
     clicked
 }
@@ -143,9 +143,9 @@ pub fn chip(ui: &mut Ui, rect: Rect, id: Id, label: &str, tip: &str, on: bool, p
     } else {
         Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, CornerRadius::same(radius::CONTROL), fill);
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(radius::CONTROL), fill);
     let color = if on { p.accent } else { p.text_secondary };
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, FontId::monospace(11.5), color);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, crate::theme::font::mono(11.5), color);
     resp.on_hover_text(tip).clicked()
 }
 
@@ -154,7 +154,7 @@ pub fn icon_at(ui: &mut Ui, rect: Rect, id: Id, glyph: &str, tip: &str, enabled:
     let resp = ui.interact(rect, id, if enabled { Sense::click() } else { Sense::hover() });
     crate::ui::a11y::button(&resp, tip);
     if enabled && resp.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+        ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface2);
     }
     let color = if !enabled {
         p.text_tertiary.gamma_multiply(0.6)

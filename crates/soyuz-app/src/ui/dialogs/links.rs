@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use egui::{Align, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, Stroke, TextEdit, Ui, vec2};
+use egui::{Align, Key, Layout, Margin, RichText, Sense, Stroke, TextEdit, Ui, vec2};
 use soyuz_core::EntryInfo;
 
 use super::new_item::LinkChoice;
@@ -108,7 +108,7 @@ impl LinkDialog {
         egui::Frame::new()
             .fill(p.bg_sunken)
             .stroke(Stroke::new(1.0, p.border_subtle))
-            .corner_radius(CornerRadius::same(radius::CARD))
+            .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
             .inner_margin(Margin::same(6))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -138,7 +138,7 @@ impl LinkDialog {
                     ui.allocate_ui(vec2(w, 20.0), |ui| {
                         ui.add(
                             egui::Label::new(
-                                RichText::new(&shown).font(FontId::proportional(11.5)).color(p.text_secondary),
+                                RichText::new(&shown).font(crate::theme::font::ui(11.5)).color(p.text_secondary),
                             )
                             .truncate(),
                         )
@@ -175,11 +175,15 @@ impl LinkDialog {
                                         if selected {
                                             ui.painter().rect_filled(
                                                 r,
-                                                CornerRadius::same(radius::ROW),
+                                                crate::theme::tokens::radius::same(radius::ROW),
                                                 p.accent_subtle,
                                             );
                                         } else if resp.hovered() {
-                                            ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
+                                            ui.painter().rect_filled(
+                                                r,
+                                                crate::theme::tokens::radius::same(radius::ROW),
+                                                p.bg_surface2,
+                                            );
                                         }
                                         ui.painter().text(
                                             egui::pos2(r.left() + 14.0, r.center().y),
@@ -191,7 +195,7 @@ impl LinkDialog {
                                         let g = crate::ui::widgets::trunc_galley(
                                             ui.painter(),
                                             &e.name,
-                                            FontId::proportional(12.5),
+                                            crate::theme::font::ui(12.5),
                                             p.text_primary,
                                             r.width() - 40.0,
                                         );
@@ -222,7 +226,7 @@ impl LinkDialog {
                 }
             });
         ui.label(
-            RichText::new(tr!("dialogs-link-picker-hint")).font(FontId::proportional(10.5)).color(p.text_tertiary),
+            RichText::new(tr!("dialogs-link-picker-hint")).font(crate::theme::font::ui(10.5)).color(p.text_tertiary),
         );
     }
 }
@@ -263,7 +267,7 @@ impl Dialog for LinkDialog {
             LinkChoice::Hardlink => tr!("dialogs-link-hardlink-hint"),
             LinkChoice::Junction => tr!("dialogs-link-junction-hint"),
         };
-        ui.label(RichText::new(hint).font(FontId::proportional(11.5)).color(p.text_tertiary));
+        ui.label(RichText::new(hint).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
         caption(ui, tr!("dialogs-link-target"));
         ui.horizontal(|ui| {
             let r = ui.add(
@@ -307,7 +311,9 @@ impl Dialog for LinkDialog {
             TargetState::Checking => {
                 ui.spinner();
                 ui.label(
-                    RichText::new(tr!("dialogs-link-checking")).font(FontId::proportional(11.5)).color(p.text_tertiary),
+                    RichText::new(tr!("dialogs-link-checking"))
+                        .font(crate::theme::font::ui(11.5))
+                        .color(p.text_tertiary),
                 );
             }
             TargetState::Missing => {
@@ -339,7 +345,7 @@ impl Dialog for LinkDialog {
                 "dialogs-link-created-in",
                 dir = soyuz_fs::strip_verbatim(&self.form.dir).display().to_string()
             ))
-            .font(FontId::proportional(11.0))
+            .font(crate::theme::font::ui(11.0))
             .color(p.text_tertiary),
         );
 
@@ -349,7 +355,7 @@ impl Dialog for LinkDialog {
             && state != TargetState::Checking
         {
             ui.add_space(4.0);
-            ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));
+            ui.label(RichText::new(e).font(crate::theme::font::ui(11.5)).color(p.danger));
         }
         ui.add_space(14.0);
         let mut ok = false;

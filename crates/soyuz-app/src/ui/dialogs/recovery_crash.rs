@@ -1,7 +1,7 @@
 //! Crash reports offered on the next start: view the report, open the folder,
 //! delete the reports or restart in safe mode. Reports never leave the computer.
 
-use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, ScrollArea, Ui};
+use egui::{Align, Layout, Margin, RichText, ScrollArea, Ui};
 
 use super::{Dialog, DialogCtx};
 use crate::models::requests::crash_reports::{self as model, CrashReportsModel};
@@ -40,9 +40,9 @@ impl Dialog for CrashDialog {
         for (i, r) in self.m.listed().iter().enumerate() {
             ui.horizontal(|ui| {
                 let when = model::when(r);
-                ui.label(RichText::new(when).font(FontId::proportional(12.0)).color(p.text_tertiary));
+                ui.label(RichText::new(when).font(crate::theme::font::ui(12.0)).color(p.text_tertiary));
                 let summary = model::summary(r);
-                ui.label(RichText::new(summary).font(FontId::proportional(12.5)).color(p.text_primary));
+                ui.label(RichText::new(summary).font(crate::theme::font::ui(12.5)).color(p.text_primary));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let open = self.m.is_viewing(i);
                     if ui
@@ -64,11 +64,11 @@ impl Dialog for CrashDialog {
             ui.add_space(6.0);
             egui::Frame::new()
                 .fill(p.bg_sunken)
-                .corner_radius(CornerRadius::same(6))
+                .corner_radius(crate::theme::tokens::radius::same(6))
                 .inner_margin(Margin::symmetric(10, 8))
                 .show(ui, |ui| {
                     ScrollArea::both().max_height(240.0).auto_shrink([false, true]).show(ui, |ui| {
-                        ui.label(RichText::new(text).font(FontId::monospace(11.0)).color(p.text_secondary));
+                        ui.label(RichText::new(text).font(crate::theme::font::mono(11.0)).color(p.text_secondary));
                     });
                 });
         }
