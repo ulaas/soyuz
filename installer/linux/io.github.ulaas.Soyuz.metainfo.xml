@@ -87,6 +87,16 @@
   </requires>
 
   <releases>
+    <release version="0.5.10" date="2026-11-05" type="development">
+      <description>
+        <p>Open with gets a program browser and remembers what you pick. Text size now reaches
+          every surface, figures line up with a tabular cut of Inter, and long names keep what
+          matters when cut. Natural sort of large folders is about 16 times faster. Fixes for
+          data safety: Enter on a focused Cancel no longer confirms a dialog, a config file that
+          does not load is never overwritten, and copying a link keeps the old file until the
+          link exists.</p>
+      </description>
+    </release>
     <release version="0.5.9" date="2026-11-03" type="development">
       <description>
         <p>Text and code previews use the Hack font at a larger size and follow the code font
