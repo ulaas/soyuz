@@ -22,7 +22,9 @@ fn cfg(root: &Path, db: &Path) -> IndexConfig {
 
 fn wait_until(what: &str, mut f: impl FnMut() -> bool) {
     let t0 = Instant::now();
-    while t0.elapsed() < Duration::from_secs(20) {
+    // A first crawl with the journal on may walk the MFT for 20 s before it starts
+    // (`Worker::estimate`), and a CI runner's system volume is big enough to use all of it.
+    while t0.elapsed() < Duration::from_secs(90) {
         if f() {
             return;
         }

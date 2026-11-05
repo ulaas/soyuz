@@ -62,6 +62,12 @@ pub struct UndoStamp {
     /// Modification time of a non-directory, nanoseconds since the Unix epoch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified_ns: Option<u64>,
+    /// Birth time, nanoseconds since the Unix epoch, off Windows. A Linux filesystem can give a
+    /// new file the inode of one just deleted (ext4 does), so the inode alone does not name an
+    /// object; NTFS file ids carry a sequence number and need no help. `None` where the
+    /// filesystem keeps no birth time, and in entries written before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_ns: Option<u64>,
 }
 
 impl UndoStamp {
@@ -70,27 +76,32 @@ impl UndoStamp {
         let ident = soyuz_fs::file_identity(path, false).ok()?;
         let e = soyuz_fs::stat(path, false).ok()?;
         let dir = matches!(e.kind, soyuz_core::EntryKind::Dir);
-        let ns = e
-            .modified
-            .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
-            .and_then(|d| u64::try_from(d.as_nanos()).ok());
+        let to_ns = |t: Option<std::time::SystemTime>| {
+            t.and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()).and_then(|d| u64::try_from(d.as_nanos()).ok())
+        };
+        let ns = to_ns(e.modified);
         Some(UndoStamp {
             path: path.to_path_buf(),
             dev: ident.dev,
             id: format!("{:x}", ident.id),
             size: (!dir).then_some(e.size),
             modified_ns: if dir { None } else { ns },
+            created_ns: if cfg!(windows) { None } else { to_ns(e.created) },
         })
     }
 
     /// The same object, however its content changed since.
     pub fn same_object(&self, now: &UndoStamp) -> bool {
-        self.dev == now.dev && self.id == now.id
+        let same_birth = match (self.created_ns, now.created_ns) {
+            (Some(a), Some(b)) => a == b,
+            _ => true,
+        };
+        self.dev == now.dev && self.id == now.id && same_birth
     }
 
     /// Same object, and (for files) same size and modification time.
     pub fn matches(&self, now: &UndoStamp) -> bool {
-        self.dev == now.dev && self.id == now.id && self.size == now.size && self.modified_ns == now.modified_ns
+        self.same_object(now) && self.size == now.size && self.modified_ns == now.modified_ns
     }
 }
 
@@ -202,12 +213,37 @@ mod tests {
         assert!(e.stamps.is_empty() && e.options.is_none() && !e.this_session);
         assert_eq!(e.records, vec![UndoRecord::Copied { dst: "/d/f".into() }]);
         let mut e2 = entry(4);
-        e2.stamps.push(UndoStamp { path: "/x".into(), dev: 1, id: "ff".into(), size: Some(2), modified_ns: None });
+        e2.stamps.push(UndoStamp {
+            path: "/x".into(),
+            dev: 1,
+            id: "ff".into(),
+            size: Some(2),
+            modified_ns: None,
+            created_ns: Some(7),
+        });
         e2.options = Some(JobOptions { journal: true, ..JobOptions::default() });
         let back: HistoryEntry = serde_json::from_str(&serde_json::to_string(&e2).unwrap()).unwrap();
         assert_eq!(back.stamps, e2.stamps);
         assert!(back.options.unwrap().journal);
         assert!(!back.this_session, "session flag is not persisted");
+    }
+
+    #[test]
+    fn a_reused_inode_is_not_the_same_object() {
+        let at = |created_ns| UndoStamp {
+            path: "/x".into(),
+            dev: 1,
+            id: "ff".into(),
+            size: Some(2),
+            modified_ns: Some(3),
+            created_ns,
+        };
+        assert!(at(Some(10)).same_object(&at(Some(10))));
+        assert!(!at(Some(10)).same_object(&at(Some(11))), "born later: another file");
+        assert!(!at(Some(10)).matches(&at(Some(11))));
+        // No birth time on one side (old history, a filesystem without one): dev + id decide.
+        assert!(at(None).same_object(&at(Some(11))));
+        assert!(at(Some(10)).same_object(&at(None)));
     }
 
     #[test]

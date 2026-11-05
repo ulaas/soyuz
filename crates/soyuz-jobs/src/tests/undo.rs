@@ -266,7 +266,9 @@ fn undo_of_a_move_leaves_a_new_file_at_the_destination_alone() {
     std::fs::create_dir_all(h.p("d")).unwrap();
     let id = h.submit(JobKind::Move { sources: vec![h.p("s/report")], dest_dir: h.p("d"), rename_to: None });
     h.ok(id);
-    // Another program puts a different file under that name.
+    // Another program puts a different file under that name. On ext4 it gets the same inode,
+    // and file times tick in milliseconds: wait so that its birth time differs.
+    std::thread::sleep(Duration::from_millis(30));
     std::fs::remove_file(h.p("d/report")).unwrap();
     write(&h.p("d/report"), b"somebody else's");
     let hid = h.engine.history()[0].id;
@@ -299,6 +301,7 @@ fn undo_of_a_rename_checks_the_identity_too() {
     write(&h.p("a"), b"1");
     let id = h.submit(JobKind::Rename { pairs: vec![(h.p("a"), h.p("b"))] });
     h.ok(id);
+    std::thread::sleep(Duration::from_millis(30));
     std::fs::remove_file(h.p("b")).unwrap();
     write(&h.p("b"), b"other");
     let hid = h.engine.history()[0].id;

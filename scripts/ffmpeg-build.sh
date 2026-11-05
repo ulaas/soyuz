@@ -244,13 +244,17 @@ sha256_of() {
 }
 
 # fetch <url> <sha256> -> prints the local path; downloads only when the verified file is absent.
+# Soyuz's own release keeps every input archive (the `publish` job of release.yml), checked
+# against the same pins, for when an upstream host refuses a runner.
+FFMPEG_MIRROR="${FFMPEG_MIRROR:-https://github.com/ulaas/soyuz/releases/download/ffmpeg-runtime-$FFMPEG_VERSION}"
+
 fetch() {
     local url="$1" sum="$2" file="$downloads/$(basename "$1")"
     if [[ -f "$file" ]] && [[ "$(sha256_of "$file")" == "$sum" ]]; then
         echo "$file"; return
     fi
     rm -f "$file"
-    curl -sSfL --retry 3 -o "$file.part" "$url"
+    curl -sSfL --retry 5 --retry-delay 10 --retry-all-errors --connect-timeout 30 -o "$file.part" "$url"         || curl -sSfL --retry 3 --retry-delay 10 --retry-all-errors --connect-timeout 30 -o "$file.part" "$FFMPEG_MIRROR/$(basename "$url")"         || die "cannot download $url (also tried $FFMPEG_MIRROR)"
     local got
     got="$(sha256_of "$file.part")"
     [[ "$got" == "$sum" ]] || { rm -f "$file.part"; die "SHA-256 mismatch for $url: expected $sum, got $got"; }

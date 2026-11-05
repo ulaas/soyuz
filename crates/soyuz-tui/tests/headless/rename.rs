@@ -50,7 +50,11 @@ fn rename_and_undo(data: PathBuf) {
         ),
         Step::new("the new name", |a| field(a).is_some_and(|f| f.text == "x.txt"), key(KeyCode::Enter)),
         Step::new("the rename on disk", move |a| x.is_file() && !a.fileops_renaming() && wait_jobs_idle(a), ctrl('z')),
-        Step::new("undo restored a.txt", move |a| a2.is_file() && wait_jobs_idle(a), key(KeyCode::End)),
+        Step::new(
+            "undo restored a.txt, in the listing too",
+            move |a| a2.is_file() && wait_jobs_idle(a) && labels(a) == ["a.txt", "b.txt"],
+            key(KeyCode::End),
+        ),
         Step::new("the cursor on b.txt", |a| cursor(a).as_deref() == Some("b.txt"), key(KeyCode::F(2))),
         Step::new("the field on b.txt", renaming, ctrl('a')),
     ];
