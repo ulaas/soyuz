@@ -15,7 +15,8 @@
 
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// `expect FAILED` lines of a run log.
@@ -114,6 +115,27 @@ log:
     }
 }
 
+/// Wait for `child` to exit, for at most `limit`. `None` when it had to be killed, or when
+/// it did not die even then (the wait after the kill is bounded too).
+fn wait_or_kill(child: &mut Child, limit: Duration) -> Option<ExitStatus> {
+    let deadline = Instant::now() + limit;
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().unwrap() {
+            return Some(status);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let reaped = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < reaped {
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    None
+}
+
 fn run(lang: &str, palette_query: &str, new_folder: &str) {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
@@ -148,31 +170,44 @@ fn run(lang: &str, palette_query: &str, new_folder: &str) {
         }
     };
     let stderr = child.stderr.take().unwrap();
-    let reader = std::thread::spawn(move || {
-        let mut log = String::new();
-        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            log.push_str(&line);
-            log.push('\n');
-        }
-        log
-    });
+    // The log is shared rather than returned: another process that inherited stderr keeps
+    // the pipe open after the app has gone, and joining the reader would then never return.
+    // Lines are echoed as they come, so a run that CI cancels still shows how far it got.
+    let shared = Arc::new(Mutex::new(String::new()));
+    let done = Arc::new(Mutex::new(false));
+    let reader = {
+        let (shared, done) = (shared.clone(), done.clone());
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                eprintln!("[soyuz] {line}");
+                let mut log = shared.lock().unwrap();
+                log.push_str(&line);
+                log.push('\n');
+            }
+            *done.lock().unwrap() = true;
+        })
+    };
     // Software rendering on a CI runner is slow: allow more time there.
     let limit = if std::env::var_os("CI").is_some() { 240 } else { 90 };
-    let deadline = Instant::now() + Duration::from_secs(limit);
-    let mut timed_out = false;
-    let status = loop {
-        if let Some(s) = child.try_wait().unwrap() {
-            break Some(s);
-        }
-        if Instant::now() > deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            timed_out = true;
-            break None;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    };
-    let log = reader.join().unwrap();
+    let status = wait_or_kill(&mut child, Duration::from_secs(limit));
+    let timed_out = status.is_none();
+    // Give the reader a moment to see the end of the pipe, but never wait for it forever.
+    let drained = Instant::now() + Duration::from_secs(5);
+    while !*done.lock().unwrap() && Instant::now() < drained {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let pipe_closed = *done.lock().unwrap();
+    if pipe_closed {
+        reader.join().unwrap();
+    }
+    let log = shared.lock().unwrap().clone();
+    assert!(
+        pipe_closed,
+        "{lang}: another process still holds the app's stderr (exit status {status:?})
+
+log:
+{log}"
+    );
     if !gui_came_up(&log) {
         let why = match status {
             Some(s) => format!("exited with {s} before the first frame (no desktop session or GPU adapter?)"),
