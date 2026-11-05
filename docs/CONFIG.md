@@ -336,6 +336,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `rename_selects` | `"stem"` \| `"all"` | `"stem"` | Inline rename preselects the name `stem` (without extension) or `all`. |
+| `cursor_after_delete` | `"next"` \| `"previous"` \| `"none"` | `"next"` | Where the cursor goes when the item under it is deleted. (`next`: The next item, or the previous one at the end of the list; `previous`: The previous item, or the next one at the start of the list; `none`: No item: the next arrow key starts from the top) |
 | `paste_conflict` | `"ask"` \| `"overwrite"` \| `"skip"` \| `"keep_both"` | `"ask"` | Default answer when a pasted name already exists (`ask` shows the conflict dialog). |
 | `paste_images` | boolean | `true` | Paste with a picture on the system clipboard (a screenshot, a copied image) saves it into the folder as a PNG file, selected for renaming. Copied files still win. |
 | `clipboard_history` | integer | `10` | File sets copied or cut in Soyuz kept for *Clipboard history* (0 = off). |

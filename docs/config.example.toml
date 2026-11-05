@@ -172,6 +172,7 @@ widths = { name = 320, size = 90, kind = 120, modified = 150 }
 
 [behaviour]
 rename_selects = "stem"          # stem | all
+cursor_after_delete = "next"     # next (previous at the end of the list) | previous (next at the start) | none
 paste_conflict = "ask"           # ask | overwrite | skip | keep_both
 paste_images = true              # Paste with a picture on the clipboard (screenshot) saves it here as a PNG
 clipboard_history = 10           # file sets copied / cut kept for Clipboard history (Ctrl+Alt+V); 0 = off

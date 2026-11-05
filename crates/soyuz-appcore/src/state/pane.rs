@@ -11,6 +11,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
+use soyuz_core::config::CursorAfterDelete;
 use soyuz_core::{EntryInfo, FsError, Location, NamePattern, NamePatternSpec, OpControl, PatternKind, sort_entries};
 
 use super::history::{HistoryEntry, NavHistory};
@@ -147,6 +148,10 @@ pub struct Pane {
     pub scroll_y: f32,
     /// Put the cursor on (and select) this name once it shows up in the listing.
     pub pending_cursor: Option<String>,
+    /// `[behaviour] cursor_after_delete`, kept current by `prepare_visible_panes`.
+    pub after_delete: CursorAfterDelete,
+    /// Takes over the cursor in the next `after_change`: the item under it is leaving.
+    cursor_heir: Option<EntryKey>,
     /// Names to select once the listing completes (session restore).
     pub pending_selection: Vec<String>,
     pub type_ahead: TypeAhead,
@@ -236,6 +241,8 @@ impl Pane {
             restore_scroll: None,
             scroll_y: 0.0,
             pending_cursor: None,
+            after_delete: CursorAfterDelete::default(),
+            cursor_heir: None,
             pending_selection: Vec::new(),
             type_ahead: TypeAhead::default(),
             band: None,
@@ -375,6 +382,7 @@ impl Pane {
                 } else {
                     let mut fresh = chunk;
                     sort_entries(&mut fresh, &self.view.sort);
+                    self.note_cursor_heir(&fresh);
                     self.entries = fresh;
                     self.status = ListingStatus::Ready;
                 }
@@ -406,10 +414,51 @@ impl Pane {
 
     /// Apply a watcher patch.
     pub fn on_patch(&mut self, updated: Vec<EntryInfo>, removed: &[String]) {
+        if self.cursor.as_deref().is_some_and(|c| removed.iter().any(|r| r == c)) {
+            let mut gone: HashSet<&str> = removed.iter().map(String::as_str).collect();
+            for e in &updated {
+                gone.remove(e.name.as_str());
+            }
+            self.cursor_heir = self.heir_of_cursor(|n| gone.contains(n));
+        }
         // Exact growth: a doubled buffer would be shrunk right back in `after_change`.
         self.entries.reserve_exact(updated.len());
         listing::apply_patch(&mut self.entries, updated, removed, &self.view.sort);
         self.after_change();
+    }
+
+    /// Before `fresh` replaces the entries: find who takes over a cursor that is not in it.
+    fn note_cursor_heir(&mut self, fresh: &[EntryInfo]) {
+        let Some(c) = self.cursor.as_deref() else { return };
+        if fresh.iter().any(|e| e.name == c) {
+            return;
+        }
+        let kept: HashSet<&str> = fresh.iter().map(|e| e.name.as_str()).collect();
+        self.cursor_heir = self.heir_of_cursor(|n| !kept.contains(n));
+    }
+
+    /// The nearest visible entry that stays, in the direction `after_delete` asks for and
+    /// then the other way. Items of the selection are passed over while others are left:
+    /// they are probably leaving too, and the cursor should not hop along with them.
+    /// Call before the entries change (`visible` holds indices into them).
+    fn heir_of_cursor(&self, gone: impl Fn(&str) -> bool) -> Option<EntryKey> {
+        if self.after_delete == CursorAfterDelete::None || self.pending_cursor.is_some() {
+            return None;
+        }
+        let pos = self.cursor_pos()?;
+        let (before, after) = (&self.visible[..pos], &self.visible[pos + 1..]);
+        let find = |past_selected: bool| {
+            let fits = |i: &&usize| {
+                let name = &self.entries[**i].name;
+                !gone(name) && (past_selected || !self.selection.contains(name))
+            };
+            if self.after_delete == CursorAfterDelete::Next {
+                after.iter().find(fits).or_else(|| before.iter().rev().find(fits))
+            } else {
+                before.iter().rev().find(fits).or_else(|| after.iter().find(fits))
+            }
+        };
+        find(false).or_else(|| find(true)).map(|&i| self.key_of(i))
     }
 
     fn after_change(&mut self) {
@@ -424,12 +473,23 @@ impl Pane {
             self.index_stale = true;
         } else {
             self.rebuild_index();
+            let had_selection = !self.selection.is_empty();
             let (index, entries) = (&self.index, &self.entries);
             self.selection.retain(|k| index.get(entries, k).is_some());
             if self.cursor.as_deref().is_some_and(|c| self.index_of(c).is_none()) {
-                self.cursor = None;
+                self.cursor = self.cursor_heir.take();
+                self.scroll_to_cursor |= self.cursor.is_some();
+            }
+            // Delete again acts on what is highlighted: once the last selected item has
+            // left, the highlight belongs to the cursor.
+            if had_selection
+                && self.selection.is_empty()
+                && let Some(c) = self.cursor.clone()
+            {
+                self.selection.select_only(c);
             }
         }
+        self.cursor_heir = None;
         if self.pending_cursor.as_deref().is_some_and(|n| self.index_of(n).is_some())
             && let Some(name) = self.pending_cursor.take()
         {
@@ -453,6 +513,7 @@ impl Pane {
     /// Replace the entries keeping the given order (no re-sort), e.g. search relevance.
     pub fn set_entries_ordered(&mut self, entries: Vec<EntryInfo>) {
         self.incoming.clear();
+        self.note_cursor_heir(&entries);
         self.entries = entries;
         self.after_change();
     }
@@ -781,6 +842,112 @@ mod tests {
         p.on_listing(names.iter().map(|n| file(n)).collect(), true, None);
         p.refresh_visible(true, true);
         p
+    }
+
+    /// The cursor on `at` with `selected` selected, as if the user had moved there.
+    fn on(p: &mut Pane, at: &str, selected: &[&str]) {
+        p.cursor = Some(EntryKey::from(at));
+        p.selection.clear();
+        for s in selected {
+            p.selection.insert(EntryKey::from(*s));
+        }
+    }
+
+    #[test]
+    fn deleting_the_item_under_the_cursor_moves_to_the_next() {
+        let mut p = pane_with(&["a", "b", "c"]);
+        on(&mut p, "b", &["b"]);
+        p.on_patch(Vec::new(), &["b".into()]);
+        assert_eq!(p.cursor.as_deref(), Some("c"));
+        assert!(p.selection.contains("c"), "highlighted, so Delete again takes it");
+        assert_eq!(p.selected_entries().len(), 1);
+        assert!(p.scroll_to_cursor);
+    }
+
+    #[test]
+    fn at_the_end_of_the_list_the_cursor_moves_back() {
+        let mut p = pane_with(&["a", "b", "c"]);
+        on(&mut p, "c", &["c"]);
+        p.on_patch(Vec::new(), &["c".into()]);
+        assert_eq!(p.cursor.as_deref(), Some("b"));
+        p.on_patch(Vec::new(), &["b".into()]);
+        assert_eq!(p.cursor.as_deref(), Some("a"));
+        // Nothing left: no cursor.
+        p.on_patch(Vec::new(), &["a".into()]);
+        assert_eq!(p.cursor, None);
+        assert!(p.selection.is_empty());
+    }
+
+    #[test]
+    fn a_deleted_selection_is_passed_over_whatever_order_it_goes_in() {
+        for order in [["b", "c", "d"], ["d", "c", "b"], ["c", "b", "d"]] {
+            let mut p = pane_with(&["a", "b", "c", "d", "e"]);
+            on(&mut p, "c", &["b", "c", "d"]);
+            for gone in order {
+                p.on_patch(Vec::new(), &[gone.to_string()]);
+            }
+            assert_eq!(p.cursor.as_deref(), Some("e"), "{order:?}");
+            assert!(p.selection.contains("e"), "{order:?}");
+            assert_eq!(p.selection.len(), 1, "{order:?}");
+        }
+        // Up to the end of the list: back to the nearest one before the selection.
+        let mut p = pane_with(&["a", "b", "c", "d"]);
+        on(&mut p, "c", &["c", "d"]);
+        p.on_patch(Vec::new(), &["c".into(), "d".into()]);
+        assert_eq!(p.cursor.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn the_setting_chooses_the_direction() {
+        let mut p = pane_with(&["a", "b", "c"]);
+        p.after_delete = CursorAfterDelete::Previous;
+        on(&mut p, "b", &["b"]);
+        p.on_patch(Vec::new(), &["b".into()]);
+        assert_eq!(p.cursor.as_deref(), Some("a"));
+        p.on_patch(Vec::new(), &["a".into()]);
+        assert_eq!(p.cursor.as_deref(), Some("c"), "nothing before it: the other way");
+
+        let mut p = pane_with(&["a", "b", "c"]);
+        p.after_delete = CursorAfterDelete::None;
+        on(&mut p, "b", &["b"]);
+        p.on_patch(Vec::new(), &["b".into()]);
+        assert_eq!(p.cursor, None);
+        assert!(p.selection.is_empty());
+    }
+
+    #[test]
+    fn the_cursor_stays_when_something_else_is_deleted() {
+        let mut p = pane_with(&["a", "b", "c"]);
+        on(&mut p, "a", &["a", "c"]);
+        p.on_patch(Vec::new(), &["c".into()]);
+        assert_eq!(p.cursor.as_deref(), Some("a"));
+        assert_eq!(p.selection.len(), 1);
+    }
+
+    #[test]
+    fn a_relist_finds_the_neighbour_too() {
+        let mut p = pane_with(&["a", "b", "c"]);
+        on(&mut p, "b", &["b"]);
+        p.refreshing = true;
+        p.on_listing(vec![file("a"), file("c")], true, None);
+        assert_eq!(p.cursor.as_deref(), Some("c"));
+        assert!(p.selection.contains("c"));
+    }
+
+    #[test]
+    fn a_rename_keeps_its_own_cursor() {
+        let mut p = pane_with(&["a", "b", "c"]);
+        on(&mut p, "a", &["a"]);
+        p.pending_cursor = Some("x".into());
+        p.on_patch(Vec::new(), &["a".into()]);
+        assert_eq!(p.cursor, None, "not on the neighbour for a moment");
+        p.on_patch(vec![file("x")], &[]);
+        assert_eq!(p.cursor.as_deref(), Some("x"));
+        // Updated in the same patch: it did not leave.
+        let mut p = pane_with(&["a", "b"]);
+        on(&mut p, "a", &["a"]);
+        p.on_patch(vec![file("a")], &["a".into()]);
+        assert_eq!(p.cursor.as_deref(), Some("a"));
     }
 
     #[test]

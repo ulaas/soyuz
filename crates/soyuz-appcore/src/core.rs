@@ -541,6 +541,7 @@ impl AppCore {
     pub fn prepare_visible_panes(&mut self) {
         let show_hidden = self.ui.show_hidden;
         let show_system = self.ui.show_system;
+        let after_delete = self.config.behaviour.cursor_after_delete;
         let tab = self.ws.tab_mut();
         let shown = tab.shown();
         let focused = tab.focused;
@@ -549,6 +550,7 @@ impl AppCore {
             if visible {
                 ops::ensure_started(pane, &mut self.services);
             }
+            pane.after_delete = after_delete;
             pane.refresh_visible(show_hidden, show_system);
         }
     }

@@ -5,9 +5,9 @@ use std::time::SystemTime;
 
 use egui::{RichText, Ui};
 use soyuz_core::config::{
-    ActivityPlacement, CloseWindowSessions, DragDefault, DuplicatesPref, MiddleClick, OpenFoldersIn, Orientation,
-    Osc52Policy, PasteConflict, PreserveItem, ReflinkPref, RenameSelects, SidebarMode, SidebarSection, TabStripMode,
-    TrashUnsupportedPolicy, TypeAhead,
+    ActivityPlacement, CloseWindowSessions, CursorAfterDelete, DragDefault, DuplicatesPref, MiddleClick, OpenFoldersIn,
+    Orientation, Osc52Policy, PasteConflict, PreserveItem, ReflinkPref, RenameSelects, SidebarMode, SidebarSection,
+    TabStripMode, TrashUnsupportedPolicy, TypeAhead,
 };
 use soyuz_core::{Column, DateFormat, DateFormatName, SizeStyle, ViewMode, format_size, format_time};
 
@@ -1068,6 +1068,21 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ],
             );
         });
+        r.row(
+            tr!("settings-behaviour-cursor-after-delete"),
+            tr!("settings-behaviour-cursor-after-delete-desc"),
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.behaviour.cursor_after_delete,
+                    &[
+                        (CursorAfterDelete::Next, tr!("settings-behaviour-cursor-next")),
+                        (CursorAfterDelete::Previous, tr!("settings-behaviour-cursor-previous")),
+                        (CursorAfterDelete::None, tr!("settings-behaviour-cursor-none")),
+                    ],
+                );
+            },
+        );
     });
     let mut browse = None;
     any |= group(ui, q, ctx, tr!("settings-open-title"), |r| {

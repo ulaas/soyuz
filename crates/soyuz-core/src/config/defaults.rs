@@ -263,6 +263,7 @@ impl Default for Behaviour {
     fn default() -> Self {
         Behaviour {
             rename_selects: RenameSelects::Stem,
+            cursor_after_delete: CursorAfterDelete::Next,
             paste_conflict: PasteConflict::Ask,
             paste_images: true,
             clipboard_history: 10,

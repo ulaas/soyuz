@@ -579,6 +579,19 @@ pub enum RenameSelects {
     All,
 }
 
+/// Where the cursor goes when the item under it is deleted or otherwise leaves the folder.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CursorAfterDelete {
+    /// The next item, or the previous one at the end of the list.
+    #[default]
+    Next,
+    /// The previous item, or the next one at the start of the list.
+    Previous,
+    /// No item: the next arrow key starts from the top.
+    None,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PasteConflict {
@@ -786,6 +799,8 @@ impl OpenSection {
 pub struct Behaviour {
     /// Inline rename preselects the name `stem` (without extension) or `all`.
     pub rename_selects: RenameSelects,
+    /// Where the cursor goes when the item under it is deleted.
+    pub cursor_after_delete: CursorAfterDelete,
     /// Default answer when a pasted name already exists (`ask` shows the conflict dialog).
     pub paste_conflict: PasteConflict,
     /// Paste with a picture on the system clipboard (a screenshot, a copied image) saves
