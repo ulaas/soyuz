@@ -1238,7 +1238,8 @@ pub enum EditorDock {
 pub struct Git {
     /// Show the git status column and badges inside repositories.
     pub status_column: bool,
-    /// Re-read git status at most this often (seconds).
+    /// Re-read git status this often while the repository is on screen (seconds). A fallback: changes in an open
+    /// folder or in the repository's git directory refresh it at once.
     pub refresh_secs: u64,
 }
 

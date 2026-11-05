@@ -92,6 +92,17 @@ struct SizeJob {
     rx: crossbeam_channel::Receiver<SizeEvent>,
     ctl: Arc<OpControl>,
     pending: usize,
+    /// A folder finished since the last resort.
+    resort_pending: bool,
+    last_resort: Option<Instant>,
+}
+
+/// A pane sorted by size is reordered at most this often while folder sizes arrive.
+const SIZE_RESORT_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Reorder now? Always when the job ends, so the final order is exact.
+fn size_resort_due(pending: bool, job_over: bool, last: Option<Instant>) -> bool {
+    pending && (job_over || last.is_none_or(|t| t.elapsed() >= SIZE_RESORT_INTERVAL))
 }
 
 #[derive(Default)]
@@ -527,26 +538,31 @@ fn pump_sizes(r: &mut Registry, ws: &mut [&mut Workspace]) {
                 }
             }
         }
-        if !updates.is_empty() {
-            let pane = find_pane_in(ws, job.pane);
-            let mut resort = false;
-            if let Some(pane) = pane {
-                for (path, bytes, done) in &updates {
-                    if let Some(e) = pane.entries.iter_mut().find(|e| &e.path == path) {
-                        e.size = *bytes;
-                        resort |= *done;
-                    }
+        let job_over = disconnected || job.pending == 0;
+        if !updates.is_empty()
+            && let Some(pane) = find_pane_in(ws, job.pane)
+        {
+            // The rows read the size when drawn, and a folder's size changes neither the
+            // filter nor its group: nothing to recompute until the order changes.
+            for (path, bytes, done) in &updates {
+                if pane.set_entry_size(path, *bytes) {
+                    job.resort_pending |= *done;
                 }
-                if resort && pane.view.sort.column == Column::Size {
-                    pane.resort();
-                }
-                pane.dirty = true;
-            }
-            for (path, bytes, done) in updates {
-                r.size_cache.insert(path, (bytes, done));
             }
         }
-        if !disconnected && job.pending > 0 {
+        if size_resort_due(job.resort_pending, job_over, job.last_resort) {
+            job.resort_pending = false;
+            job.last_resort = Some(Instant::now());
+            if let Some(pane) = find_pane_in(ws, job.pane)
+                && pane.view.sort.column == Column::Size
+            {
+                pane.resort();
+            }
+        }
+        for (path, bytes, done) in updates {
+            r.size_cache.insert(path, (bytes, done));
+        }
+        if !job_over {
             keep.push(job);
         } else {
             job.ctl.cancel();
@@ -570,7 +586,7 @@ pub fn start_folder_sizes(pane: PaneId, dirs: Vec<PathBuf>) -> usize {
         let wake = r.wake.clone().unwrap_or_else(|| Arc::new(|| {}));
         let n = dirs.len();
         let (rx, ctl) = soyuz_search::folder_sizes(dirs, wake);
-        r.sizes.push(SizeJob { pane, rx, ctl, pending: n });
+        r.sizes.push(SizeJob { pane, rx, ctl, pending: n, resort_pending: false, last_resort: None });
         n
     })
 }
@@ -873,6 +889,17 @@ impl SearchForm {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn size_resort_is_throttled_but_ends_exact() {
+        let just_now = Some(Instant::now());
+        let long_ago = Some(Instant::now() - SIZE_RESORT_INTERVAL);
+        assert!(!size_resort_due(false, true, None), "nothing finished: nothing to do");
+        assert!(size_resort_due(true, false, None), "the first one at once");
+        assert!(!size_resort_due(true, false, just_now), "then throttled");
+        assert!(size_resort_due(true, false, long_ago));
+        assert!(size_resort_due(true, true, just_now), "the last one always");
+    }
 
     fn form(text: &str) -> SearchForm {
         SearchForm { text: text.into(), root: PathBuf::from("/data"), ..Default::default() }

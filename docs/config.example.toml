@@ -334,7 +334,7 @@ max_image_mp = 200               # largest image the image editor decodes
 
 [git]
 status_column = true
-refresh_secs = 5
+refresh_secs = 60                # fallback; changes in an open folder or in .git refresh at once
 
 [sync]                           # scheduled sync profiles, two-way sync, previous versions
 scheduler = true                 # run profiles on their schedules while Soyuz is open (no OS service)

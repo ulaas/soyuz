@@ -119,6 +119,12 @@ pub fn read(path: &Path) -> Reloaded {
 
 /// Per frame: apply a pending external edit.
 pub fn pump(app: &mut AppCore, host: &dyn Host) {
+    // Our own write in progress: only its answer tells whether a change is ours. What the
+    // watcher reports stays queued until then.
+    if crate::models::settings::settle(app) {
+        host.redraw_after(Duration::from_millis(20));
+        return;
+    }
     let Some(r) = app.config_watch.poll() else { return };
     if r.text.is_some() && r.text == app.config_watch.last_text {
         return; // our own save (or no real change)
@@ -182,6 +188,7 @@ pub fn error_toast(e: &ConfigError) -> Toast {
 
 /// `ReloadConfig`: re-read the file now.
 pub fn reload_now(app: &mut AppCore, host: &dyn Host) {
+    crate::models::settings::wait_for_save(app);
     let r = read(app.config_watch.path());
     app.config_watch.last_text = r.text.clone();
     handle(app, host, r.result, true);
