@@ -17,6 +17,7 @@ use soyuz_appcore::host::{Host, NullHost};
 use soyuz_appcore::models::settings::{self, flush, update_config};
 use soyuz_appcore::ops::fileops::FileOpCmd;
 use soyuz_appcore::ops::fileops::drop::DropEffect;
+use soyuz_appcore::palette::{self, Exec, RunMods};
 use soyuz_appcore::services::config_watch::{self, ConfigWatch};
 use soyuz_appcore::services::mailbox::UiMsg;
 use soyuz_appcore::state::pane::ListingStatus;
@@ -326,6 +327,24 @@ fn typed_path_that_does_not_exist_stays(data: &Path) {
     let want = Location::Dir(parent.clone());
     settle(&mut app, &host, "the fallback", |a| a.ws.pane().location == want);
     assert!(has_toast(&app, tr!("ops-folder-gone")));
+
+    // A path typed in the palette stays too, here or in a new tab.
+    app.ui.toasts.live.clear();
+    let tabs = app.ws.tabs.len();
+    for (name, command) in [("palette-typo", false), ("palette-tab-typo", true)] {
+        let want = Location::Dir(parent.join(name));
+        let mods = RunMods { command, shift: false };
+        palette::run(&mut app, &host, Exec::GoTyped(want.clone()), mods);
+        settle(&mut app, &host, "the palette's error page", failed);
+        let wait = Instant::now();
+        while wait.elapsed() < Duration::from_millis(300) {
+            tick(&mut app, &host);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(app.ws.pane().location, want, "{name} stays");
+    }
+    assert_eq!(app.ws.tabs.len(), tabs + 1);
+    assert!(!has_toast(&app, tr!("ops-folder-gone")));
 }
 
 fn late_probe_answer_is_ignored(data: &Path) {

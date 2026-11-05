@@ -41,11 +41,9 @@ before the fixes.
 
 **Behaviour to review**
 - A folder that has gone missing lands on its nearest existing ancestor with a notification. A path
-  typed into the address bar that does not exist keeps its error page (owner decision).
-- The toolbar does not fold in a narrow window (owner decision), as on main: below about 900 px wide
-  with the sidebar open (calculated from the widths), the filter and path fields overlap and cover the
-  back, forward and up buttons. Seen in a screenshot at 640 px. The decision was made on a description
-  that said only "less room", so it is still open.
+  typed into the address bar or the palette that does not exist keeps its error page (owner decision).
+- In a narrow window the filter field shrinks, then folds into a button until it is used; every other
+  toolbar button stays, and below that the path field gives way (owner decision).
 - `[git] refresh_secs` defaults to 15 instead of 5 (owner decision), now a fallback behind a watcher on
   the git directory.
 - A remote transfer keeps a `.<name>.soyuzpartinfo` note beside a partial, and a source that changes
