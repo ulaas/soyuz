@@ -136,6 +136,24 @@ fn wait_or_kill(child: &mut Child, limit: Duration) -> Option<ExitStatus> {
     None
 }
 
+/// Every running process with its parent and command line, to name whatever outlived the app.
+fn process_list() -> String {
+    let out = if cfg!(windows) {
+        Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command"])
+            .arg(
+                "Get-CimInstance Win32_Process | Sort-Object CreationDate | ForEach-Object { \
+                 \"$($_.ProcessId) parent=$($_.ParentProcessId) $($_.CreationDate.ToString('HH:mm:ss')) $($_.CommandLine)\" }",
+            )
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+    } else {
+        Command::new("ps").args(["-eo", "pid,ppid,etime,args"]).stdin(Stdio::null()).stderr(Stdio::null()).output()
+    };
+    out.map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_else(|e| format!("(no list: {e})"))
+}
+
 fn run(lang: &str, palette_query: &str, new_folder: &str) {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
@@ -169,6 +187,7 @@ fn run(lang: &str, palette_query: &str, new_folder: &str) {
             r => break r.expect("launch soyuz"),
         }
     };
+    let app_pid = child.id();
     let stderr = child.stderr.take().unwrap();
     // The log is shared rather than returned: another process that inherited stderr keeps
     // the pipe open after the app has gone, and joining the reader would then never return.
@@ -203,10 +222,14 @@ fn run(lang: &str, palette_query: &str, new_folder: &str) {
     let log = shared.lock().unwrap().clone();
     assert!(
         pipe_closed,
-        "{lang}: another process still holds the app's stderr (exit status {status:?})
+        "{lang}: another process still holds the stderr of app pid {app_pid} (exit status {status:?})
+
+processes:
+{}
 
 log:
-{log}"
+{log}",
+        process_list()
     );
     if !gui_came_up(&log) {
         let why = match status {
