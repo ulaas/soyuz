@@ -8,8 +8,8 @@
 use std::collections::BTreeSet;
 
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Frame, Id, Key, Margin, Panel, Popup, Rect, RectAlign, Response, Sense,
-    Stroke, StrokeKind, TextEdit, Ui, UiBuilder, pos2, vec2,
+    Align2, Color32, Frame, Id, Key, Margin, Panel, Popup, Rect, RectAlign, Response, Sense, Stroke, StrokeKind,
+    TextEdit, Ui, UiBuilder, pos2, vec2,
 };
 use soyuz_core::SearchId;
 
@@ -28,8 +28,12 @@ use crate::ui::widgets::{
     Btn, NavRow, collapsible_header, menu_check, menu_item, menu_separator, pill_button, spinner, trunc_galley,
 };
 
-const ROW_H: f32 = 44.0;
-const STATUS_H: f32 = 28.0;
+fn row_h() -> f32 {
+    crate::theme::font::grow(44.0)
+}
+fn status_h() -> f32 {
+    crate::theme::font::grow(28.0)
+}
 
 /// Close the bar and drop the keyboard focus of its fields.
 fn close(app: &mut SoyuzApp, ctx: &egui::Context) {
@@ -51,21 +55,26 @@ fn pill(ui: &mut Ui, r: Rect, id: Id, icon: Option<&str>, label: &str, active: b
     } else {
         p.bg_surface1
     };
-    ui.painter().rect_filled(r, CornerRadius::same(13), fill);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(crate::theme::tokens::radius::PILL), fill);
     let stroke = if active { p.accent.gamma_multiply(0.55) } else { p.border_subtle };
-    ui.painter().rect_stroke(r, CornerRadius::same(13), Stroke::new(1.0, stroke), StrokeKind::Inside);
+    ui.painter().rect_stroke(
+        r,
+        crate::theme::tokens::radius::same(crate::theme::tokens::radius::PILL),
+        Stroke::new(1.0, stroke),
+        StrokeKind::Inside,
+    );
     let c = if active { p.accent } else { p.text_secondary };
     let mut x = r.left() + 10.0;
     if let Some(g) = icon {
         ui.painter().text(pos2(x + 6.0, r.center().y), Align2::CENTER_CENTER, g, icons::font(13.0), c);
         x += 17.0;
     }
-    ui.painter().text(pos2(x, r.center().y), Align2::LEFT_CENTER, label, FontId::proportional(12.0), c);
+    ui.painter().text(pos2(x, r.center().y), Align2::LEFT_CENTER, label, crate::theme::font::ui(12.0), c);
     if tip.is_empty() { resp } else { resp.on_hover_text(tip) }
 }
 
 fn pill_width(ui: &Ui, icon: bool, label: &str) -> f32 {
-    let w = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), Color32::WHITE).size().x;
+    let w = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(12.0), Color32::WHITE).size().x;
     w + 20.0 + if icon { 17.0 } else { 0.0 }
 }
 
@@ -76,7 +85,7 @@ pub fn bar(root: &mut Ui, app: &mut SoyuzApp) {
     }
     let ctx = root.ctx().clone();
     let p = palette(&ctx);
-    let height = if app.core.ui.search.open { ROW_H } else { 0.0 } + if shown.is_some() { STATUS_H } else { 0.0 };
+    let height = if app.core.ui.search.open { row_h() } else { 0.0 } + if shown.is_some() { status_h() } else { 0.0 };
     Panel::top("soyuz.search")
         .exact_size(height)
         .show_separator_line(false)
@@ -85,12 +94,12 @@ pub fn bar(root: &mut Ui, app: &mut SoyuzApp) {
             let full = ui.available_rect_before_wrap();
             let mut y = full.top();
             if app.core.ui.search.open {
-                let row = Rect::from_min_size(pos2(full.left(), y), vec2(full.width(), ROW_H));
+                let row = Rect::from_min_size(pos2(full.left(), y), vec2(full.width(), row_h()));
                 controls(ui, row, app);
-                y += ROW_H;
+                y += row_h();
             }
             if let Some(id) = shown {
-                let row = Rect::from_min_size(pos2(full.left(), y), vec2(full.width(), STATUS_H));
+                let row = Rect::from_min_size(pos2(full.left(), y), vec2(full.width(), status_h()));
                 status(ui, row, app, id);
             }
             ui.allocate_rect(full, Sense::hover());
@@ -101,10 +110,10 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let ctx = ui.ctx().clone();
     let p = palette(&ctx);
     let card = row.shrink2(vec2(0.0, 4.0));
-    ui.painter().rect_filled(card, CornerRadius::same(radius::MODAL), p.bg_surface1);
+    ui.painter().rect_filled(card, crate::theme::tokens::radius::same(radius::MODAL), p.bg_surface1);
     ui.painter().rect_stroke(
         card,
-        CornerRadius::same(radius::MODAL),
+        crate::theme::tokens::radius::same(radius::MODAL),
         Stroke::new(1.0, p.border_subtle),
         StrokeKind::Inside,
     );
@@ -118,7 +127,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let cresp =
         ui.interact(close_r, Id::unique("soyuz.search.close"), Sense::click()).on_hover_text(tr!("views-search-close"));
     if cresp.hovered() {
-        ui.painter().rect_filled(close_r, CornerRadius::same(5), p.bg_surface2);
+        ui.painter().rect_filled(close_r, crate::theme::tokens::radius::same(5), p.bg_surface2);
     }
     ui.painter().text(close_r.center(), Align2::CENTER_CENTER, ph::X, icons::font(13.0), p.text_tertiary);
     if cresp.clicked() {
@@ -131,7 +140,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         .interact(star_r, Id::unique("soyuz.search.save"), Sense::click())
         .on_hover_text(tr!("views-search-save-tip"));
     if sresp.hovered() {
-        ui.painter().rect_filled(star_r, CornerRadius::same(5), p.bg_surface2);
+        ui.painter().rect_filled(star_r, crate::theme::tokens::radius::same(5), p.bg_surface2);
     }
     ui.painter().text(star_r.center(), Align2::CENTER_CENTER, ph::BOOKMARK_SIMPLE, icons::font(14.0), p.text_secondary);
     if sresp.clicked() {
@@ -341,7 +350,9 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                     .show(|ui| {
                         ui.set_width(230.0);
                         ui.label(
-                            egui::RichText::new(tr!("views-search-size-caption")).size(10.5).color(p.text_tertiary),
+                            egui::RichText::new(tr!("views-search-size-caption"))
+                                .size(crate::theme::font::px(10.5))
+                                .color(p.text_tertiary),
                         );
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
@@ -386,11 +397,11 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     );
     let fid = Id::unique("soyuz.search.text");
     let focused = ui.memory(|m| m.has_focus(fid));
-    ui.painter().rect_filled(field, CornerRadius::same(radius::ROW), p.bg_surface2);
+    ui.painter().rect_filled(field, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
     if focused {
         ui.painter().rect_stroke(
             field,
-            CornerRadius::same(radius::ROW),
+            crate::theme::tokens::radius::same(radius::ROW),
             Stroke::new(1.5, p.accent),
             StrokeKind::Inside,
         );
@@ -421,7 +432,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
             .id(fid)
             .hint_text(hint)
             .frame(Frame::NONE)
-            .font(FontId::proportional(13.0))
+            .font(crate::theme::font::ui(13.0))
             .align(egui::Align2::LEFT_CENTER)
             .desired_width(inner.width()),
     );
@@ -441,14 +452,14 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
             TextEdit::singleline(&mut app.core.ui.search.form.name_glob)
                 .hint_text(tr!("views-search-hint-glob"))
                 .frame(Frame::NONE)
-                .font(FontId::proportional(12.0))
+                .font(crate::theme::font::ui(12.0))
                 .align(egui::Align2::LEFT_CENTER)
                 .desired_width(gr.width() - 8.0),
         );
         submit |= g.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
     }
     if let Some(err) = app.core.ui.search.error.clone() {
-        let eg = trunc_galley(ui.painter(), &err, FontId::proportional(11.0), p.danger, inner.width() * 0.6);
+        let eg = trunc_galley(ui.painter(), &err, crate::theme::font::ui(11.0), p.danger, inner.width() * 0.6);
         let pos = pos2(inner.right() - eg.size().x, cy - eg.size().y / 2.0);
         if app.core.ui.search.form.text.is_empty() || !focused {
             ui.painter().galley(pos, eg, p.danger);
@@ -480,7 +491,11 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.set_width(260.0);
-            ui.label(egui::RichText::new(tr!("views-search-save-caption")).size(10.5).color(p.text_tertiary));
+            ui.label(
+                egui::RichText::new(tr!("views-search-save-caption"))
+                    .size(crate::theme::font::px(10.5))
+                    .color(p.text_tertiary),
+            );
             ui.add_space(4.0);
             if let Some(name) = app.core.ui.search.saving.as_mut() {
                 let r = ui.add(TextEdit::singleline(name).desired_width(f32::INFINITY).margin(Margin::symmetric(8, 5)));
@@ -525,13 +540,8 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         spinner(ui, pos2(x, cy), 6.0, p.accent);
     }
     x += 14.0;
-    let hg = trunc_galley(
-        ui.painter(),
-        &st.head,
-        crate::ui::views::flow::semibold(12.0),
-        p.text_primary,
-        row.width() * 0.45,
-    );
+    let hg =
+        trunc_galley(ui.painter(), &st.head, crate::theme::font::semibold(12.0), p.text_primary, row.width() * 0.45);
     let hw = hg.size().x;
     ui.painter().galley(pos2(x, cy - hg.size().y / 2.0), hg, p.text_primary);
     x += hw + 12.0;
@@ -629,7 +639,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         }
     }
     let dg =
-        trunc_galley(ui.painter(), &st.detail, FontId::proportional(11.5), p.text_tertiary, (rx - x - 8.0).max(0.0));
+        trunc_galley(ui.painter(), &st.detail, crate::theme::font::ui(11.5), p.text_tertiary, (rx - x - 8.0).max(0.0));
     ui.painter().galley(pos2(x, cy - dg.size().y / 2.0), dg, p.text_tertiary);
     if let Some(act) = act {
         model::status_act(&mut app.core, id, act);

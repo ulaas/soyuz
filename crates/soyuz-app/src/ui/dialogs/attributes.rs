@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use egui::{Align, FontId, Layout, RichText, Ui};
+use egui::{Align, Layout, RichText, Ui};
 use parking_lot::Mutex;
 use soyuz_core::{Control, EntryInfo, EntryKind, OpControl};
 use soyuz_fs::{TimesSet, WalkItem, WalkOptions};
@@ -186,7 +186,9 @@ impl Dialog for AttributesDialog {
             check(ui, &mut self.recursive, tr!("dialogs-attrs-recursive"));
         }
         ui.add_space(4.0);
-        ui.label(RichText::new(tr!("dialogs-props-undo-note")).font(FontId::proportional(11.0)).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("dialogs-props-undo-note")).font(crate::theme::font::ui(11.0)).color(p.text_tertiary),
+        );
         ui.add_space(14.0);
         let changes = self.has_changes();
         let mut ok = false;

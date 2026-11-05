@@ -1,6 +1,6 @@
 //! Centered empty-state illustration used by the content area.
 
-use egui::{Align, Color32, CornerRadius, Layout, RichText, Sense, TextStyle, Ui, vec2};
+use egui::{Align, Color32, Layout, RichText, Sense, TextStyle, Ui, vec2};
 
 use crate::theme::apply::{CAPTION, DISPLAY};
 use crate::theme::palette;
@@ -34,7 +34,7 @@ impl EmptyState<'_> {
             // Glyph on a soft disc.
             let (rect, _) = ui.allocate_exact_size(vec2(96.0, 96.0), Sense::hover());
             let tint = self.glyph_color.unwrap_or(p.accent);
-            ui.painter().rect_filled(rect, CornerRadius::same(28), tint.gamma_multiply(0.12));
+            ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(28), tint.gamma_multiply(0.12));
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,

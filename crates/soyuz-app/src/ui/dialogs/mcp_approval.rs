@@ -37,7 +37,7 @@ pub(crate) fn show(ui: &mut Ui, m: &mut McpApprovalModel, ctx: &mut DialogCtx<'_
             .inner
     };
     ui.add_space(6.0);
-    ui.label(RichText::new(tr!("dialogs-mcp-note")).size(11.0).color(p.text_tertiary));
+    ui.label(RichText::new(tr!("dialogs-mcp-note")).size(crate::theme::font::px(11.0)).color(p.text_tertiary));
     match action {
         Some(CardAction::Decide(d)) => {
             m.decide(d);

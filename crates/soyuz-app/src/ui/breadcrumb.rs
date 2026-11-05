@@ -3,8 +3,8 @@
 
 use egui::text::{CCursor, CCursorRange};
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Frame, Id, Key, Popup, Rect, RectAlign, Sense, Stroke, StrokeKind, TextEdit,
-    Ui, UiBuilder, pos2, vec2,
+    Align2, Color32, Frame, Id, Key, Popup, Rect, RectAlign, Sense, Stroke, StrokeKind, TextEdit, Ui, UiBuilder, pos2,
+    vec2,
 };
 use soyuz_core::Location;
 
@@ -13,9 +13,9 @@ use crate::cmd::Cmd;
 use crate::services::{AuxState, Services};
 use crate::state::crumbs::{self, Crumb, CrumbKind};
 use crate::state::pane::PaneId;
+use crate::theme::font::semibold;
 use crate::theme::tokens::{Rail, mix, radius};
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{
     fit, hidden_controls_tip, menu_item, menu_item_marked, paint_hidden_badge, spinner, trunc_galley,
 };
@@ -33,6 +33,8 @@ pub struct OmnibarCtx<'a> {
 
 const SEP_W: f32 = 18.0;
 const CRUMB_PAD: f32 = 8.0;
+/// The "…" button of the collapsed crumbs.
+const MORE_W: f32 = 28.0;
 
 fn kind_glyph(c: &Crumb) -> &'static str {
     match c.kind {
@@ -69,7 +71,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     } else {
         p.rail(Rail::Field)
     };
-    ui.painter().rect_filled(field, CornerRadius::same(radius::CARD), fill);
+    ui.painter().rect_filled(field, crate::theme::tokens::radius::same(radius::CARD), fill);
     if p.high_contrast() {
         let stroke = if editing {
             Stroke::new(2.0, p.accent)
@@ -78,7 +80,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         } else {
             Stroke::new(1.0, p.border_subtle)
         };
-        ui.painter().rect_stroke(field, CornerRadius::same(radius::CARD), stroke, StrokeKind::Inside);
+        ui.painter().rect_stroke(field, crate::theme::tokens::radius::same(radius::CARD), stroke, StrokeKind::Inside);
     }
     if editing {
         editor(ui, field, c);
@@ -105,7 +107,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let left = field.left() + 34.0;
     let right = field.right() - 34.0;
     let avail = right - left;
-    let font = FontId::proportional(13.0);
+    let font = crate::theme::font::ui(13.0);
     // Folder colors show as a dot before the crumb's name.
     let dots: Vec<Option<Color32>> = list
         .iter()
@@ -120,27 +122,15 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         .map(|(i, cr)| {
             let f = if i + 1 == list.len() { semibold(13.0) } else { font.clone() };
             let badge = if soyuz_core::naming::has_hidden_controls(&cr.label) { 14.0 } else { 0.0 };
-            trunc_galley(ui.painter(), &cr.label, f, Color32::WHITE, f32::INFINITY).size().x.min(220.0)
+            let w = trunc_galley(ui.painter(), &cr.label, f, Color32::WHITE, f32::INFINITY).size().x;
+            // The current folder's name may take all the room there is.
+            (if i + 1 == list.len() { w } else { w.min(crate::theme::font::grow(220.0)) })
                 + badge
                 + 2.0 * CRUMB_PAD
                 + if dots[i].is_some() { DOT_W } else { 0.0 }
         })
         .collect();
-    // Collapse the middle when the path does not fit: first crumb, "…", tail.
-    let total: f32 = widths.iter().sum::<f32>() + SEP_W * list.len() as f32;
-    let mut hidden: Vec<usize> = Vec::new();
-    if total > avail && list.len() > 2 {
-        let mut used = widths[0] + SEP_W + 28.0 + SEP_W;
-        let mut keep_from = list.len();
-        for i in (1..list.len()).rev() {
-            if used + widths[i] + SEP_W > avail && keep_from < list.len() {
-                break;
-            }
-            used += widths[i] + SEP_W;
-            keep_from = i;
-        }
-        hidden = (1..keep_from).collect();
-    }
+    let hidden = collapsed(&widths, avail);
     let mut x = left;
     let h = field.height() - 8.0;
     let cy = field.center().y;
@@ -149,11 +139,11 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         if hidden.contains(&i) {
             if hidden.first() == Some(&i) {
                 // Overflow dropdown with the collapsed ancestors.
-                let r = Rect::from_min_size(pos2(x, cy - h / 2.0), vec2(28.0, h));
+                let r = Rect::from_min_size(pos2(x, cy - h / 2.0), vec2(MORE_W, h));
                 let resp = ui.interact(r, Id::unique("soyuz.crumb.more"), Sense::click());
                 crate::ui::a11y::button(&resp, tr!("app-crumb-hidden-parents"));
                 if resp.hovered() {
-                    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), seg_hover(&p));
+                    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), seg_hover(&p));
                 }
                 ui.painter().text(
                     r.center(),
@@ -175,7 +165,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
                         }
                     }
                 });
-                x += 28.0;
+                x += MORE_W;
                 // The chevron after "…" lists the children of the last collapsed crumb.
                 let last_hidden = *hidden.last().unwrap_or(&i);
                 let parent = list.get(last_hidden).map(|cr| cr.location.clone());
@@ -200,7 +190,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
             },
         );
         if resp.hovered() {
-            ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), seg_hover(&p));
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), seg_hover(&p));
         }
         let color = if last || resp.hovered() { p.text_primary } else { p.text_secondary };
         let f = if last { semibold(13.0) } else { font.clone() };
@@ -254,7 +244,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let rresp = ui.interact(rr, Id::unique("soyuz.omnibar.refresh"), Sense::click());
     crate::ui::a11y::button(&rresp, tr!("app-crumb-refresh"));
     if rresp.hovered() {
-        ui.painter().rect_filled(rr, CornerRadius::same(radius::ROW), seg_hover(&p));
+        ui.painter().rect_filled(rr, crate::theme::tokens::radius::same(radius::ROW), seg_hover(&p));
     }
     ui.painter().text(
         rr.center(),
@@ -269,6 +259,38 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     if bg.clicked() {
         start_edit(c);
     }
+}
+
+/// The crumbs that go under the "…" button when the path does not fit in `avail`. The
+/// current folder's name matters most: the middle goes first, keeping as many folders next
+/// to the current one as fit, then the first crumb too. What is left for the name, if it
+/// still is too long, is its own width minus the cut `fit::ends` makes.
+fn collapsed(widths: &[f32], avail: f32) -> Vec<usize> {
+    let n = widths.len();
+    let total: f32 = widths.iter().sum::<f32>() + SEP_W * (n.saturating_sub(1)) as f32;
+    if total <= avail || n < 2 {
+        return Vec::new();
+    }
+    let more = MORE_W + SEP_W;
+    let last = widths[n - 1];
+    // No room for the first crumb next to "…" and the name.
+    let first = widths[0] + SEP_W;
+    if n == 2 || first + more + last > avail {
+        let mut used = more + last;
+        let mut keep_from = n - 1;
+        while keep_from > 0 && used + widths[keep_from - 1] + SEP_W <= avail {
+            used += widths[keep_from - 1] + SEP_W;
+            keep_from -= 1;
+        }
+        return (0..keep_from).collect();
+    }
+    let mut used = first + more + last;
+    let mut keep_from = n - 1;
+    while keep_from > 1 && used + widths[keep_from - 1] + SEP_W <= avail {
+        used += widths[keep_from - 1] + SEP_W;
+        keep_from -= 1;
+    }
+    (1..keep_from).collect()
 }
 
 /// Hover fill of a crumb / chevron / button inside the (hovered) omnibar field.
@@ -302,7 +324,7 @@ fn sep(
     crate::ui::a11y::button(&resp, tr!("app-crumb-subfolders"));
     let open = Popup::is_id_open(ui.ctx(), Popup::default_response_id(&resp));
     if resp.hovered() || open {
-        ui.painter().rect_filled(r, CornerRadius::same(radius::CONTROL), seg_hover(&p));
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::CONTROL), seg_hover(&p));
     }
     let glyph = if open { ph::CARET_DOWN } else { ph::CARET_RIGHT };
     ui.painter().text(
@@ -324,7 +346,7 @@ fn sep(
                         r.center(),
                         Align2::CENTER_CENTER,
                         tr!("app-crumb-cant-read"),
-                        FontId::proportional(12.0),
+                        crate::theme::font::ui(12.0),
                         p.text_tertiary,
                     );
                 } else {
@@ -349,7 +371,7 @@ fn sep(
                         if is_current {
                             ui.painter().rect_stroke(
                                 r.rect,
-                                CornerRadius::same(radius::ROW),
+                                crate::theme::tokens::radius::same(radius::ROW),
                                 Stroke::new(1.0, p.accent.gamma_multiply(0.5)),
                                 StrokeKind::Inside,
                             );
@@ -402,7 +424,7 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
     let te = TextEdit::singleline(&mut c.address.text)
         .id(id)
         .frame(Frame::NONE)
-        .font(FontId::proportional(13.0))
+        .font(crate::theme::font::ui(13.0))
         .desired_width(inner.width())
         .min_size(vec2(0.0, inner.height()))
         .align(egui::Align2::LEFT_CENTER);
@@ -455,5 +477,37 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
                     }
                 });
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_path_that_fits_stays_whole() {
+        assert!(collapsed(&[80.0, 60.0, 100.0], 400.0).is_empty());
+        assert!(collapsed(&[80.0], 10.0).is_empty(), "nothing to collapse");
+    }
+
+    #[test]
+    fn the_middle_goes_first_and_folders_near_the_name_stay() {
+        // 80 > … > 50 > 100 fits, 60 and 70 go.
+        let w = [80.0, 70.0, 60.0, 50.0, 100.0];
+        assert_eq!(collapsed(&w, 80.0 + 18.0 + 28.0 + 18.0 + 50.0 + 18.0 + 100.0), vec![1, 2]);
+    }
+
+    #[test]
+    fn the_first_crumb_goes_before_the_name_is_cut() {
+        // "…" and the name fit, the first crumb does not.
+        assert_eq!(collapsed(&[80.0, 70.0, 100.0], 28.0 + 18.0 + 100.0 + 20.0), vec![0, 1]);
+        assert_eq!(collapsed(&[80.0, 100.0], 150.0), vec![0], "also with two crumbs");
+        // Too narrow even for the name alone: still only the name, which gets cut.
+        assert_eq!(collapsed(&[80.0, 70.0, 300.0], 120.0), vec![0, 1]);
+    }
+
+    #[test]
+    fn freed_room_goes_to_the_folders_next_to_the_name() {
+        assert_eq!(collapsed(&[200.0, 70.0, 60.0, 100.0], 28.0 + 18.0 + 60.0 + 18.0 + 100.0), vec![0, 1]);
     }
 }

@@ -3,15 +3,15 @@
 //! the chat. It also offers "Undo everything <client> did" for every client that changed
 //! something in this session.
 
-use egui::{Align, Align2, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, Ui, pos2};
+use egui::{Align, Align2, Frame, Layout, Margin, RichText, ScrollArea, Stroke, Ui, pos2};
 
 use super::cards::{self, CardAction};
 use super::{PanelAct, Tone, button};
 use crate::app::SoyuzApp;
 use crate::theme::Palette;
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::radius;
-use crate::ui::views::flow::semibold;
 
 /// Whether the area has anything to show.
 pub fn visible(app: &SoyuzApp) -> bool {
@@ -42,7 +42,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
         Frame::new()
             .fill(p.bg_surface2.gamma_multiply(0.6))
             .stroke(Stroke::new(1.0, border))
-            .corner_radius(CornerRadius::same(radius::CARD))
+            .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
             .inner_margin(Margin::same(8))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -61,7 +61,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                         0 => tr!("ai-mcp-clients").to_string(),
                         n => tr!("ai-mcp-waiting", count = n),
                     };
-                    ui.label(RichText::new(sub).size(11.0).color(if waiting > 0 {
+                    ui.label(RichText::new(sub).size(crate::theme::font::px(11.0)).color(if waiting > 0 {
                         p.warning
                     } else {
                         p.text_tertiary

@@ -64,7 +64,10 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.label(icons::icon(ph::FOLDER_SIMPLE, 16.0).color(p.accent));
                 ui.add(
                     egui::Label::new(
-                        RichText::new(dir.display().to_string()).monospace().size(12.0).color(p.text_primary),
+                        RichText::new(dir.display().to_string())
+                            .monospace()
+                            .size(crate::theme::font::px(12.0))
+                            .color(p.text_primary),
                     )
                     .truncate(),
                 );
@@ -77,7 +80,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 if small_button(ui, Some(ph::ARROWS_CLOCKWISE), tr!("automation-scripts-reload"), false).clicked() {
                     app.core.cmds.push(Cmd::Automation(AutoCmd::ReloadScripts));
                 }
-                ui.label(RichText::new(tr!("automation-scripts-new-from")).size(11.5).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("automation-scripts-new-from"))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_tertiary),
+                );
                 for (file, _) in TEMPLATES {
                     if small_button(ui, Some(ph::FILE_PLUS), template_title(file), false).clicked() {
                         app.core.cmds.push(Cmd::Automation(AutoCmd::NewScript(file)));
@@ -85,7 +92,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
             });
             ui.add_space(6.0);
-            ui.label(RichText::new(tr!("automation-scripts-folder-note")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("automation-scripts-folder-note"))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_tertiary),
+            );
         });
     }
     let Some(set) = app.core.automation.set.clone() else {
@@ -112,9 +123,13 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             columns = columns,
             previewers = previewers
         );
-        ui.label(RichText::new(summary).size(11.5).color(p.text_tertiary));
+        ui.label(RichText::new(summary).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
         if columns > 4 {
-            ui.label(RichText::new(tr!("automation-scripts-columns-capped")).size(11.5).color(p.warning));
+            ui.label(
+                RichText::new(tr!("automation-scripts-columns-capped"))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.warning),
+            );
         }
     }
     let mut toggle: Option<(String, bool)> = None;
@@ -134,7 +149,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     (ph::CHECK_CIRCLE, p.success)
                 };
                 ui.label(icons::icon(glyph, 16.0).color(color));
-                ui.label(RichText::new(&sc.file).monospace().size(13.5).color(p.text_primary));
+                ui.label(RichText::new(&sc.file).monospace().size(crate::theme::font::px(13.5)).color(p.text_primary));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let mut on = sc.enabled;
                     if switch(ui, &mut on).changed() {
@@ -146,13 +161,18 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.add_space(6.0);
                 egui::Frame::new()
                     .fill(p.danger.gamma_multiply(0.12))
-                    .corner_radius(egui::CornerRadius::same(6))
+                    .corner_radius(crate::theme::tokens::radius::same(6))
                     .inner_margin(egui::Margin::same(8))
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.add(
-                            egui::Label::new(RichText::new(e.to_string()).monospace().size(12.0).color(p.danger))
-                                .wrap(),
+                            egui::Label::new(
+                                RichText::new(e.to_string())
+                                    .monospace()
+                                    .size(crate::theme::font::px(12.0))
+                                    .color(p.danger),
+                            )
+                            .wrap(),
                         );
                     });
             }
@@ -163,7 +183,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     egui::Label::new(
                         RichText::new(tr!("automation-scripts-last-run", error = e))
                             .monospace()
-                            .size(11.5)
+                            .size(crate::theme::font::px(11.5))
                             .color(p.warning),
                     )
                     .wrap(),
@@ -176,19 +196,21 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             for a in &sc.actions {
                 ui.horizontal(|ui| {
                     ui.label(icons::icon(if a.menu { ph::LIST } else { ph::LIGHTNING }, 13.0).color(p.accent));
-                    ui.label(RichText::new(&a.title).size(12.5).color(p.text_primary));
+                    ui.label(RichText::new(&a.title).size(crate::theme::font::px(12.5)).color(p.text_primary));
                     ui.label(
                         RichText::new(format!("run_script:{}", sc.action_id(a)))
                             .monospace()
-                            .size(11.0)
+                            .size(crate::theme::font::px(11.0))
                             .color(p.text_tertiary),
                     );
                     if !a.hotkey.is_empty() {
-                        ui.label(RichText::new(&a.hotkey).size(11.0).color(p.text_secondary));
+                        ui.label(RichText::new(&a.hotkey).size(crate::theme::font::px(11.0)).color(p.text_secondary));
                     }
                     if a.menu {
                         ui.label(
-                            RichText::new(tr!("automation-scripts-context-menu")).size(11.0).color(p.text_tertiary),
+                            RichText::new(tr!("automation-scripts-context-menu"))
+                                .size(crate::theme::font::px(11.0))
+                                .color(p.text_tertiary),
                         );
                     }
                 });
@@ -198,7 +220,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     ui.label(icons::icon(ph::COLUMNS, 13.0).color(p.accent));
                     ui.label(
                         RichText::new(tr!("automation-scripts-column", title = &c.title))
-                            .size(12.5)
+                            .size(crate::theme::font::px(12.5))
                             .color(p.text_primary),
                     );
                 });
@@ -212,7 +234,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                             title = &pv.title,
                             exts = pv.extensions.join(", .")
                         ))
-                        .size(12.5)
+                        .size(crate::theme::font::px(12.5))
                         .color(p.text_primary),
                     );
                 });
@@ -220,7 +242,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             if sc.has_rule {
                 ui.horizontal(|ui| {
                     ui.label(icons::icon(ph::ROBOT, 13.0).color(p.accent));
-                    ui.label(RichText::new(tr!("automation-scripts-rule-step")).size(12.5).color(p.text_primary));
+                    ui.label(
+                        RichText::new(tr!("automation-scripts-rule-step"))
+                            .size(crate::theme::font::px(12.5))
+                            .color(p.text_primary),
+                    );
                 });
             }
         });

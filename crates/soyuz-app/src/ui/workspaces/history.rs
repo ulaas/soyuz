@@ -2,7 +2,7 @@
 //! visited, as a tree that keeps the branches back/forward history forgets, with the time
 //! of the last visit. Click a place to go back there.
 
-use egui::{Align2, CornerRadius, FontId, RichText, ScrollArea, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, RichText, ScrollArea, Sense, Stroke, Ui, pos2, vec2};
 
 use super::WsCmd;
 use crate::cmd::Cmd;
@@ -14,7 +14,9 @@ use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::dialogs::{Dialog, DialogCtx};
 
-const ROW_H: f32 = 30.0;
+fn row_h() -> f32 {
+    crate::theme::font::grow(30.0)
+}
 const INDENT: f32 = 16.0;
 
 pub struct HistoryDialog {
@@ -56,16 +58,16 @@ impl Dialog for HistoryDialog {
         ScrollArea::vertical().max_height(420.0).auto_shrink([false, true]).show(ui, |ui| {
             let width = ui.available_width();
             for (k, row) in rows.iter().enumerate() {
-                let (rect, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+                let (rect, resp) = ui.allocate_exact_size(vec2(width, row_h()), Sense::click());
                 let painter = ui.painter_at(rect);
                 if row.current {
-                    painter.rect_filled(rect, CornerRadius::same(radius::ROW), p.accent_subtle);
+                    painter.rect_filled(rect, crate::theme::tokens::radius::same(radius::ROW), p.accent_subtle);
                     if !self.scrolled {
                         resp.scroll_to_me(Some(egui::Align::Center));
                         self.scrolled = true;
                     }
                 } else if resp.hovered() {
-                    painter.rect_filled(rect, CornerRadius::same(radius::ROW), p.bg_surface2);
+                    painter.rect_filled(rect, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
                 }
                 // Tree lines: a vertical guide per level and an elbow into the row.
                 let x0 = rect.left() + 10.0;
@@ -96,7 +98,7 @@ impl Dialog for HistoryDialog {
                 let g = crate::ui::widgets::trunc_galley(
                     &painter,
                     &title,
-                    FontId::proportional(12.5),
+                    crate::theme::font::ui(12.5),
                     p.text_primary,
                     (right - tx).max(40.0),
                 );
@@ -108,7 +110,7 @@ impl Dialog for HistoryDialog {
                     let g = crate::ui::widgets::trunc_galley(
                         &painter,
                         &detail,
-                        FontId::proportional(11.0),
+                        crate::theme::font::ui(11.0),
                         p.text_tertiary,
                         right - dx,
                     );
@@ -120,7 +122,7 @@ impl Dialog for HistoryDialog {
                     pos2(rect.right() - 8.0, rect.center().y),
                     Align2::RIGHT_CENTER,
                     format!("{when}{count}"),
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     p.text_secondary,
                 );
                 let resp = resp.on_hover_text(detail);

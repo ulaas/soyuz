@@ -8,9 +8,7 @@ use std::path::Path;
 
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
-use egui::{
-    Align2, CornerRadius, DragAndDrop, FontId, Key, Margin, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
-};
+use egui::{Align2, DragAndDrop, Key, Margin, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2};
 use soyuz_core::Location;
 use soyuz_core::config::TAG_NAME_MAX_CHARS;
 
@@ -68,10 +66,10 @@ fn rename_editor(ui: &mut Ui, rect: egui::Rect, tag: u8) {
     // The editor takes the whole row height (so the rows below keep their place); the
     // box is drawn slightly inset.
     let frame = rect.shrink2(vec2(0.0, 3.0)).expand(1.0);
-    ui.painter().rect_filled(frame, CornerRadius::same(radius::CONTROL), p.bg_surface1);
+    ui.painter().rect_filled(frame, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface1);
     let te = TextEdit::singleline(&mut r.text)
         .id(id)
-        .font(FontId::proportional(13.0))
+        .font(crate::theme::font::ui(13.0))
         .hint_text(tags::default_name(tag))
         .char_limit(TAG_NAME_MAX_CHARS)
         .frame(egui::Frame::NONE)
@@ -89,7 +87,7 @@ fn rename_editor(ui: &mut Ui, rect: egui::Rect, tag: u8) {
     }
     ui.painter().rect_stroke(
         frame,
-        CornerRadius::same(radius::CONTROL),
+        crate::theme::tokens::radius::same(radius::CONTROL),
         Stroke::new(1.5, p.accent),
         StrokeKind::Outside,
     );
@@ -148,7 +146,7 @@ pub fn sidebar_section(
         let name = tag_name(t);
         if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect.expand(3.0));
-            let cr = CornerRadius::same(radius::ROW);
+            let cr = crate::theme::tokens::radius::same(radius::ROW);
             let hover = ui.ctx().animate_bool_with_time(
                 resp.id.with("hover"),
                 resp.hovered(),
@@ -166,7 +164,7 @@ pub fn sidebar_section(
             }
             let label_color = if active { p.text_primary } else { p.text_primary.gamma_multiply(0.9) };
             if !renaming {
-                let g = trunc_galley(&painter, &name, FontId::proportional(13.0), label_color, rect.width() - 70.0);
+                let g = trunc_galley(&painter, &name, crate::theme::font::ui(13.0), label_color, rect.width() - 70.0);
                 painter.galley(pos2(rect.left() + 34.0, rect.center().y - g.size().y / 2.0), g, label_color);
             }
             let n = counts[t as usize];
@@ -175,7 +173,7 @@ pub fn sidebar_section(
                     pos2(rect.right() - 10.0, rect.center().y),
                     Align2::RIGHT_CENTER,
                     crate::ui::statusbar::group_thousands(n),
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     p.text_tertiary,
                 );
             }
@@ -237,7 +235,7 @@ fn tag_drop_target(ui: &Ui, resp: &egui::Response, tag: u8) {
     let p = palette(ctx);
     ui.painter().rect_stroke(
         resp.rect,
-        CornerRadius::same(radius::ROW),
+        crate::theme::tokens::radius::same(radius::ROW),
         Stroke::new(1.0, p.tags[tag as usize]),
         StrokeKind::Inside,
     );

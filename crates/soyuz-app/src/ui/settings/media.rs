@@ -278,7 +278,7 @@ fn download_status(ui: &mut Ui, phase: &DlPhase) -> Option<DlAction> {
     let p = palette(ui.ctx());
     let mut action = None;
     let line = |ui: &mut Ui, text: &str, color| {
-        ui.add(egui::Label::new(egui::RichText::new(text).size(12.0).color(color)).wrap());
+        ui.add(egui::Label::new(egui::RichText::new(text).size(crate::theme::font::px(12.0)).color(color)).wrap());
     };
     let busy = |ui: &mut Ui, text: String, frac: Option<f32>, action: &mut Option<DlAction>| {
         line(ui, &text, p.text_secondary);
@@ -328,7 +328,7 @@ fn download_status(ui: &mut Ui, phase: &DlPhase) -> Option<DlAction> {
 fn progress_bar(ui: &mut Ui, width: f32, frac: Option<f32>, label: &str) {
     let p = palette(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(width, 4.0), egui::Sense::hover());
-    ui.painter().rect_filled(r, egui::CornerRadius::same(2), p.border_subtle);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(2), p.border_subtle);
     let fill = match frac {
         Some(f) => egui::Rect::from_min_size(r.min, vec2((r.width() * f).max(3.0), r.height())),
         None => {
@@ -340,7 +340,7 @@ fn progress_bar(ui: &mut Ui, width: f32, frac: Option<f32>, label: &str) {
         }
     };
     if fill.width() > 0.0 {
-        ui.painter().rect_filled(fill, egui::CornerRadius::same(2), p.accent);
+        ui.painter().rect_filled(fill, crate::theme::tokens::radius::same(2), p.accent);
     }
     crate::ui::a11y::progress(ui, ui.scope_id().with("ffmpeg-download"), r, label, frac);
 }
@@ -352,12 +352,12 @@ fn mib(b: u64) -> String {
 /// A small coloured status label (icon + text) in the control column.
 fn status_pill(ui: &mut Ui, icon: &str, label: &str, ok: bool) {
     let p = palette(ui.ctx());
-    let font = egui::FontId::proportional(12.0);
+    let font = crate::theme::font::ui(12.0);
     let g = ui.painter().layout_no_wrap(label.to_string(), font.clone(), p.text_primary);
     let w = g.size().x + 34.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(w, 24.0), egui::Sense::hover());
     let (fill, fg) = if ok { (p.success.gamma_multiply(0.16), p.success) } else { (p.bg_surface3, p.text_secondary) };
-    ui.painter().rect_filled(rect, egui::CornerRadius::same(12), fill);
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(12), fill);
     ui.painter().text(
         pos2(rect.left() + 14.0, rect.center().y),
         Align2::CENTER_CENTER,

@@ -2,7 +2,7 @@
 //! drawn at the real relative row heights; clicking a card selects that density.
 
 use egui::accesskit::Role;
-use egui::{Align2, CornerRadius, FontId, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Align2, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::config::Density;
 
 use crate::theme::icons::ph;
@@ -61,7 +61,7 @@ pub fn gallery(ui: &mut Ui, density: &mut Density) -> bool {
                     continue;
                 }
                 let painter = ui.painter();
-                let rc = CornerRadius::same(radius::CARD);
+                let rc = crate::theme::tokens::radius::same(radius::CARD);
                 let hover = ui.ctx().animate_bool_with_time(
                     resp.id.with("hover"),
                     resp.hovered(),
@@ -76,7 +76,7 @@ pub fn gallery(ui: &mut Ui, density: &mut Density) -> bool {
                 painter.rect_stroke(rect, rc, border, StrokeKind::Inside);
                 // Mini list.
                 let area = Rect::from_min_size(rect.min + vec2(8.0, 8.0), vec2(w - 16.0, preview_h - 8.0));
-                painter.rect_filled(area, CornerRadius::same(radius::ROW), p.bg_window);
+                painter.rect_filled(area, crate::theme::tokens::radius::same(radius::ROW), p.bg_window);
                 let rh = d.row_height() * SCALE;
                 let items = [
                     (ph::FOLDER_SIMPLE, p.glyph_folder, 0.62),
@@ -89,7 +89,7 @@ pub fn gallery(ui: &mut Ui, density: &mut Density) -> bool {
                         vec2(area.width() - 8.0, rh - 1.0),
                     );
                     if i == 0 {
-                        painter.rect_filled(r, CornerRadius::same(3), p.accent_subtle);
+                        painter.rect_filled(r, crate::theme::tokens::radius::same(3), p.accent_subtle);
                     }
                     let icon = (rh * 0.55).clamp(7.0, 14.0);
                     painter.text(
@@ -104,7 +104,11 @@ pub fn gallery(ui: &mut Ui, density: &mut Density) -> bool {
                         pos2(bar_x, r.center().y - 1.5),
                         vec2(((r.right() - bar_x - 6.0) * len).max(6.0), 3.0),
                     );
-                    painter.rect_filled(bar, CornerRadius::same(2), p.text_tertiary.gamma_multiply(0.7));
+                    painter.rect_filled(
+                        bar,
+                        crate::theme::tokens::radius::same(2),
+                        p.text_tertiary.gamma_multiply(0.7),
+                    );
                 }
                 // Caption.
                 let ty = rect.bottom() - 15.0;
@@ -112,14 +116,14 @@ pub fn gallery(ui: &mut Ui, density: &mut Density) -> bool {
                     pos2(rect.left() + 10.0, ty),
                     Align2::LEFT_CENTER,
                     label,
-                    FontId::proportional(12.5),
+                    crate::theme::font::ui(12.5),
                     if selected { p.text_primary } else { p.text_secondary },
                 );
                 painter.text(
                     pos2(rect.right() - 10.0, ty),
                     Align2::RIGHT_CENTER,
                     if selected { ph::CHECK_CIRCLE.to_string() } else { format!("{} px", d.row_height() as u32) },
-                    if selected { icons::font_fill(14.0) } else { FontId::proportional(11.0) },
+                    if selected { icons::font_fill(14.0) } else { crate::theme::font::ui(11.0) },
                     if selected { p.accent } else { p.text_tertiary },
                 );
                 if resp.has_focus() {

@@ -4,7 +4,7 @@
 //! them. Every action entry dispatches through `Cmd::PaneAction`, so menus, keys and
 //! toolbar behave identically.
 
-use egui::{Align2, CornerRadius, Response, Sense, Stroke, Ui, vec2};
+use egui::{Align2, Response, Sense, Stroke, Ui, vec2};
 use soyuz_core::ViewMode;
 use soyuz_core::config::Keymap;
 
@@ -215,7 +215,7 @@ fn strip(ui: &mut Ui, kind: StripKind, items: Vec<Item>, cmds: &mut Vec<Cmd>) {
                 }
                 icon => {
                     if hot {
-                        ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.accent_subtle);
+                        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), p.accent_subtle);
                     }
                     let color = if !it.enabled {
                         p.text_tertiary

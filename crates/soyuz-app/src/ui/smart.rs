@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use egui::{Align, Align2, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, Align2, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use soyuz_core::Location;
 
 use crate::app::SoyuzApp;
@@ -92,12 +92,12 @@ pub fn status_chip(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
         Phase::Idle => tr!("views-index-chip-idle").into(),
         Phase::Failed(_) => tr!("views-index-chip-off").into(),
     };
-    let font = FontId::proportional(11.5);
+    let font = crate::theme::font::ui(11.5);
     let tw = ui.painter().layout_no_wrap(label.clone(), font.clone(), p.text_secondary).size().x;
     let (r, resp) = ui.allocate_exact_size(vec2(tw + 26.0, 18.0), Sense::click());
     crate::ui::a11y::button(&resp, &label);
     if resp.hovered() {
-        ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2);
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_surface2);
     }
     let icon_c = r.left_center() + vec2(10.0, 0.0);
     let color = if failed { p.warning } else { p.text_secondary };
@@ -168,7 +168,7 @@ impl Dialog for SmartDialog {
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
         let label = |ui: &mut Ui, s: &str| {
-            ui.label(RichText::new(s).font(FontId::proportional(11.5)).color(p.text_secondary));
+            ui.label(RichText::new(s).font(crate::theme::font::ui(11.5)).color(p.text_secondary));
         };
         label(ui, tr!("views-smart-name"));
         let n = ui.add(
@@ -195,11 +195,11 @@ impl Dialog for SmartDialog {
         match (&parsed, self.folder.query.trim().is_empty()) {
             (_, true) => {}
             (Err(e), false) => {
-                ui.label(RichText::new(&e.msg).font(FontId::proportional(11.5)).color(p.danger));
+                ui.label(RichText::new(&e.msg).font(crate::theme::font::ui(11.5)).color(p.danger));
             }
             (Ok(_), false) => {
                 if let Some(text) = coverage_text(&self.folder.query, self.folder.include_hidden) {
-                    ui.label(RichText::new(text).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                    ui.label(RichText::new(text).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
                 }
             }
         }
@@ -208,7 +208,7 @@ impl Dialog for SmartDialog {
         ui.add_space(8.0);
         egui::Frame::new()
             .fill(p.bg_surface2)
-            .corner_radius(CornerRadius::same(8))
+            .corner_radius(crate::theme::tokens::radius::same(8))
             .inner_margin(Margin::symmetric(10, 8))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -219,12 +219,12 @@ impl Dialog for SmartDialog {
                             ui.set_min_width(250.0);
                             ui.add(
                                 egui::Label::new(
-                                    RichText::new(example).font(FontId::monospace(11.0)).color(p.text_primary),
+                                    RichText::new(example).font(crate::theme::font::mono(11.0)).color(p.text_primary),
                                 )
                                 .truncate(),
                             );
                         });
-                        ui.label(RichText::new(what).font(FontId::proportional(11.0)).color(p.text_tertiary));
+                        ui.label(RichText::new(what).font(crate::theme::font::ui(11.0)).color(p.text_tertiary));
                     });
                 }
             });
@@ -239,7 +239,7 @@ impl Dialog for SmartDialog {
             if let Some(e) = &err
                 && !self.folder.name.is_empty()
             {
-                ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                ui.label(RichText::new(e).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
             }
         });
         if ui.input(|i| i.key_pressed(Key::Enter)) {
@@ -270,7 +270,9 @@ impl Dialog for ConfirmDelete {
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
         ui.label(RichText::new(tr!("views-smart-delete-confirm", name = &self.name)).color(p.text_primary));
-        ui.label(RichText::new(tr!("views-smart-delete-body")).font(FontId::proportional(11.5)).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("views-smart-delete-body")).font(crate::theme::font::ui(11.5)).color(p.text_tertiary),
+        );
         ui.add_space(14.0);
         let mut ok = false;
         let mut cancel = false;

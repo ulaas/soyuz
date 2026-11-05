@@ -2,7 +2,7 @@
 //! the action, every planned job, and Run / Cancel. Run submits them as normal jobs
 //! (activity panel, conflicts, undo); Cancel, Esc or clicking outside drops them.
 
-use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, Ui};
+use egui::{Align, Frame, Layout, Margin, RichText, ScrollArea, Stroke, Ui};
 use soyuz_jobs::JobKindBrief;
 
 use crate::models::dialogs::ScriptApprovalModel;
@@ -30,12 +30,14 @@ pub(crate) fn icon(m: &ScriptApprovalModel) -> &'static str {
 /// Draw the script approval card. Returns `false` to close.
 pub(crate) fn show(ui: &mut Ui, m: &mut ScriptApprovalModel, ctx: &mut DialogCtx<'_>) -> bool {
     let p = palette(ui.ctx());
-    ui.label(RichText::new(tr!("automation-approval-intro")).size(12.5).color(p.text_secondary));
+    ui.label(
+        RichText::new(tr!("automation-approval-intro")).size(crate::theme::font::px(12.5)).color(p.text_secondary),
+    );
     ui.add_space(10.0);
     Frame::new()
         .fill(p.bg_surface2)
         .stroke(Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(crate::theme::tokens::radius::same(10))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -46,20 +48,25 @@ pub(crate) fn show(ui: &mut Ui, m: &mut ScriptApprovalModel, ctx: &mut DialogCtx
                         let danger = matches!(b, JobKindBrief::Trash | JobKindBrief::Delete);
                         ui.label(icons::icon(glyph(b), 14.0).color(if danger { p.danger } else { p.accent }));
                         // Names come from disk: plain text, never interpreted.
-                        ui.add(egui::Label::new(RichText::new(&j.summary).size(12.5).color(p.text_primary)).truncate());
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&j.summary).size(crate::theme::font::px(12.5)).color(p.text_primary),
+                            )
+                            .truncate(),
+                        );
                     });
                 }
                 if m.jobs.len() > SHOWN {
                     ui.label(
                         RichText::new(tr!("automation-and-more", count = m.jobs.len() - SHOWN))
-                            .size(11.5)
+                            .size(crate::theme::font::px(11.5))
                             .color(p.text_tertiary),
                     );
                 }
             });
         });
     ui.add_space(8.0);
-    ui.label(RichText::new(tr!("automation-approval-note")).size(11.5).color(p.text_tertiary));
+    ui.label(RichText::new(tr!("automation-approval-note")).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
     ui.add_space(14.0);
     let mut keep = true;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

@@ -1,7 +1,7 @@
 //! Appearance page: theme, accent, density, fonts, scale, motion, icons and thumbnails,
 //! a live preview card, and per-token color overrides (`[theme.colors]`).
 
-use egui::{Align2, Color32, CornerRadius, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, Rect, RichText, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::SizeStyle;
 use soyuz_core::config::{Backdrop, FallbackFonts, IconStyle, NameTruncation};
 
@@ -459,7 +459,9 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.horizontal(|ui| {
                 let n = d.theme.colors.len();
                 ui.label(
-                    RichText::new(tr!("settings-appearance-overrides", count = n)).size(11.5).color(p.text_tertiary),
+                    RichText::new(tr!("settings-appearance-overrides", count = n))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_tertiary),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if n > 0
@@ -488,8 +490,17 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                         }
                         ui.add_space(4.0);
                         ui.vertical(|ui| {
-                            ui.label(RichText::new(crate::i18n::t_dyn(label)).size(12.0).color(p.text_primary));
-                            ui.label(RichText::new(*name).size(10.5).monospace().color(p.text_tertiary));
+                            ui.label(
+                                RichText::new(crate::i18n::t_dyn(label))
+                                    .size(crate::theme::font::px(12.0))
+                                    .color(p.text_primary),
+                            );
+                            ui.label(
+                                RichText::new(*name)
+                                    .size(crate::theme::font::px(10.5))
+                                    .monospace()
+                                    .color(p.text_tertiary),
+                            );
                         });
                         if overridden
                             && small_button(ui, Some(ph::X), "", false)
@@ -565,7 +576,7 @@ fn icon_pack_strip(ui: &mut Ui, p: &Palette) {
             pos2(c.x, rect.bottom() - 6.0),
             Align2::CENTER_CENTER,
             ext,
-            FontId::proportional(10.0),
+            crate::theme::font::ui(10.0),
             p.text_tertiary,
         );
     }
@@ -578,7 +589,7 @@ fn preview_card(ui: &mut Ui, p: &Palette, row_h: f32, colored: bool) {
     let h = 64.0 + row_h * 4.0;
     let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
     let painter = ui.painter();
-    let r10 = CornerRadius::same(10);
+    let r10 = crate::theme::tokens::radius::same(10);
     painter.rect_filled(rect, r10, p.bg_window);
     painter.rect_stroke(rect, r10, Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
     // Sidebar.
@@ -594,7 +605,7 @@ fn preview_card(ui: &mut Ui, p: &Palette, row_h: f32, colored: bool) {
     {
         let rr = Rect::from_min_size(pos2(side.left() + 8.0, side.top() + 14.0 + i as f32 * 30.0), vec2(134.0, 26.0));
         if *active {
-            painter.rect_filled(rr, CornerRadius::same(6), p.accent_subtle);
+            painter.rect_filled(rr, crate::theme::tokens::radius::same(6), p.accent_subtle);
         }
         let gfont = if *active { icons::font_fill(13.0) } else { icons::font(13.0) };
         painter.text(
@@ -608,7 +619,7 @@ fn preview_card(ui: &mut Ui, p: &Palette, row_h: f32, colored: bool) {
             pos2(rr.left() + 30.0, rr.center().y),
             Align2::LEFT_CENTER,
             *label,
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_primary,
         );
     }
@@ -616,12 +627,12 @@ fn preview_card(ui: &mut Ui, p: &Palette, row_h: f32, colored: bool) {
     let main = Rect::from_min_max(pos2(side.right(), rect.top()), rect.max);
     let crumb =
         Rect::from_min_size(pos2(main.left() + 12.0, main.top() + 10.0), vec2((main.width() - 24.0).max(40.0), 26.0));
-    painter.rect_filled(crumb, CornerRadius::same(6), p.bg_surface2);
+    painter.rect_filled(crumb, crate::theme::tokens::radius::same(6), p.bg_surface2);
     painter.text(
         pos2(crumb.left() + 10.0, crumb.center().y),
         Align2::LEFT_CENTER,
         tr!("settings-appearance-preview-crumb"),
-        FontId::proportional(12.0),
+        crate::theme::font::ui(12.0),
         p.text_secondary,
     );
     // Rows.
@@ -637,10 +648,10 @@ fn preview_card(ui: &mut Ui, p: &Palette, row_h: f32, colored: bool) {
             vec2(main.width() - 24.0, row_h - 2.0),
         );
         if *selected {
-            painter.rect_filled(rr, CornerRadius::same(6), p.accent_subtle);
+            painter.rect_filled(rr, crate::theme::tokens::radius::same(6), p.accent_subtle);
             painter.rect_stroke(
                 rr,
-                CornerRadius::same(6),
+                crate::theme::tokens::radius::same(6),
                 Stroke::new(1.0, p.accent.gamma_multiply(0.6)),
                 StrokeKind::Inside,
             );
@@ -651,14 +662,14 @@ fn preview_card(ui: &mut Ui, p: &Palette, row_h: f32, colored: bool) {
             pos2(rr.left() + 36.0, rr.center().y),
             Align2::LEFT_CENTER,
             *name,
-            FontId::proportional(13.0),
+            crate::theme::font::ui(13.0),
             p.text_primary,
         );
         painter.text(
             pos2(rr.right() - 12.0, rr.center().y),
             Align2::RIGHT_CENTER,
             size.as_str(),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_secondary,
         );
     }

@@ -94,7 +94,7 @@ family = "Hack"
 family = "Cascadia Mono"
 
 [fonts.numbers]                  # sizes, dates, counters, progress figures
-family = ""                      # "" = the ui font ("IBM Plex Sans" / "Noto Sans" have tabular digits)
+family = ""                      # "" = "Inter Tabular" with Inter, else the ui font ("IBM Plex Sans" / "Noto Sans" have tabular digits)
 
 [theme.colors]                   # optional overrides, hex strings, same names as the design tokens
 # accent = "#5B8CFF"

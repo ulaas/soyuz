@@ -75,11 +75,10 @@ pub fn rgba(c: Color32) -> Rgba {
 
 /// A neutral font request as an egui font id.
 pub fn font_id(f: TextFont) -> FontId {
-    let family = match f.family {
-        FontHint::Monospace => FontFamily::Monospace,
-        FontHint::Proportional => FontFamily::Proportional,
-    };
-    FontId::new(f.size, family)
+    match f.family {
+        FontHint::Monospace => crate::theme::font::mono(f.size),
+        FontHint::Proportional => crate::theme::font::ui(f.size),
+    }
 }
 
 /// One styled line as a single-row `LayoutJob` (egui has no bold flag; runs keep their
@@ -113,8 +112,8 @@ pub fn layout_job(line: &StyledLine) -> LayoutJob {
 
 /// The font of text, code and diff previews: the code role (`[fonts.code]`, Hack by
 /// default) at 13 pt plus its size offset, and the row height that goes with it.
-pub fn preview_code_font(ctx: &egui::Context) -> (FontId, f32) {
-    let font = crate::theme::fonts::code(ctx, 13.0);
+pub fn preview_code_font() -> (FontId, f32) {
+    let font = crate::theme::font::mono(13.0);
     let row_h = (font.size * 1.5).round();
     (font, row_h)
 }
@@ -171,7 +170,7 @@ mod tests {
         line.append(" x", RunStyle::plain(font, [255; 4]));
         let mut want = LayoutJob::default();
         let fmt = |c: Color32, italics| TextFormat {
-            font_id: FontId::monospace(12.0),
+            font_id: crate::theme::font::mono(12.0),
             color: c,
             italics,
             ..Default::default()
@@ -180,7 +179,7 @@ mod tests {
         want.append(" x", 0.0, fmt(Color32::WHITE, false));
         want.wrap.max_rows = 1;
         assert_eq!(layout_job(&line), want);
-        let mono = FontId::monospace(14.5);
+        let mono = crate::theme::font::mono(14.5);
         let job = layout_job_mono(&line, &mono);
         assert!(job.sections.iter().all(|s| s.format.font_id == mono && !s.format.italics));
         assert_eq!(job.text, want.text);

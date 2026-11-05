@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Galley, Painter, Pos2, Rect, Response, RichText, Role, Sense, Stroke,
-    StrokeKind, TextStyle, Ui, WidgetInfo, pos2, vec2,
+    Align2, Color32, FontId, Galley, Painter, Pos2, Rect, Response, RichText, Role, Sense, Stroke, StrokeKind,
+    TextStyle, Ui, WidgetInfo, pos2, vec2,
 };
 
 use crate::theme::apply::CAPTION;
@@ -23,13 +23,13 @@ pub fn focus_ring(ui: &Ui, rect: Rect) {
     let painter = ui.painter();
     painter.rect_stroke(
         rect.expand(1.0),
-        CornerRadius::same(radius::ROW + 1),
+        crate::theme::tokens::radius::same(radius::ROW + 1),
         Stroke::new(1.0, p.bg_window),
         StrokeKind::Outside,
     );
     painter.rect_stroke(
         rect.expand(2.0),
-        CornerRadius::same(radius::ROW + 2),
+        crate::theme::tokens::radius::same(radius::ROW + 2),
         Stroke::new(2.0, p.accent),
         StrokeKind::Outside,
     );
@@ -79,7 +79,7 @@ pub fn collapsible_header(ui: &mut Ui, text: &str, open: &mut bool) -> Response 
             pos2(rect.left() + 10.0, rect.center().y),
             Align2::LEFT_CENTER,
             caption_upper(text),
-            FontId::proportional(11.0),
+            crate::theme::font::ui(11.0),
             color,
         );
         let t = ui.ctx().animate_bool(resp.id.with("open"), *open);
@@ -110,13 +110,13 @@ pub struct NavRow<'a> {
 impl NavRow<'_> {
     pub fn show(self, ui: &mut Ui) -> Response {
         let p = palette(ui.ctx());
-        let base = size::ROW_COZY.max(ui.spacing().interact_size.y + 4.0);
+        let base = crate::theme::font::height(size::ROW_COZY, 13.0).max(ui.spacing().interact_size.y + 4.0);
         let height = if self.usage.is_some() { base + 8.0 } else { base };
         let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click_and_drag());
         crate::ui::a11y::toggle(&response, self.label, self.active);
         if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect.expand(3.0));
-            let rounding = CornerRadius::same(radius::ROW);
+            let rounding = crate::theme::tokens::radius::same(radius::ROW);
             let hover = ui.ctx().animate_bool_with_time(
                 response.id.with("hover"),
                 response.hovered(),
@@ -133,7 +133,7 @@ impl NavRow<'_> {
             painter.text(pos2(rect.left() + 10.0, text_y), Align2::LEFT_CENTER, self.icon, icon_font, icon_color);
             let label_color = if self.active { p.text_primary } else { p.text_primary.gamma_multiply(0.9) };
             let max_w = rect.width() - 34.0 - 8.0;
-            let galley = trunc_galley(&painter, self.label, FontId::proportional(13.0), label_color, max_w);
+            let galley = trunc_galley(&painter, self.label, crate::theme::font::ui(13.0), label_color, max_w);
             painter.galley(pos2(rect.left() + 34.0, text_y - galley.size().y / 2.0), galley, label_color);
             if let Some(used) = self.usage {
                 let bar = Rect::from_min_size(
@@ -160,10 +160,10 @@ pub fn usage_bar(ui: &Ui, p: &Palette, rect: Rect, used: f32) {
         UsageLevel::Normal => p.accent,
     };
     let painter = ui.painter();
-    painter.rect_filled(rect, CornerRadius::same(2), p.border_subtle);
+    painter.rect_filled(rect, crate::theme::tokens::radius::same(2), p.border_subtle);
     let mut fill = rect;
     fill.set_width((rect.width() * used).max(2.0));
-    painter.rect_filled(fill, CornerRadius::same(2), color);
+    painter.rect_filled(fill, crate::theme::tokens::radius::same(2), color);
 }
 
 /// Frameless square icon button (fill appears on hover).
@@ -199,7 +199,7 @@ fn icon_toggle_styled(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool, on
             enabled && resp.hovered(),
             crate::theme::anim(ui.ctx(), 0.10),
         );
-        let rounding = CornerRadius::same(radius::ROW);
+        let rounding = crate::theme::tokens::radius::same(radius::ROW);
         let ring = resp.has_focus() && (!rail || p.high_contrast());
         let focus_fill = resp.has_focus() && rail && !ring;
         if rail {
@@ -259,7 +259,7 @@ pub fn kbd(ui: &mut Ui, text: &str) -> Response {
     egui::Frame::new()
         .fill(p.bg_surface2)
         .stroke(Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(radius::CONTROL))
+        .corner_radius(crate::theme::tokens::radius::same(radius::CONTROL))
         .inner_margin(egui::Margin::symmetric(6, 2))
         .show(ui, |ui| {
             ui.label(RichText::new(text).text_style(TextStyle::Small).color(p.text_secondary));
@@ -332,7 +332,7 @@ pub fn hidden_note(ui: &mut Ui, name: &str) {
         ui.spacing_mut().item_spacing.x = 4.0;
         hidden_badge(ui, name);
         ui.add(
-            egui::Label::new(revealed_job(name, &FontId::proportional(11.5), p.warning))
+            egui::Label::new(revealed_job(name, &crate::theme::font::ui(11.5), p.warning))
                 .truncate()
                 .sense(Sense::hover()),
         )
@@ -387,7 +387,7 @@ pub fn menu_item_marked(
     if ui.is_rect_visible(rect) {
         let hovered = enabled && (marked || resp.hovered() || resp.has_focus());
         if hovered {
-            ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.accent_subtle);
+            ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(radius::ROW), p.accent_subtle);
         }
         let fg = if enabled { p.text_primary } else { p.text_tertiary };
         let icon_color = if !enabled {
@@ -407,14 +407,14 @@ pub fn menu_item_marked(
             );
         }
         // Labels can be folder names: hidden controls are shown as tokens.
-        let g = ui.painter().layout_job(revealed_job(label, &FontId::proportional(13.0), fg));
+        let g = ui.painter().layout_job(revealed_job(label, &crate::theme::font::ui(13.0), fg));
         ui.painter().galley(pos2(rect.left() + 34.0, rect.center().y - g.size().y / 2.0), g, fg);
         if let Some(s) = shortcut {
             ui.painter().text(
                 pos2(rect.right() - 10.0, rect.center().y),
                 Align2::RIGHT_CENTER,
                 s,
-                FontId::proportional(11.5),
+                crate::theme::font::ui(11.5),
                 p.text_tertiary,
             );
         }
@@ -459,7 +459,7 @@ pub fn menu_caption(ui: &mut Ui, text: &str) {
         pos2(rect.left() + 10.0, rect.center().y + 2.0),
         Align2::LEFT_CENTER,
         caption_upper(text),
-        FontId::proportional(10.5),
+        crate::theme::font::ui(10.5),
         p.text_tertiary,
     );
 }
@@ -469,17 +469,17 @@ pub fn segmented(ui: &mut Ui, items: &[(&str, &str)], selected: usize, cell: egu
     let p = palette(ui.ctx());
     let total = vec2(cell.x * items.len() as f32 + 4.0, cell.y + 4.0);
     let (rect, _) = ui.allocate_exact_size(total, Sense::hover());
-    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.bg_surface2);
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
     let mut clicked = None;
     // Animated selection thumb.
     let target = selected as f32;
     let id = ui.scope_id().with(("segmented", rect.min.x as i32, rect.min.y as i32));
     let pos = ui.ctx().animate_value_with_time(id, target, crate::theme::anim(ui.ctx(), 0.14));
     let thumb = Rect::from_min_size(pos2(rect.left() + 2.0 + pos * cell.x, rect.top() + 2.0), cell);
-    ui.painter().rect_filled(thumb, CornerRadius::same(radius::CONTROL + 1), p.bg_surface1);
+    ui.painter().rect_filled(thumb, crate::theme::tokens::radius::same(radius::CONTROL + 1), p.bg_surface1);
     ui.painter().rect_stroke(
         thumb,
-        CornerRadius::same(radius::CONTROL + 1),
+        crate::theme::tokens::radius::same(radius::CONTROL + 1),
         Stroke::new(1.0, p.border_subtle),
         StrokeKind::Inside,
     );
@@ -536,10 +536,10 @@ pub fn mini_slider(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive
     resp.widget_info(|| WidgetInfo::slider(true, v, tr!("app-icon-size")));
     let t = ((*value - lo) / (hi - lo)).clamp(0.0, 1.0);
     let track = Rect::from_center_size(rect.center(), vec2(rect.width() - 12.0, 3.0));
-    ui.painter().rect_filled(track, CornerRadius::same(2), p.border_strong);
+    ui.painter().rect_filled(track, crate::theme::tokens::radius::same(2), p.border_strong);
     let mut filled = track;
     filled.set_width(track.width() * t);
-    ui.painter().rect_filled(filled, CornerRadius::same(2), p.accent);
+    ui.painter().rect_filled(filled, crate::theme::tokens::radius::same(2), p.accent);
     let knob = pos2(track.left() + track.width() * t, rect.center().y);
     let hot = resp.hovered() || resp.dragged();
     ui.painter().circle_filled(knob, if hot { 6.0 } else { 5.0 }, p.text_primary);
@@ -632,7 +632,7 @@ fn pill_paint(ui: &Ui, rect: Rect, resp: &Response, icon: Option<&str>, galley: 
         let stroke = (kind != Btn::Ghost).then_some(p.border_subtle);
         (p.bg_surface2.gamma_multiply(0.6), p.text_tertiary, stroke)
     };
-    let corner = CornerRadius::same(radius::ROW);
+    let corner = crate::theme::tokens::radius::same(radius::ROW);
     ui.painter().rect_filled(rect, corner, bg);
     if let Some(s) = stroke {
         ui.painter().rect_stroke(rect, corner, Stroke::new(1.0, s), StrokeKind::Inside);
@@ -654,10 +654,12 @@ const PILL_ICON: f32 = 14.0;
 const PILL_ICON_GAP: f32 = 6.0;
 const PILL_PAD: f32 = 12.0;
 /// Short answers ("OK") still make a comfortable target.
-const PILL_MIN_W: f32 = 64.0;
+fn pill_min_w() -> f32 {
+    crate::theme::font::grow(64.0)
+}
 
 fn pill_font() -> FontId {
-    FontId::proportional(12.5)
+    crate::theme::font::ui(12.5)
 }
 
 /// The button of the app: text, optional icon, a [`Btn`] kind. An empty label makes it an
@@ -673,7 +675,7 @@ pub fn pill_button_on(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Btn, e
     let width = match (icon.is_some(), label.is_empty()) {
         (true, true) => height,
         (true, false) => galley.size().x + 2.0 * PILL_PAD + PILL_ICON + PILL_ICON_GAP,
-        _ => (galley.size().x + 2.0 * PILL_PAD).max(PILL_MIN_W),
+        _ => (galley.size().x + 2.0 * PILL_PAD).max(pill_min_w()),
     };
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (rect, resp) = ui.allocate_exact_size(vec2(width, height), sense);
@@ -713,7 +715,7 @@ pub fn chip(ui: &mut Ui, icon: Option<&str>, label: &str, on: bool) -> Response 
             resp.hovered(),
             crate::theme::anim(ui.ctx(), crate::theme::tokens::motion::HOVER),
         );
-        let corner = CornerRadius::same(radius::ROW);
+        let corner = crate::theme::tokens::radius::same(radius::ROW);
         let fill = if on { p.accent_subtle } else { p.bg_surface2.gamma_multiply(0.5 + 0.5 * hover) };
         ui.painter().rect_filled(rect, corner, fill);
         let fg = if on { p.accent } else { crate::theme::tokens::mix(p.text_secondary, p.text_primary, hover) };

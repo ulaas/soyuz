@@ -239,7 +239,7 @@ fn fm1_status(ui: &mut Ui, wanted: bool) {
         }
         None => (tr!("settings-linux-fm1-off").to_string(), p.text_tertiary),
     };
-    ui.label(RichText::new(text).size(11.5).color(color));
+    ui.label(RichText::new(text).size(crate::theme::font::px(11.5)).color(color));
 }
 
 fn modes() -> [dd::Item<ViewMode>; 5] {
@@ -742,7 +742,11 @@ fn columns_editor(ui: &mut Ui, details: &mut Vec<Column>, widths: &mut std::coll
     if !hidden.is_empty() {
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(tr!("settings-views-add-column")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("settings-views-add-column"))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_tertiary),
+            );
             for c in hidden {
                 if small_button(ui, Some(ph::PLUS), &crate::ui::views::columns::header_label(c), false).clicked() {
                     details.push(c);
@@ -789,7 +793,7 @@ fn system_folder_list(ui: &mut Ui, list: &mut Vec<String>) {
             ui.label(RichText::new(sf::label(id)).color(p.text_primary));
             let path = sf::available().iter().find(|f| f.id == id).map(|f| f.path.display().to_string());
             let note = path.unwrap_or_else(|| tr!("settings-views-sysfolders-missing").to_string());
-            ui.label(RichText::new(note).size(11.5).color(p.text_tertiary));
+            ui.label(RichText::new(note).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
         });
     }
 }
@@ -1159,7 +1163,11 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 fn remembered_programs(ui: &mut Ui, programs: &mut Vec<soyuz_core::config::DefaultApp>) {
     let p = palette(ui.ctx());
     if programs.is_empty() {
-        ui.label(RichText::new(tr!("settings-open-programs-empty")).size(11.5).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("settings-open-programs-empty"))
+                .size(crate::theme::font::px(11.5))
+                .color(p.text_tertiary),
+        );
     }
     let mut remove = None;
     for (i, program) in programs.iter().enumerate() {
@@ -1170,7 +1178,10 @@ fn remembered_programs(ui: &mut Ui, programs: &mut Vec<soyuz_core::config::Defau
             }
             ui.label(RichText::new(&program.name).color(p.text_primary));
             let path = program.program.display().to_string();
-            ui.add(egui::Label::new(RichText::new(path).size(11.5).color(p.text_tertiary)).truncate());
+            ui.add(
+                egui::Label::new(RichText::new(path).size(crate::theme::font::px(11.5)).color(p.text_tertiary))
+                    .truncate(),
+            );
         });
     }
     if let Some(i) = remove {
@@ -1186,7 +1197,11 @@ fn default_apps_editor(ui: &mut Ui, rules: &mut Vec<soyuz_core::config::DefaultA
     let mut browse = None;
     let ext_id = |i: usize| egui::Id::unique(("settings.open.ext", i));
     if rules.is_empty() {
-        ui.label(RichText::new(tr!("settings-open-defaults-empty")).size(11.5).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("settings-open-defaults-empty"))
+                .size(crate::theme::font::px(11.5))
+                .color(p.text_tertiary),
+        );
     }
     let mut remove = None;
     for (i, r) in rules.iter_mut().enumerate() {
@@ -1522,10 +1537,12 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.vertical(|ui| {
                     for (host, algo, fp) in &hosts {
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(host).size(12.0)).on_hover_text(format!(
-                                "{algo}
+                            ui.label(egui::RichText::new(host).size(crate::theme::font::px(12.0))).on_hover_text(
+                                format!(
+                                    "{algo}
 {fp}"
-                            ));
+                                ),
+                            );
                             if small_button(ui, None, tr!("settings-remote-forget"), true).clicked() {
                                 let (h, port) = match host.rsplit_once(':') {
                                     Some((h, p)) => (h.to_string(), p.parse().unwrap_or(22)),

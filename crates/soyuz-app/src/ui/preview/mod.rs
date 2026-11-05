@@ -11,18 +11,16 @@ pub mod rich;
 pub mod video;
 pub mod video_gpu;
 
-use egui::{
-    Align2, CornerRadius, FontId, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2,
-};
+use egui::{Align2, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
 use soyuz_core::{EntryInfo, Location};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::services::preview::Content;
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::theme::tokens::radius;
-use crate::ui::views::flow::semibold;
 use crate::ui::views::icons as file_icons;
 use crate::ui::widgets::{icon_toggle, trunc_galley};
 use render::{PreviewAction, PreviewState, info_grid, info_rows};
@@ -119,10 +117,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
         .show(root, |ui| {
             let card = ui.available_rect_before_wrap();
-            ui.painter().rect_filled(card, CornerRadius::same(radius::MODAL), p.bg_surface1);
+            ui.painter().rect_filled(card, crate::theme::tokens::radius::same(radius::MODAL), p.bg_surface1);
             ui.painter().rect_stroke(
                 card,
-                CornerRadius::same(radius::MODAL),
+                crate::theme::tokens::radius::same(radius::MODAL),
                 Stroke::new(1.0, p.border_subtle),
                 egui::StrokeKind::Inside,
             );
@@ -159,7 +157,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 pos2(header.left() + 40.0, header.center().y + 9.0),
                 Align2::LEFT_CENTER,
                 sub,
-                FontId::proportional(11.0),
+                crate::theme::font::ui(11.0),
                 p.text_tertiary,
             );
             let hex_r = Rect::from_min_size(pos2(header.right() - 66.0, header.center().y - 14.0), vec2(28.0, 28.0));
@@ -239,7 +237,12 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 );
                 let mut ichild = ui.new_child(UiBuilder::new().max_rect(ir.shrink2(vec2(14.0, 10.0))));
                 ScrollArea::vertical().id_salt("preview.info").auto_shrink([false, false]).show(&mut ichild, |ui| {
-                    ui.label(egui::RichText::new(tr!("views-preview-info")).size(10.5).color(p.text_tertiary).strong());
+                    ui.label(
+                        egui::RichText::new(tr!("views-preview-info"))
+                            .size(crate::theme::font::px(10.5))
+                            .color(p.text_tertiary)
+                            .strong(),
+                    );
                     ui.add_space(4.0);
                     info_grid(ui, &rows, 78.0);
                 });

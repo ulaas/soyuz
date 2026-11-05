@@ -7,7 +7,7 @@ defaults are **Inter** (interface, numbers), **Inter SemiBold** (headings) and
 grayscale anti-aliasing draws well at 100 % scaling, and they cover Latin, Latin Extended
 and Turkish (`ı İ ş ğ ç ö ü`; checked by the `embedded_fonts_cover_turkish_and_parse` test).
 
-All files are the unmodified TTFs (static, plus the one variable Inter) from the official upstream releases (no subsetting:
+All files except Inter Tabular are the unmodified TTFs (static, plus the one variable Inter) from the official upstream releases (no subsetting:
 several of these licenses reserve the font name for modified versions). All files in this folder
 are licensed under the SIL Open Font License 1.1; the license file sits next to each font.
 Hack is not in this folder: it is egui's built-in monospace font (MIT + Bitstream Vera
@@ -17,6 +17,7 @@ License), reused from `epaint_default_fonts` instead of a second copy.
 |---|---|---|---|---|
 | `inter/Inter-Regular.ttf` | Inter 4.001 | <https://github.com/rsms/inter/releases/tag/v4.1> (`Inter-4.1.zip`, `extras/ttf/`) | `40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82` | `inter/LICENSE.txt` |
 | `inter/Inter-SemiBold.ttf` | Inter SemiBold 4.001 | same | `78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3` | `inter/LICENSE.txt` |
+| `inter/InterTabular-Regular.ttf` | Inter Tabular, derived from `Inter-Regular.ttf` by `scripts/freeze-inter-tabular.py` (fonttools 4.68): the `tnum` glyphs made the default, only the 61 characters `tnum` changes, hinting kept (11.8 KB) | this folder | `1446795dd6d6ff1b142fe5022e12fe3a43d21d3d4a9a450ccd9d421358f65532` | `inter/LICENSE.txt` (Inter declares no Reserved Font Name) |
 | `inter/InterVariable.ttf` | Inter Variable 4.001 (`opsz` 14–32, `wght` 100–900) | same zip, top level | `4989b125924991b90d05b2d16e0e388c48f7d5bb8b30539bbf9c755278d0ccaf` | `inter/LICENSE.txt` (identical to the zip's `LICENSE.txt`) |
 | `ibm-plex-sans/IBMPlexSans-Regular.ttf` | IBM Plex Sans 3.005 | <https://github.com/IBM/plex/releases/tag/%40ibm%2Fplex-sans%401.1.0> (`ibm-plex-sans.zip`, `fonts/complete/ttf/`) | `975dcda37d80f038dcd143c22e33ca2d97a0cc5a929aace1c749153b0fe1afa5` | `ibm-plex-sans/LICENSE.txt` |
 | `ibm-plex-sans/IBMPlexSans-SemiBold.ttf` | IBM Plex Sans SemiBold 3.005 | same | `a20caf8286023a6a7a85e40b1d2a4ae9fc3e3b1f9eda8f4c542dd4986af67bb1` | `ibm-plex-sans/LICENSE.txt` |

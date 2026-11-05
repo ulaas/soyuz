@@ -1,6 +1,6 @@
 //! Appearance → color theme gallery, accent picker and theme import / export.
 
-use egui::{Align2, Color32, CornerRadius, FontId, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::config::Config;
 
 use super::widgets::{color_swatch, dd, small_button};
@@ -53,14 +53,16 @@ pub fn gallery(ui: &mut Ui, d: &mut Config, p: &Palette) -> Option<ThemeAction> 
         ui.add_space(6.0);
     }
     if hc {
-        ui.label(egui::RichText::new(tr!("settings-theme-hc-on")).size(11.5).color(p.warning));
+        ui.label(egui::RichText::new(tr!("settings-theme-hc-on")).size(crate::theme::font::px(11.5)).color(p.warning));
     }
     for w in library::warnings_of(&current) {
-        ui.label(egui::RichText::new(format!("{current}: {w}")).size(11.5).color(p.warning));
+        ui.label(egui::RichText::new(format!("{current}: {w}")).size(crate::theme::font::px(11.5)).color(p.warning));
     }
     for e in library::errors() {
         let name = e.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        ui.label(egui::RichText::new(format!("{name}: {}", e.error)).size(11.5).color(p.danger));
+        ui.label(
+            egui::RichText::new(format!("{name}: {}", e.error)).size(crate::theme::font::px(11.5)).color(p.danger),
+        );
     }
     ui.add_space(2.0);
     ui.horizontal(|ui| {
@@ -132,7 +134,7 @@ fn card(ui: &mut Ui, p: &Palette, t: &ThemeDef, selected: bool) -> egui::Respons
         pos2(label.left() + 10.0, label.center().y),
         Align2::LEFT_CENTER,
         display_name(t),
-        FontId::proportional(12.0),
+        crate::theme::font::ui(12.0),
         p.text_primary,
     );
     if !t.builtin {
@@ -140,7 +142,7 @@ fn card(ui: &mut Ui, p: &Palette, t: &ThemeDef, selected: bool) -> egui::Respons
             pos2(label.right() - 10.0, label.center().y),
             Align2::RIGHT_CENTER,
             tr!("settings-theme-custom-tag"),
-            FontId::proportional(10.5),
+            crate::theme::font::ui(10.5),
             p.text_tertiary,
         );
     }

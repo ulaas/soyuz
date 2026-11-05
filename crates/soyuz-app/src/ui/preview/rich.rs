@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextFormat};
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Id, Key, Modifiers, Rect, ScrollArea, Sense, Shape, Stroke, StrokeKind, Ui,
+    Align2, Color32, CornerRadius, Id, Key, Modifiers, Rect, ScrollArea, Sense, Shape, Stroke, StrokeKind, Ui,
     UiBuilder, pos2, vec2,
 };
 use soyuz_core::EntryInfo;
@@ -23,10 +23,10 @@ use crate::services::preview_model::{self, View};
 use crate::services::preview_office::{DocModel, Office, SheetModel, SlidesModel};
 use crate::services::preview_pdf;
 use crate::services::preview_rich::{PdfView, Rich, Tex, pdf_page_async};
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::{Palette, palette};
 use crate::ui::gfx::{self, TexExt};
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{Btn, pill_button, spinner, trunc_galley};
 
 /// Paragraphs laid out for a document preview (the rest is summarized).
@@ -62,7 +62,7 @@ fn child(ui: &mut Ui, r: Rect) -> Ui {
 }
 
 fn caption(ui: &mut Ui, text: &str, p: &Palette) {
-    ui.label(egui::RichText::new(text).size(10.5).color(p.text_tertiary).strong());
+    ui.label(egui::RichText::new(text).size(crate::theme::font::px(10.5)).color(p.text_tertiary).strong());
 }
 
 // ---- documents ----------------------------------------------------------------------
@@ -87,7 +87,7 @@ fn doc(ui: &mut Ui, rect: Rect, d: &DocModel, id: Id, p: &Palette, big: bool) {
         if d.title.is_some() || d.author.is_some() {
             let line =
                 [d.title.as_deref(), d.author.as_deref()].into_iter().flatten().collect::<Vec<_>>().join("  ·  ");
-            ui.label(egui::RichText::new(line).size(11.0).color(p.text_tertiary));
+            ui.label(egui::RichText::new(line).size(crate::theme::font::px(11.0)).color(p.text_tertiary));
             ui.add_space(6.0);
         }
         let body = if big { 13.5 } else { 12.5 };
@@ -99,8 +99,8 @@ fn doc(ui: &mut Ui, rect: Rect, d: &DocModel, id: Id, p: &Palette, big: bool) {
             let mut job = LayoutJob::default();
             job.wrap.max_width = w;
             if para.list {
-                let mut f = TextFormat::simple(FontId::proportional(body), p.text_secondary);
-                f.line_height = Some(body * 1.5);
+                let mut f = TextFormat::simple(crate::theme::font::ui(body), p.text_secondary);
+                f.line_height = Some(crate::theme::font::px(body) * 1.5);
                 job.append("•  ", 6.0, f);
             }
             for r in &para.runs {
@@ -109,11 +109,15 @@ fn doc(ui: &mut Ui, rect: Rect, d: &DocModel, id: Id, p: &Palette, big: bool) {
                 } else if r.bold {
                     (semibold(body), p.text_primary)
                 } else {
-                    (FontId::proportional(body), p.text_primary)
+                    (crate::theme::font::ui(body), p.text_primary)
                 };
                 let mut f = TextFormat::simple(font, color);
                 f.italics = r.italic;
-                f.line_height = Some(if para.level > 0 { heading_size(para.level, big) * 1.3 } else { body * 1.5 });
+                f.line_height = Some(crate::theme::font::px(if para.level > 0 {
+                    heading_size(para.level, big) * 1.3
+                } else {
+                    body * 1.5
+                }));
                 job.append(&r.text, 0.0, f);
             }
             if para.level > 0 {
@@ -126,7 +130,7 @@ fn doc(ui: &mut Ui, rect: Rect, d: &DocModel, id: Id, p: &Palette, big: bool) {
             ui.add_space(6.0);
             ui.label(
                 egui::RichText::new(tr!("views-rich-first-paragraphs", count = d.paras.len().min(DOC_PARAS)))
-                    .size(11.0)
+                    .size(crate::theme::font::px(11.0))
                     .color(p.text_tertiary),
             );
         }
@@ -155,15 +159,20 @@ fn sheet(ui: &mut Ui, rect: Rect, s: &SheetModel, id: Id, p: &Palette) {
     let tabs = Rect::from_min_size(rect.min, vec2(rect.width(), tabs_h));
     let mut x = tabs.left() + 10.0;
     for (i, name) in s.sheets.iter().enumerate().take(12) {
-        let g = trunc_galley(ui.painter(), name, FontId::proportional(11.5), p.text_primary, 140.0);
+        let g = trunc_galley(ui.painter(), name, crate::theme::font::ui(11.5), p.text_primary, 140.0);
         let r = Rect::from_min_size(pos2(x, tabs.top() + 5.0), vec2(g.size().x + 18.0, 20.0));
         if r.right() > tabs.right() - 8.0 {
             break;
         }
         let (bg, fg) = if i == 0 { (p.bg_surface1, p.text_primary) } else { (Color32::TRANSPARENT, p.text_tertiary) };
-        ui.painter().rect_filled(r, CornerRadius::same(5), bg);
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(5), bg);
         if i == 0 {
-            ui.painter().rect_stroke(r, CornerRadius::same(5), Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
+            ui.painter().rect_stroke(
+                r,
+                crate::theme::tokens::radius::same(5),
+                Stroke::new(1.0, p.border_subtle),
+                StrokeKind::Inside,
+            );
         }
         ui.painter().galley(pos2(r.left() + 9.0, r.center().y - g.size().y / 2.0), g, fg);
         let resp = ui.interact(r, id.with(("tab", i)), Sense::hover());
@@ -178,12 +187,12 @@ fn sheet(ui: &mut Ui, rect: Rect, s: &SheetModel, id: Id, p: &Palette) {
             body.center(),
             Align2::CENTER_CENTER,
             tr!("views-rich-sheet-empty"),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
         );
         return;
     }
-    let font = FontId::proportional(12.0);
+    let font = crate::theme::font::ui(12.0);
     // Column widths from content (bounded).
     let ncols = s.ncols.max(1);
     let mut widths = vec![44.0f32; ncols];
@@ -220,7 +229,7 @@ fn sheet(ui: &mut Ui, rect: Rect, s: &SheetModel, id: Id, p: &Palette) {
                             pos2(x + cw / 2.0, r.center().y),
                             Align2::CENTER_CENTER,
                             col_name(c),
-                            FontId::proportional(10.5),
+                            crate::theme::font::ui(10.5),
                             p.text_tertiary,
                         );
                         x += cw;
@@ -235,7 +244,7 @@ fn sheet(ui: &mut Ui, rect: Rect, s: &SheetModel, id: Id, p: &Palette) {
                         pos2(r.left() + gutter + 8.0, r.center().y),
                         Align2::LEFT_CENTER,
                         tr!("views-rich-more-rows"),
-                        FontId::proportional(11.0),
+                        crate::theme::font::ui(11.0),
                         p.text_tertiary,
                     );
                     continue;
@@ -247,7 +256,7 @@ fn sheet(ui: &mut Ui, rect: Rect, s: &SheetModel, id: Id, p: &Palette) {
                     pos2(r.left() + gutter - 8.0, r.center().y),
                     Align2::RIGHT_CENTER,
                     (ri + 1).to_string(),
-                    FontId::monospace(10.5),
+                    crate::theme::font::mono(10.5),
                     p.text_tertiary,
                 );
                 let mut x = r.left() + gutter;
@@ -285,13 +294,13 @@ fn slides(ui: &mut Ui, rect: Rect, s: &SlidesModel, id: Id, p: &Palette, big: bo
             egui::Frame::new()
                 .fill(p.bg_surface1)
                 .stroke(Stroke::new(1.0, p.border_subtle))
-                .corner_radius(CornerRadius::same(8))
+                .corner_radius(crate::theme::tokens::radius::same(8))
                 .inner_margin(egui::Margin::symmetric(12, 10))
                 .show(ui, |ui| {
                     ui.set_width(w - 26.0);
                     ui.horizontal_top(|ui| {
                         let (r, _) = ui.allocate_exact_size(vec2(26.0, 20.0), Sense::hover());
-                        ui.painter().rect_filled(r, CornerRadius::same(5), p.accent_subtle);
+                        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(5), p.accent_subtle);
                         ui.painter().text(
                             r.center(),
                             Align2::CENTER_CENTER,
@@ -312,7 +321,9 @@ fn slides(ui: &mut Ui, rect: Rect, s: &SlidesModel, id: Id, p: &Palette, big: bo
                             for b in slide.body.iter().take(12) {
                                 ui.add(
                                     egui::Label::new(
-                                        egui::RichText::new(format!("•  {b}")).size(12.0).color(p.text_secondary),
+                                        egui::RichText::new(format!("•  {b}"))
+                                            .size(crate::theme::font::px(12.0))
+                                            .color(p.text_secondary),
                                     )
                                     .wrap(),
                                 );
@@ -347,17 +358,30 @@ fn epub(ui: &mut Ui, rect: Rect, m: &EpubModel, cover: Option<&Tex>, id: Id, p: 
                 let title = m.title.as_deref().unwrap_or(tr!("views-rich-untitled"));
                 ui.add(egui::Label::new(egui::RichText::new(title).font(semibold(19.0)).color(p.text_primary)).wrap());
                 if !m.authors.is_empty() {
-                    ui.label(egui::RichText::new(m.authors.join(", ")).size(13.0).color(p.text_secondary));
+                    ui.label(
+                        egui::RichText::new(m.authors.join(", "))
+                            .size(crate::theme::font::px(13.0))
+                            .color(p.text_secondary),
+                    );
                 }
                 let sub: Vec<&str> =
                     [m.publisher.as_deref(), m.date.as_deref(), m.language.as_deref()].into_iter().flatten().collect();
                 if !sub.is_empty() {
-                    ui.label(egui::RichText::new(sub.join("  ·  ")).size(11.0).color(p.text_tertiary));
+                    ui.label(
+                        egui::RichText::new(sub.join("  ·  "))
+                            .size(crate::theme::font::px(11.0))
+                            .color(p.text_tertiary),
+                    );
                 }
                 if let Some(d) = &m.description {
                     ui.add_space(6.0);
                     let short: String = d.chars().take(600).collect();
-                    ui.add(egui::Label::new(egui::RichText::new(short).size(12.0).color(p.text_secondary)).wrap());
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(short).size(crate::theme::font::px(12.0)).color(p.text_secondary),
+                        )
+                        .wrap(),
+                    );
                 }
             });
         };
@@ -367,7 +391,7 @@ fn epub(ui: &mut Ui, rect: Rect, m: &EpubModel, cover: Option<&Tex>, id: Id, p: 
                 let (r, _) = ui.allocate_exact_size(size, Sense::hover());
                 ui.painter().add(
                     egui::epaint::Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha(70) }
-                        .as_shape(r, CornerRadius::same(3)),
+                        .as_shape(r, crate::theme::tokens::radius::same(3)),
                 );
                 ui.painter().image(t.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
@@ -391,7 +415,10 @@ fn epub(ui: &mut Ui, rect: Rect, m: &EpubModel, cover: Option<&Tex>, id: Id, p: 
                 ui.horizontal(|ui| {
                     ui.add_space(e.depth as f32 * 16.0);
                     let (size, color) = if e.depth == 0 { (12.5, p.text_primary) } else { (12.0, p.text_secondary) };
-                    ui.add(egui::Label::new(egui::RichText::new(&e.title).size(size).color(color)).truncate());
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(&e.title).size(crate::theme::font::px(size)).color(color))
+                            .truncate(),
+                    );
                 });
             }
         }
@@ -501,7 +528,7 @@ fn model_view(
         rect.left_bottom() + vec2(12.0, -12.0),
         Align2::LEFT_BOTTOM,
         hint,
-        FontId::proportional(11.0),
+        crate::theme::font::ui(11.0),
         p.text_tertiary,
     );
 }
@@ -548,12 +575,12 @@ fn audio(
             let r = Rect::from_center_size(art_r.center(), size);
             ui.painter().add(
                 egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) }
-                    .as_shape(r, CornerRadius::same(8)),
+                    .as_shape(r, crate::theme::tokens::radius::same(8)),
             );
             ui.painter().image(t.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
         None => {
-            ui.painter().rect_filled(art_r, CornerRadius::same(20), p.glyph_audio.gamma_multiply(0.14));
+            ui.painter().rect_filled(art_r, crate::theme::tokens::radius::same(20), p.glyph_audio.gamma_multiply(0.14));
             ui.painter().text(
                 art_r.center(),
                 Align2::CENTER_CENTER,
@@ -571,14 +598,14 @@ fn audio(
     ui.painter().galley(pos2(inner.center().x - tg.size().x / 2.0, y), tg, p.text_primary);
     y += 20.0;
     if !sub.is_empty() {
-        let sg = trunc_galley(ui.painter(), &sub, FontId::proportional(12.0), p.text_secondary, inner.width());
+        let sg = trunc_galley(ui.painter(), &sub, crate::theme::font::ui(12.0), p.text_secondary, inner.width());
         ui.painter().galley(pos2(inner.center().x - sg.size().x / 2.0, y), sg, p.text_secondary);
         y += 18.0;
     }
     // Codec, rate and the decoder that read the file (FFmpeg or the built-in one).
     let facts = audio_facts(info);
     if !facts.is_empty() {
-        let fg = trunc_galley(ui.painter(), &facts, FontId::proportional(11.0), p.text_tertiary, inner.width());
+        let fg = trunc_galley(ui.painter(), &facts, crate::theme::font::ui(11.0), p.text_tertiary, inner.width());
         ui.painter().galley(pos2(inner.center().x - fg.size().x / 2.0, y), fg, p.text_tertiary);
         y += 16.0;
     }
@@ -588,7 +615,7 @@ fn audio(
     let dur = info.duration.unwrap_or(0.0);
     let pos = if mine { ps.pos } else { 0.0 };
     let frac = if dur > 0.0 { (pos / dur).clamp(0.0, 1.0) as f32 } else { 0.0 };
-    ui.painter().rect_filled(wave, CornerRadius::same(6), p.bg_sunken);
+    ui.painter().rect_filled(wave, crate::theme::tokens::radius::same(6), p.bg_sunken);
     let mid = wave.center().y;
     if info.peaks.is_empty() {
         ui.painter().line_segment(
@@ -614,7 +641,7 @@ fn audio(
             let col = if played { p.accent } else { p.text_tertiary.gamma_multiply(0.85) };
             ui.painter().rect_filled(
                 Rect::from_min_max(pos2(x, top), pos2(x + 2.0, bot.max(top + 1.0))),
-                CornerRadius::same(1),
+                crate::theme::tokens::radius::same(1),
                 col,
             );
         }
@@ -691,13 +718,13 @@ fn audio(
         if dur > 0.0 { format!("{} / {}", format_duration(pos), format_duration(dur)) } else { "—".to_string() };
     let tx = if playback { btn.right() + 12.0 } else { inner.center().x };
     let align = if playback { Align2::LEFT_CENTER } else { Align2::CENTER_CENTER };
-    ui.painter().text(pos2(tx, btn.center().y), align, time, FontId::monospace(11.5), p.text_secondary);
+    ui.painter().text(pos2(tx, btn.center().y), align, time, crate::theme::font::mono(11.5), p.text_secondary);
     if let Some(e) = ps.error.as_ref().filter(|_| mine || ps.key.is_none()) {
         ui.painter().text(
             pos2(inner.center().x, btn.bottom() + 14.0),
             Align2::CENTER_CENTER,
             e,
-            FontId::proportional(11.0),
+            crate::theme::font::ui(11.0),
             p.danger,
         );
     }
@@ -776,14 +803,14 @@ fn video(
                 pos2(rect.center().x, rect.bottom() - 14.0),
                 Align2::CENTER_CENTER,
                 caption,
-                FontId::proportional(11.0),
+                crate::theme::font::ui(11.0),
                 Color32::from_gray(170),
             );
         }
         None => {
             let c = rect.center() - vec2(0.0, rect.height() * 0.12);
             let disc = Rect::from_center_size(c, vec2(96.0, 96.0));
-            ui.painter().rect_filled(disc, CornerRadius::same(22), p.glyph_video.gamma_multiply(0.14));
+            ui.painter().rect_filled(disc, crate::theme::tokens::radius::same(22), p.glyph_video.gamma_multiply(0.14));
             ui.painter().text(c, Align2::CENTER_CENTER, ph::FILM_SLATE, icons::font_fill(46.0), p.glyph_video);
             let tg = trunc_galley(ui.painter(), &entry.name, semibold(14.0), p.text_primary, rect.width() - 32.0);
             ui.painter().galley(pos2(rect.center().x - tg.size().x / 2.0, disc.bottom() + 14.0), tg, p.text_primary);
@@ -793,7 +820,7 @@ fn video(
                     pos2(rect.center().x, y),
                     Align2::CENTER_CENTER,
                     s,
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     p.text_secondary,
                 );
                 y += 20.0;
@@ -801,7 +828,7 @@ fn video(
             if let Some(n) = note {
                 let g = ui.painter().layout(
                     n.to_string(),
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     p.text_tertiary,
                     (rect.width() - 40.0).clamp(80.0, 380.0),
                 );
@@ -862,7 +889,7 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
         }
         bc.label(
             egui::RichText::new(tr!("views-rich-page-of", page = nav.page + 1, pages = pages))
-                .size(12.0)
+                .size(crate::theme::font::px(12.0))
                 .color(p.text_secondary),
         );
         if crate::ui::widgets::icon_toggle(
@@ -878,7 +905,9 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
         }
     } else {
         bc.label(
-            egui::RichText::new(tr!("views-rich-pages-text-only", pages = pages)).size(12.0).color(p.text_secondary),
+            egui::RichText::new(tr!("views-rich-pages-text-only", pages = pages))
+                .size(crate::theme::font::px(12.0))
+                .color(p.text_secondary),
         );
     }
     let mut toggle_r = bar;
@@ -940,9 +969,11 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
                 caption(ui, tr!("views-rich-pdf-text-caption"), p);
                 ui.add_space(4.0);
                 ui.add(
-                    egui::Label::new(egui::RichText::new(&v.info.text).size(12.0).color(p.text_primary))
-                        .wrap()
-                        .selectable(true),
+                    egui::Label::new(
+                        egui::RichText::new(&v.info.text).size(crate::theme::font::px(12.0)).color(p.text_primary),
+                    )
+                    .wrap()
+                    .selectable(true),
                 );
             }
         });
@@ -980,7 +1011,7 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
             spinner(ui, body.center(), 11.0, p.accent);
         }
         if let Some(e) = &nav.error {
-            ui.painter().text(body.center(), Align2::CENTER_CENTER, e, FontId::proportional(12.0), p.danger);
+            ui.painter().text(body.center(), Align2::CENTER_CENTER, e, crate::theme::font::ui(12.0), p.danger);
             let br = Rect::from_center_size(body.center() + vec2(0.0, 30.0), vec2(120.0, 26.0));
             let mut c = ui.new_child(UiBuilder::new().max_rect(br));
             if pill_button(&mut c, Some(ph::BINARY), tr!("views-preview-show-bytes"), Btn::Secondary).clicked() {
@@ -999,7 +1030,7 @@ fn locked_card(ui: &mut Ui, p: &Palette) -> bool {
     egui::Frame::new()
         .fill(p.accent_subtle)
         .stroke(Stroke::new(1.0, p.accent.gamma_multiply(0.4)))
-        .corner_radius(CornerRadius::same(8))
+        .corner_radius(crate::theme::tokens::radius::same(8))
         .inner_margin(egui::Margin::symmetric(12, 10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -1010,7 +1041,9 @@ fn locked_card(ui: &mut Ui, p: &Palette) -> bool {
             ui.add_space(4.0);
             ui.add(
                 egui::Label::new(
-                    egui::RichText::new(tr!("views-rich-pdf-locked-body")).size(11.5).color(p.text_secondary),
+                    egui::RichText::new(tr!("views-rich-pdf-locked-body"))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_secondary),
                 )
                 .wrap(),
             );
@@ -1024,7 +1057,7 @@ fn pdfium_card(ui: &mut Ui, why: &str, dirs: &[std::path::PathBuf], p: &Palette)
     egui::Frame::new()
         .fill(p.accent_subtle)
         .stroke(Stroke::new(1.0, p.accent.gamma_multiply(0.4)))
-        .corner_radius(CornerRadius::same(8))
+        .corner_radius(crate::theme::tokens::radius::same(8))
         .inner_margin(egui::Margin::symmetric(12, 10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -1037,7 +1070,9 @@ fn pdfium_card(ui: &mut Ui, why: &str, dirs: &[std::path::PathBuf], p: &Palette)
             ui.add_space(4.0);
             let text = if why.is_empty() { preview_pdf::missing_message(dirs) } else { why.to_string() };
             ui.add(
-                egui::Label::new(egui::RichText::new(text).size(11.5).color(p.text_secondary)).wrap().selectable(true),
+                egui::Label::new(egui::RichText::new(text).size(crate::theme::font::px(11.5)).color(p.text_secondary))
+                    .wrap()
+                    .selectable(true),
             );
         });
 }

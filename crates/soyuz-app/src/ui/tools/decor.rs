@@ -2,7 +2,7 @@
 //! icon, the GitStatus column) and color tags (dots after the name, the Tags column).
 //! Lookups are cheap thread-local hash lookups, safe to call for every visible row.
 
-use egui::{Align2, Color32, FontId, Painter, Pos2, pos2};
+use egui::{Align2, Color32, Painter, Pos2, pos2};
 use soyuz_core::{Column, EntryInfo};
 
 use crate::services::git::{self, GitCode};
@@ -123,7 +123,7 @@ pub fn paint_cell(
                     pos2(x0 + 14.0, cy),
                     Align2::CENTER_CENTER,
                     code.letter(),
-                    crate::ui::views::flow::semibold(12.0),
+                    crate::theme::font::semibold(12.0),
                     color,
                 );
                 let label = if staged {
@@ -131,7 +131,7 @@ pub fn paint_cell(
                 } else {
                     git_label(code).to_string()
                 };
-                let g = trunc_galley(painter, &label, FontId::proportional(12.0), color, w - 34.0);
+                let g = trunc_galley(painter, &label, crate::theme::font::ui(12.0), color, w - 34.0);
                 painter.galley(pos2(x0 + 26.0, cy - g.size().y / 2.0), g, color);
             }
             true
@@ -151,7 +151,7 @@ pub fn paint_cell(
                     tr!("tools-tags-count", count = n)
                 };
                 let color = p.text_secondary.gamma_multiply(alpha);
-                let g = trunc_galley(painter, &label, FontId::proportional(12.0), color, x0 + w - x - 8.0);
+                let g = trunc_galley(painter, &label, crate::theme::font::ui(12.0), color, x0 + w - x - 8.0);
                 painter.galley(pos2(x + 2.0, cy - g.size().y / 2.0), g, color);
             }
             true

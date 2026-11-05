@@ -149,7 +149,7 @@ impl<'a> DialogWindow<'a> {
             let galley = crate::ui::widgets::trunc_galley(
                 ui.painter(),
                 title,
-                crate::ui::views::flow::semibold(15.0),
+                crate::theme::font::semibold(15.0),
                 fg,
                 (close_r.left() - x - 8.0).max(20.0),
             );

@@ -1,15 +1,15 @@
 //! "This PC": volume cards with free-space bars and, when known, the drive's health
 //! (`models::disk_health`: a coloured dot and a line; every figure in the tooltip).
 
-use egui::{Align2, CornerRadius, FontId, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2};
+use egui::{Align2, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2};
 use soyuz_core::{Location, SizeStyle, format_size};
 use soyuz_fs::{VolumeInfo, VolumeKind};
 
 use super::ViewCtx;
-use super::flow::semibold;
 use crate::cmd::Cmd;
 use crate::models::disk_health;
 use crate::state::pane::Pane;
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{icons as ticons, icons::ph, palette};
 use crate::ui::widgets::{trunc_galley, usage_bar};
@@ -42,15 +42,19 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                     let (r, resp) = ui.allocate_exact_size(card, Sense::click());
                     let hover = resp.hovered();
                     let fill = if hover { p.bg_surface2 } else { p.bg_window };
-                    ui.painter().rect_filled(r, CornerRadius::same(radius::CARD), fill);
+                    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::CARD), fill);
                     ui.painter().rect_stroke(
                         r,
-                        CornerRadius::same(radius::CARD),
+                        crate::theme::tokens::radius::same(radius::CARD),
                         Stroke::new(1.0, if hover { p.border_strong } else { p.border_subtle }),
                         StrokeKind::Inside,
                     );
                     let icon_r = Rect::from_min_size(r.min + vec2(14.0, 17.0), vec2(44.0, 44.0));
-                    ui.painter().rect_filled(icon_r, CornerRadius::same(10), p.info.gamma_multiply(0.12));
+                    ui.painter().rect_filled(
+                        icon_r,
+                        crate::theme::tokens::radius::same(10),
+                        p.info.gamma_multiply(0.12),
+                    );
                     ui.painter().text(
                         icon_r.center(),
                         Align2::CENTER_CENTER,
@@ -80,7 +84,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                             pos2(tx, r.top() + 56.0),
                             Align2::LEFT_CENTER,
                             text,
-                            FontId::proportional(11.5),
+                            crate::theme::font::ui(11.5),
                             p.text_secondary,
                         );
                     } else {
@@ -90,7 +94,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                             pos2(tx, r.top() + 46.0),
                             Align2::LEFT_CENTER,
                             kind,
-                            FontId::proportional(11.5),
+                            crate::theme::font::ui(11.5),
                             p.text_secondary,
                         );
                     }
@@ -106,7 +110,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         let line = trunc_galley(
                             ui.painter(),
                             &disk_health::summary(&drives),
-                            FontId::proportional(11.5),
+                            crate::theme::font::ui(11.5),
                             p.text_secondary,
                             r.right() - tx - 26.0,
                         );

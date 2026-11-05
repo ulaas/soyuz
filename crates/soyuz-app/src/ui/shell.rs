@@ -6,7 +6,7 @@
 //! (assistant, editors, shelf, tool windows) draw in the window that owns them
 //! (`models::owners`); the overlays go to the focused window.
 
-use egui::{CentralPanel, CornerRadius, CursorIcon, Frame, Id, Margin, Rect, Sense, Ui, pos2, vec2};
+use egui::{CentralPanel, CursorIcon, Frame, Id, Margin, Rect, Sense, Ui, pos2, vec2};
 use soyuz_core::Location;
 use soyuz_core::config::{Orientation, TabStripMode};
 
@@ -246,7 +246,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
         } else {
             Rect::from_center_size(splitter.center(), vec2(40.0, 2.0))
         };
-        ui.painter().rect_filled(bar, CornerRadius::same(1), p.accent.gamma_multiply(0.8));
+        ui.painter().rect_filled(bar, crate::theme::tokens::radius::same(1), p.accent.gamma_multiply(0.8));
     }
     if sresp.dragged()
         && let Some(pos) = sresp.interact_pointer_pos()
@@ -313,7 +313,7 @@ fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, 
             } else {
                 Rect::from_center_size(rect.center(), vec2(40.0, 2.0))
             };
-            ui.painter().rect_filled(bar, CornerRadius::same(1), p.accent.gamma_multiply(0.8));
+            ui.painter().rect_filled(bar, crate::theme::tokens::radius::same(1), p.accent.gamma_multiply(0.8));
         }
         if sresp.dragged()
             && let Some(pos) = sresp.interact_pointer_pos()

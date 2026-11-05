@@ -2,7 +2,7 @@
 //! junction, and "Copy to…" / "Move to…" with a destination path. The state and the
 //! answers are the core's [`LinkModel`] / [`TransferModel`]; this file draws them.
 
-use egui::{Align, FontId, Layout, Margin, RichText, TextEdit, Ui};
+use egui::{Align, Layout, Margin, RichText, TextEdit, Ui};
 
 use super::DialogCtx;
 pub use crate::models::dialogs::LinkChoice;
@@ -12,7 +12,7 @@ use crate::ui::widgets::{Btn, pill_button};
 
 fn field(ui: &mut Ui, label: &str, text: &mut String, hint: &str, focus: &mut bool) -> egui::Response {
     let p = palette(ui.ctx());
-    ui.label(RichText::new(label).font(FontId::proportional(11.5)).color(p.text_secondary));
+    ui.label(RichText::new(label).font(crate::theme::font::ui(11.5)).color(p.text_secondary));
     let r = ui
         .add(TextEdit::singleline(text).hint_text(hint).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 7)));
     if *focus {
@@ -31,7 +31,7 @@ pub(crate) fn show_link(ui: &mut Ui, m: &mut LinkModel, ctx: &mut DialogCtx<'_>)
             ui.selectable_value(&mut m.kind, k, k.label());
         }
     });
-    ui.label(RichText::new(m.kind.hint()).font(FontId::proportional(11.5)).color(p.text_tertiary));
+    ui.label(RichText::new(m.kind.hint()).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
     ui.add_space(10.0);
     let mut no_focus = false;
     let t = field(ui, tr!("dialogs-link-target"), &mut m.target, tr!("dialogs-link-target-hint"), &mut m.focus);
@@ -45,11 +45,11 @@ pub(crate) fn show_link(ui: &mut Ui, m: &mut LinkModel, ctx: &mut DialogCtx<'_>)
     if let Some(e) = m.error()
         && !m.target.trim().is_empty()
     {
-        ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));
+        ui.label(RichText::new(e).font(crate::theme::font::ui(11.5)).color(p.danger));
     }
     ui.label(
         RichText::new(tr!("dialogs-link-in", dir = soyuz_fs::strip_verbatim(&m.dir).display().to_string()))
-            .font(FontId::proportional(11.5))
+            .font(crate::theme::font::ui(11.5))
             .color(p.text_tertiary),
     );
     ui.add_space(16.0);
@@ -81,7 +81,7 @@ pub(crate) fn show_transfer(ui: &mut Ui, m: &mut TransferModel, ctx: &mut Dialog
     ui.add_space(6.0);
     field(ui, tr!("dialogs-transfer-dest"), &mut m.dest, tr!("dialogs-transfer-dest-hint"), &mut m.focus);
     if let Some(e) = m.error() {
-        ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));
+        ui.label(RichText::new(e).font(crate::theme::font::ui(11.5)).color(p.danger));
     }
     let mut ok = false;
     let mut cancel = false;

@@ -63,6 +63,8 @@ pub struct EmbeddedFont {
     pub family: &'static str,
     /// Monospace face.
     pub mono: bool,
+    /// Holds only part of the text repertoire: the rest comes from the fonts after it.
+    pub partial: bool,
     /// The face headings use when this face draws the interface (`ui_semibold` empty).
     heading: Option<Embedded>,
     bytes: &'static [u8],
@@ -98,7 +100,7 @@ const fn face(
     heading: Option<Embedded>,
     bytes: &'static [u8],
 ) -> EmbeddedFont {
-    EmbeddedFont { name, label: name, family, mono, heading, bytes, coords: &[], optical: None }
+    EmbeddedFont { name, label: name, family, mono, partial: false, heading, bytes, coords: &[], optical: None }
 }
 
 /// A named instance of a variable font.
@@ -111,7 +113,7 @@ const fn instance(
     coords: &'static [Coord],
     optical: Option<&'static Optical>,
 ) -> EmbeddedFont {
-    EmbeddedFont { name, label, family, mono: false, heading, bytes, coords, optical }
+    EmbeddedFont { name, label, family, mono: false, partial: false, heading, bytes, coords, optical }
 }
 
 /// Inter 4's variable font: `opsz` 14–32 (14 = the static "Inter" text design, 32 =
@@ -129,7 +131,7 @@ static INTER_VAR_OPTICAL: Optical = Optical { caption: INTER_VAR_CAPTION, displa
 
 /// Every embedded font, in Settings order (index = [`Embedded`]). See
 /// `assets/fonts/README.md` for versions, sources and checksums.
-pub static EMBEDDED: [EmbeddedFont; 13] = [
+pub static EMBEDDED: [EmbeddedFont; 14] = [
     face("Inter", "Inter", false, Some(Embedded::INTER_SEMIBOLD), font!("inter/Inter-Regular.ttf")),
     face("Inter SemiBold", "Inter", false, None, font!("inter/Inter-SemiBold.ttf")),
     instance(
@@ -160,6 +162,19 @@ pub static EMBEDDED: [EmbeddedFont; 13] = [
     face("JetBrains Mono", "JetBrains Mono", true, None, font!("jetbrains-mono/JetBrainsMono-Regular.ttf")),
     face("IBM Plex Mono", "IBM Plex Mono", true, None, font!("ibm-plex-mono/IBMPlexMono-Regular.ttf")),
     face("Source Code Pro", "Source Code Pro", true, None, font!("source-code-pro/SourceCodePro-Regular.ttf")),
+    // Inter with its tabular figures as the default glyphs, digits and number punctuation
+    // only (`scripts/freeze-inter-tabular.py`); letters come from Inter.
+    EmbeddedFont {
+        name: "Inter Tabular",
+        label: "Inter Tabular",
+        family: "Inter Tabular",
+        mono: false,
+        partial: true,
+        heading: None,
+        bytes: font!("inter/InterTabular-Regular.ttf"),
+        coords: &[],
+        optical: None,
+    },
 ];
 
 /// Handle of one [`EMBEDDED`] font.
@@ -174,6 +189,7 @@ impl Embedded {
     pub const CASCADIA_MONO: Embedded = Embedded(8);
     pub const HACK: Embedded = Embedded(9);
     pub const JETBRAINS_MONO: Embedded = Embedded(10);
+    pub const INTER_TABULAR: Embedded = Embedded(13);
 
     /// Every embedded font.
     pub fn all() -> impl Iterator<Item = Embedded> {
@@ -231,7 +247,11 @@ impl Embedded {
 
     /// The embedded font a role falls back to: the default family of the role when it is
     /// embedded (it is by default), else Inter / Inter SemiBold / Hack / Cascadia Mono.
+    /// Numbers: Inter Tabular.
     pub fn for_role(role: FontRoleKind) -> Embedded {
+        if role == FontRoleKind::Numbers {
+            return Embedded::INTER_TABULAR;
+        }
         let (default, builtin) = if role == FontRoleKind::Code {
             (Fonts::DEFAULT_CODE, Embedded::HACK)
         } else if role.is_mono() {
@@ -356,7 +376,14 @@ pub fn resolve(fonts: &Fonts, locate: Locate<'_>, is_variable: IsVariable<'_>) -
                 semibold_of(&ui, locate, is_variable)
             }
             FontRoleKind::Numbers if fonts.numbers.family.trim().is_empty() && !fonts.numbers.embedded => {
-                Resolved { role, source: ui.source.clone(), notice: None }
+                // Figures that line up beside Inter; other interface fonts keep their own.
+                let source = match ui.source {
+                    Source::Embedded(Embedded::INTER | Embedded::INTER_VARIABLE) => {
+                        Source::Embedded(Embedded::INTER_TABULAR)
+                    }
+                    _ => ui.source.clone(),
+                };
+                Resolved { role, source, notice: None }
             }
             _ => find(role),
         };
@@ -499,6 +526,8 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<B
         }
         add_embedded(&mut defs, Embedded::for_role(r.role));
     }
+    // What Inter Tabular leaves out (letters of "12 MB") comes from Inter.
+    add_embedded(&mut defs, Embedded::INTER);
     egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
     egui_phosphor::add_font_bytes_as_family(&mut defs, PHOSPHOR_FILL, egui_phosphor::Variant::Fill.font_bytes());
     for r in roles {
@@ -522,6 +551,9 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<B
         let fallback = Embedded::for_role(r.role).key().to_string();
         if !list.contains(&fallback) {
             list.push(fallback);
+        }
+        if r.role == FontRoleKind::Numbers && !list.iter().any(|k| k == Embedded::INTER.key()) {
+            list.push(Embedded::INTER.key().to_string());
         }
         if r.role.is_mono() {
             list.extend(mono_defaults.iter().cloned());
@@ -565,6 +597,9 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<B
     for e in Embedded::all().filter(|e| previews && e.usable()) {
         add_embedded(&mut defs, e);
         let mut list = vec![e.key().to_string()];
+        if e.font().partial {
+            list.push(Embedded::INTER.key().to_string());
+        }
         list.extend(if e.font().mono { mono_defaults.iter() } else { prop_defaults.iter() }.cloned());
         defs.families.insert(preview_family_of(e), list);
     }
@@ -726,11 +761,6 @@ pub fn hex(ctx: &Context, size: f32) -> FontId {
     role_font(ctx, FontRoleKind::Hex, size)
 }
 
-/// Numbers (sizes, dates, counters, progress).
-pub fn numbers(ctx: &Context, size: f32) -> FontId {
-    role_font(ctx, FontRoleKind::Numbers, size)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -787,7 +817,7 @@ mod tests {
                 assert_eq!(src(&r, role), Source::Embedded(Embedded::CASCADIA_MONO));
             }
             assert_eq!(src(&r, FontRoleKind::Code), Source::Embedded(Embedded::HACK), "previews / editor: Hack");
-            assert_eq!(src(&r, FontRoleKind::Numbers), src(&r, FontRoleKind::Ui), "numbers follow the ui font");
+            assert_eq!(src(&r, FontRoleKind::Numbers), Source::Embedded(Embedded::INTER_TABULAR), "figures line up");
             assert!(r.iter().all(|x| x.notice.is_none()));
         }
         assert_eq!(Embedded::for_role(FontRoleKind::Ui), Embedded::INTER);
@@ -897,7 +927,7 @@ mod tests {
         assert_eq!(f.families[&FontFamily::Monospace].iter().filter(|k| *k == "Hack").count(), 1, "egui's Hack once");
         assert_eq!(f.families[&FontFamily::Name(TERMINAL.into())][0], "Cascadia Mono");
         assert_eq!(f.families[&FontFamily::Name(HEX.into())][0], "Cascadia Mono");
-        assert_eq!(f.families[&FontFamily::Name(NUMBERS.into())][0], "Inter");
+        assert_eq!(f.families[&FontFamily::Name(NUMBERS.into())][0], "Inter Tabular");
         assert_eq!(f.families[&FontFamily::Name(SEMIBOLD.into())][0], "Inter SemiBold");
         assert_eq!(f.families[&FontFamily::Name(ICONS.into())][0], "phosphor");
         assert_eq!(f.families[&FontFamily::Name(PHOSPHOR_FILL.into())][0], PHOSPHOR_FILL);
@@ -981,9 +1011,29 @@ mod tests {
     /// dotless i, ş, ğ, ç, ö, ü, typographic punctuation) plus, for monospace faces, the
     /// terminal's box drawing and one advance for every ASCII glyph.
     #[test]
+    fn inter_tabular_has_equal_figures_and_inter_metrics() {
+        use skrifa::MetadataProvider as _;
+        let size = skrifa::instance::Size::new(13.0);
+        let at = skrifa::instance::LocationRef::default();
+        let font = skrifa::FontRef::new(Embedded::INTER_TABULAR.font().bytes).unwrap();
+        let cmap = font.charmap();
+        let metrics = font.glyph_metrics(size, at);
+        let adv = |c| metrics.advance_width(cmap.map(c).unwrap()).unwrap();
+        assert!(('0'..='9').all(|c| adv(c) == adv('0')), "tabular digits");
+        assert!(cmap.map(',').is_some() && cmap.map('.').is_some() && cmap.map(':').is_some());
+        assert!(cmap.map('M').is_none(), "letters stay with Inter");
+        let inter = skrifa::FontRef::new(Embedded::INTER.font().bytes).unwrap();
+        let (a, b) = (font.metrics(size, at), inter.metrics(size, at));
+        assert_eq!((a.ascent, a.descent, a.leading), (b.ascent, b.descent, b.leading), "same line box");
+        let defs = definitions();
+        let list = &defs.families[&FontFamily::Name(NUMBERS.into())];
+        assert_eq!(&list[..2], ["Inter Tabular", "Inter"]);
+    }
+
+    #[test]
     fn embedded_fonts_cover_turkish_and_parse() {
         use skrifa::MetadataProvider as _;
-        for e in Embedded::all() {
+        for e in Embedded::all().filter(|e| !e.font().partial) {
             let f = e.font();
             let font = skrifa::FontRef::new(f.bytes).unwrap_or_else(|err| panic!("{}: {err}", f.name));
             let cmap = font.charmap();

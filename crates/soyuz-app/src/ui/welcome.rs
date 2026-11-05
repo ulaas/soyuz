@@ -3,15 +3,15 @@
 //! remembered in the session, and the card can be brought back from the palette
 //! (`Welcome tips`). `[appearance] welcome_tips` off: new profiles start without it.
 
-use egui::{Align, Align2, Area, CornerRadius, Frame, Id, Layout, Margin, Order, RichText, Stroke, vec2};
+use egui::{Align, Align2, Area, Frame, Id, Layout, Margin, Order, RichText, Stroke, vec2};
 use soyuz_core::config::Action;
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::keys::chord_label;
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::palette;
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{Btn, icon_button, kbd, pill_button};
 
 const TIPS: &[(Action, &str)] = &[
@@ -56,7 +56,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
             Frame::new()
                 .fill(p.bg_surface3)
                 .stroke(Stroke::new(1.0, p.border_strong))
-                .corner_radius(CornerRadius::same(12))
+                .corner_radius(crate::theme::tokens::radius::same(12))
                 .inner_margin(Margin::same(16))
                 .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW))
                 .show(ui, |ui| {

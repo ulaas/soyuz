@@ -1,7 +1,7 @@
 //! Draws the image editor ([`crate::editors::image::ImageDoc`]): toolbar, the zoom /
 //! pan / crop view over a checkerboard, and the status bar.
 
-use egui::{Align2, Color32, CornerRadius, CursorIcon, FontId, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, CursorIcon, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
 use super::widgets;
 use crate::editors::image::ImageDoc;
@@ -9,8 +9,12 @@ use crate::editors::image::ops::{NormRect, SaveMode};
 use crate::theme::{Palette, icons::ph};
 use crate::ui::gfx::TexExt;
 
-const TOOLBAR_H: f32 = 34.0;
-const STATUS_H: f32 = 24.0;
+fn toolbar_h() -> f32 {
+    crate::theme::font::grow(34.0)
+}
+fn status_h() -> f32 {
+    crate::theme::font::grow(24.0)
+}
 
 #[derive(Default)]
 pub struct ImageOutput {
@@ -28,9 +32,9 @@ pub fn show(
 ) -> ImageOutput {
     doc.pump();
     let mut out = ImageOutput::default();
-    let tb = Rect::from_min_size(rect.min, vec2(rect.width(), TOOLBAR_H));
+    let tb = Rect::from_min_size(rect.min, vec2(rect.width(), toolbar_h()));
     toolbar(doc, ui, tb, p, id, &mut out);
-    let status = Rect::from_min_max(pos2(rect.left(), rect.bottom() - STATUS_H), rect.max);
+    let status = Rect::from_min_max(pos2(rect.left(), rect.bottom() - status_h()), rect.max);
     let mut top = tb.bottom();
     if doc.is_dirty() && matches!(doc.save_mode(), SaveMode::Lossy(_) | SaveMode::Unsupported) {
         let r = Rect::from_min_size(pos2(rect.left() + 8.0, top + 2.0), vec2(rect.width() - 16.0, 30.0));
@@ -75,7 +79,7 @@ fn toolbar(doc: &mut ImageDoc, ui: &mut Ui, r: Rect, p: &Palette, id: Id, out: &
         let b = Rect::from_min_size(pos2(x, r.top() + 4.0), vec2(26.0, 26.0));
         x += 28.0;
         if on {
-            ui.painter().rect_filled(b, CornerRadius::same(4), p.accent_subtle);
+            ui.painter().rect_filled(b, crate::theme::tokens::radius::same(4), p.accent_subtle);
         }
         if widgets::icon_at(ui, b, id.with(("im", key)), glyph, tip, enabled, p) {
             clicked.push(key);
@@ -83,7 +87,7 @@ fn toolbar(doc: &mut ImageDoc, ui: &mut Ui, r: Rect, p: &Palette, id: Id, out: &
     }
     if doc.crop.is_some() {
         for (label, key) in [(tr!("editors-image-apply-crop"), "apply"), (tr!("common-cancel"), "cancel")] {
-            let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), p.text_primary);
+            let g = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(12.0), p.text_primary);
             let b = Rect::from_min_size(pos2(x + 4.0, r.top() + 5.0), vec2(g.size().x + 18.0, 24.0));
             x = b.right() + 2.0;
             let resp = ui.interact(b, id.with(("imb", key)), Sense::click());
@@ -95,7 +99,7 @@ fn toolbar(doc: &mut ImageDoc, ui: &mut Ui, r: Rect, p: &Palette, id: Id, out: &
                 (false, true) => p.bg_surface3,
                 (false, false) => p.bg_surface2,
             };
-            ui.painter().rect_filled(b, CornerRadius::same(4), fill);
+            ui.painter().rect_filled(b, crate::theme::tokens::radius::same(4), fill);
             let fg = if primary { Color32::WHITE } else { p.text_primary };
             ui.painter().galley(pos2(b.left() + 9.0, b.center().y - g.size().y / 2.0), g, fg);
             if resp.clicked() {
@@ -134,7 +138,7 @@ fn status(doc: &ImageDoc, ui: &mut Ui, r: Rect, p: &Palette) {
         pos2(r.left() + 10.0, r.center().y),
         Align2::LEFT_CENTER,
         s,
-        FontId::proportional(11.5),
+        crate::theme::font::ui(11.5),
         p.text_secondary,
     );
     let mode = match doc.save_mode() {
@@ -146,7 +150,7 @@ fn status(doc: &ImageDoc, ui: &mut Ui, r: Rect, p: &Palette) {
         pos2(r.right() - 10.0, r.center().y),
         Align2::RIGHT_CENTER,
         mode,
-        FontId::proportional(11.5),
+        crate::theme::font::ui(11.5),
         p.text_tertiary,
     );
 }
@@ -300,7 +304,7 @@ fn view(doc: &mut ImageDoc, ui: &mut Ui, area: Rect, p: &Palette, focus: &mut Ve
             pos2(r.left() + 6.0, r.top() + 6.0),
             Align2::LEFT_TOP,
             format!("{cw} × {ch}"),
-            FontId::proportional(11.5),
+            crate::theme::font::ui(11.5),
             Color32::WHITE,
         );
     } else if doc.crop_mode {
@@ -308,7 +312,7 @@ fn view(doc: &mut ImageDoc, ui: &mut Ui, area: Rect, p: &Palette, focus: &mut Ve
             pos2(area.center().x, area.top() + 16.0),
             Align2::CENTER_CENTER,
             tr!("editors-image-crop-hint"),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_secondary,
         );
     }
