@@ -24,6 +24,12 @@ pub enum Cmd {
         location: Location,
         select: Option<String>,
     },
+    /// A path typed into the address bar: if it does not exist, the pane stays on it and
+    /// shows the error, so the text can be corrected.
+    NavigateTyped {
+        pane: PaneId,
+        location: Location,
+    },
     /// Activate an entry: enter folders, launch files.
     Open {
         pane: PaneId,

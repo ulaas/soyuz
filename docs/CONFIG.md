@@ -557,7 +557,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `status_column` | boolean | `true` | Show the git status column and badges inside repositories. |
-| `refresh_secs` | integer | `60` | Re-read git status this often while the repository is on screen (seconds). A fallback: changes in an open folder or in the repository's git directory refresh it at once. |
+| `refresh_secs` | integer | `15` | Re-read git status this often while the repository is on screen (seconds). A fallback: changes in an open folder or in the repository's git directory refresh it at once. |
 
 ## `[sync]`
 

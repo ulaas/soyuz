@@ -1,7 +1,8 @@
 //! Core behaviour that protects the user's data and choices, on a real `AppCore` with no
 //! window: `config.toml` is never replaced while it does not load, unsaved settings survive
 //! a reload, a toast's Undo reverses the operation it names, a folder already gone falls
-//! back to its nearest ancestor, and a late sync-navigation answer is ignored.
+//! back to its nearest ancestor while a mistyped path keeps its error page, and a late
+//! sync-navigation answer is ignored.
 //!
 //! Like `headless_core`, the test re-runs itself from a copy of this binary next to a
 //! `portable` marker: nothing outside a temporary directory is read or written.
@@ -18,6 +19,7 @@ use soyuz_appcore::ops::fileops::FileOpCmd;
 use soyuz_appcore::ops::fileops::drop::DropEffect;
 use soyuz_appcore::services::config_watch::{self, ConfigWatch};
 use soyuz_appcore::services::mailbox::UiMsg;
+use soyuz_appcore::state::pane::ListingStatus;
 use soyuz_appcore::tr;
 use soyuz_core::Location;
 use soyuz_core::config::{self, Config};
@@ -66,6 +68,7 @@ fn run_all(data: &Path) {
     background_save_writes_and_keeps_the_refusal(&path, data);
     toast_undo_targets_the_operation_it_names(data);
     folder_gone_at_navigation_falls_back(data);
+    typed_path_that_does_not_exist_stays(data);
     late_probe_answer_is_ignored(data);
     println!("data safety: ok");
 }
@@ -287,6 +290,41 @@ fn folder_gone_at_navigation_falls_back(data: &Path) {
     soyuz_appcore::ops::navigate(&mut app, pane, Location::Dir(missing), soyuz_appcore::ops::NavOpts::user());
     let want = Location::Dir(parent.clone());
     settle(&mut app, &host, "the ancestor", |a| a.ws.pane().location == want);
+    assert!(has_toast(&app, tr!("ops-folder-gone")));
+}
+
+fn typed_path_that_does_not_exist_stays(data: &Path) {
+    let parent = data.join("typed");
+    std::fs::create_dir_all(&parent).unwrap();
+    let missing = parent.join("mistyped");
+    let host = NullHost::default();
+    let mut app = core(&parent);
+    settle(&mut app, &host, "the first listing", |a| !a.ws.pane().is_loading());
+    let pane = app.ws.pane().id;
+    let typed = Location::Dir(missing.clone());
+    let failed = |a: &AppCore| matches!(a.ws.pane().status, ListingStatus::Failed(_));
+
+    app.ui.address.text = missing.display().to_string();
+    soyuz_appcore::state::crumbs::submit(&mut app.ui.address, &mut app.services, pane, &mut app.cmds, &parent, "");
+    settle(&mut app, &host, "the error page", failed);
+    // Long enough for a fallback's answer to arrive, were one asked for.
+    let wait = Instant::now();
+    while wait.elapsed() < Duration::from_millis(300) {
+        tick(&mut app, &host);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(app.ws.pane().location, typed, "a mistyped path stays");
+    assert!(failed(&app), "and shows the error");
+    assert!(!has_toast(&app, tr!("ops-folder-gone")));
+
+    // Once it has been listed it is an ordinary folder: losing it falls back.
+    std::fs::create_dir(&missing).unwrap();
+    app.cmds.push(Cmd::NavigateTyped { pane, location: typed.clone() });
+    settle(&mut app, &host, "the created folder", |a| matches!(a.ws.pane().status, ListingStatus::Ready));
+    std::fs::remove_dir(&missing).unwrap();
+    soyuz_appcore::ops::start_listing(app.ws.pane_mut(), &mut app.services, false);
+    let want = Location::Dir(parent.clone());
+    settle(&mut app, &host, "the fallback", |a| a.ws.pane().location == want);
     assert!(has_toast(&app, tr!("ops-folder-gone")));
 }
 

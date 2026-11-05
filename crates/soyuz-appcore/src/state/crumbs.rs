@@ -367,7 +367,7 @@ pub fn submit(
         }
     }
     cmds.push(Cmd::FocusPane(pane));
-    cmds.push(Cmd::Navigate { pane, location: loc, select: None });
+    cmds.push(Cmd::NavigateTyped { pane, location: loc });
 }
 
 #[cfg(test)]
@@ -548,7 +548,7 @@ mod tests {
         enter(&mut a, &mut s, pane, &mut cmds, &c);
         assert!(!a.editing);
         match cmds.as_slice() {
-            [Cmd::FocusPane(p), Cmd::Navigate { pane: p2, location: Location::Dir(to), select: None }] => {
+            [Cmd::FocusPane(p), Cmd::NavigateTyped { pane: p2, location: Location::Dir(to) }] => {
                 assert_eq!((*p, *p2), (pane, pane));
                 assert_eq!(to, &d.join("sub"));
             }
@@ -564,7 +564,7 @@ mod tests {
         let mut a = AddressState { editing: true, text: "trash:".into(), ..Default::default() };
         let mut cmds = Vec::new();
         enter(&mut a, &mut s, pane, &mut cmds, &Completion::default());
-        assert!(matches!(cmds.as_slice(), [_, Cmd::Navigate { location: Location::Trash, .. }]), "{cmds:?}");
+        assert!(matches!(cmds.as_slice(), [_, Cmd::NavigateTyped { location: Location::Trash, .. }]), "{cmds:?}");
         let mut a = AddressState { editing: true, text: "  ".into(), ..Default::default() };
         let mut cmds = Vec::new();
         enter(&mut a, &mut s, pane, &mut cmds, &Completion::default());

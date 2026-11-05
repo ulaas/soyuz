@@ -483,7 +483,7 @@ impl Default for Editor {
 
 impl Default for Git {
     fn default() -> Self {
-        Git { status_column: true, refresh_secs: 60 }
+        Git { status_column: true, refresh_secs: 15 }
     }
 }
 

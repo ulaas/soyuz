@@ -19,13 +19,6 @@ use crate::ui::context_menu::{group_items, sort_items, view_mode_items};
 use crate::ui::views::computer::volume_label;
 use crate::ui::widgets::{menu_caption, menu_check, menu_item, menu_separator, rail_button, submenu};
 
-/// Least the path field gets before the filter and buttons make way (default text size).
-const OMNI_MIN: f32 = 180.0;
-/// The filter field's least width (default text size).
-const FILTER_MIN: f32 = 110.0;
-/// From this much room for the path and the filter together, both fit (default text size).
-const SHARED_FOR_FILTER: f32 = 400.0;
-
 fn filter_w() -> f32 {
     crate::theme::font::grow(210.0)
 }
@@ -74,17 +67,6 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             history_menu(ui, &fwd, app, false);
             x += 6.0;
 
-            // In a narrow window the path keeps its room: the filter field folds into a
-            // button until it is used, then the buttons with a key of their own go.
-            let slot = bsz + 2.0;
-            let room = full.right() - x - 3.0 * slot - 6.0 - crate::theme::font::grow(OMNI_MIN);
-            let extra_buttons = (room / slot).floor().clamp(0.0, 4.0) as u8;
-            // What is left for the path and the filter after the buttons.
-            let shared = room + crate::theme::font::grow(OMNI_MIN) - 4.0 * slot - 8.0;
-            let in_use = app.core.ui.filter_focus
-                || app.core.ws.pane().filter_active()
-                || ui.memory(|m| m.has_focus(Id::unique("soyuz.filter")));
-            let show_filter = in_use || shared >= crate::theme::font::grow(SHARED_FOR_FILTER);
             // Right side controls (laid out right to left).
             let mut rx = full.right();
             let mut right_btn = |ui: &mut Ui, glyph: &str, tip: &str, on: bool| {
@@ -118,9 +100,8 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 app.core.cmds.push(Cmd::Action(Action::TogglePreviewPane));
             }
             let search_on = app.core.ui.search.open;
-            if extra_buttons >= 1
-                && right_btn(ui, ph::MAGNIFYING_GLASS, &tip(app, tr!("app-toolbar-search"), &Action::Search), search_on)
-                    .clicked()
+            if right_btn(ui, ph::MAGNIFYING_GLASS, &tip(app, tr!("app-toolbar-search"), &Action::Search), search_on)
+                .clicked()
             {
                 if search_on {
                     app.core.ui.search.open = false;
@@ -129,21 +110,17 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 }
             }
             let palette_on = app.core.palette.open;
-            if extra_buttons >= 4
-                && right_btn(
-                    ui,
-                    ph::COMMAND,
-                    &tip(app, tr!("app-toolbar-command-palette"), &Action::CommandPalette),
-                    palette_on,
-                )
-                .clicked()
+            if right_btn(
+                ui,
+                ph::COMMAND,
+                &tip(app, tr!("app-toolbar-command-palette"), &Action::CommandPalette),
+                palette_on,
+            )
+            .clicked()
             {
                 app.core.cmds.push(Cmd::Action(Action::CommandPalette));
             }
-            if extra_buttons >= 3 {
-                let sort = right_btn(ui, ph::SORT_ASCENDING, tr!("app-toolbar-sort"), false);
-                sort_menu(ui, &sort, app);
-            }
+            let sort = right_btn(ui, ph::SORT_ASCENDING, tr!("app-toolbar-sort"), false);
             let mode = app.core.ws.pane().view.mode;
             let mode_glyph = match mode {
                 ViewMode::Details => ph::LIST,
@@ -152,26 +129,16 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 ViewMode::Gallery => ph::IMAGES,
                 ViewMode::Miller => ph::COLUMNS,
             };
-            if extra_buttons >= 2 {
-                let view = right_btn(ui, mode_glyph, tr!("app-toolbar-view"), false);
-                view_menu(ui, &view, app);
-            }
-            if !show_filter
-                && extra_buttons >= 4
-                && right_btn(ui, ph::FUNNEL_SIMPLE, &tip(app, tr!("app-toolbar-filter"), &Action::Filter), false)
-                    .clicked()
-            {
-                app.core.ui.filter_focus = true;
-            }
+            let view = right_btn(ui, mode_glyph, tr!("app-toolbar-view"), false);
+            view_menu(ui, &view, app);
+            sort_menu(ui, &sort, app);
             rx -= 6.0;
 
             // Filter field.
-            if show_filter {
-                let w = (shared * 0.3).clamp(crate::theme::font::grow(FILTER_MIN), filter_w());
-                let fr = Rect::from_min_size(pos2(rx - w, full.center().y - 16.0), vec2(w, 32.0));
-                filter(ui, fr, app);
-                rx = fr.left() - 8.0;
-            }
+            let w = filter_w();
+            let fr = Rect::from_min_size(pos2(rx - w, full.center().y - 16.0), vec2(w, 32.0));
+            filter(ui, fr, app);
+            rx = fr.left() - 8.0;
 
             // Omnibar fills the middle.
             let omni =

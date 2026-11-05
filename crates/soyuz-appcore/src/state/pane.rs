@@ -124,6 +124,9 @@ pub struct Pane {
     pub status: ListingStatus,
     /// A soft relist (refresh / rescan) is running; contents stay visible.
     pub refreshing: bool,
+    /// Typed into the address bar and not listed yet: if it does not exist, stay and show
+    /// the error instead of moving to the nearest existing folder.
+    pub typed_location: bool,
     /// A listing ended with an error the pane does not show as a failure; a toast tells
     /// the user (taken by `ops::handle_msg`).
     pub listing_warning: Option<ListingWarning>,
@@ -223,6 +226,7 @@ impl Pane {
             ctl: None,
             status: ListingStatus::Loading { since: Instant::now() },
             refreshing: false,
+            typed_location: false,
             listing_warning: None,
             dirty: true,
             deferred_paths: Vec::new(),

@@ -25,7 +25,7 @@ before the fixes.
 - 15 (rubber band).
 - 7: the OS accent and mode are still polled (3 s focused, 15 s unfocused), so a theme flip can take
   up to 15 s to show in an unfocused window.
-- 6: a change touching only `refs/` waits for the 60 s fallback.
+- 6: a change touching only `refs/` waits for the 15 s fallback.
 
 **UX: not done**
 - 8: the welcome card does not dismiss itself after its tips were used.
@@ -40,9 +40,14 @@ before the fixes.
   system folders still asks.
 
 **Behaviour to review**
-- A mistyped path in the address bar lands on its nearest existing ancestor with a notification.
-- In a narrow window the filter field folds into a button and less-used toolbar buttons go.
-- `[git] refresh_secs` defaults to 60 instead of 5, now a fallback behind a watcher on the git directory.
+- A folder that has gone missing lands on its nearest existing ancestor with a notification. A path
+  typed into the address bar that does not exist keeps its error page (owner decision).
+- The toolbar does not fold in a narrow window (owner decision), as on main: below about 900 px wide
+  with the sidebar open (calculated from the widths), the filter and path fields overlap and cover the
+  back, forward and up buttons. Seen in a screenshot at 640 px. The decision was made on a description
+  that said only "less room", so it is still open.
+- `[git] refresh_secs` defaults to 15 instead of 5 (owner decision), now a fallback behind a watcher on
+  the git directory.
 - A remote transfer keeps a `.<name>.soyuzpartinfo` note beside a partial, and a source that changes
   during a transfer fails instead of committing.
 

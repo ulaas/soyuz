@@ -39,6 +39,8 @@ pub struct NavOpts {
     /// Back / forward / history-graph jump: revisit the existing node of the tab's
     /// "where was I" graph instead of starting a branch.
     pub revisit: bool,
+    /// Typed by hand: a path that does not exist keeps the error page.
+    pub typed: bool,
 }
 
 impl NavOpts {
@@ -162,6 +164,7 @@ pub fn navigate(app: &mut AppCore, id: PaneId, loc: Location, opts: NavOpts) {
             pane.history.push(here, &loc);
         }
         pane.location = loc.clone();
+        pane.typed_location = opts.typed;
         pane.view = view;
         pane.pending_selection.clear();
         pane.collapsed_groups.clear();
@@ -602,7 +605,12 @@ pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
                 }
                 // Already gone when the pane got here (a session restored with the drive
                 // unplugged): no watcher reports that, so look for the nearest ancestor.
+                if done && matches!(p.status, ListingStatus::Ready) {
+                    // It exists: if it goes away later, it is a folder that went missing.
+                    p.typed_location = false;
+                }
                 if done
+                    && !p.typed_location
                     && let Location::Dir(dir) = &p.location
                     && matches!(&p.status, ListingStatus::Failed(e) if e.kind == soyuz_core::FsErrorKind::NotFound)
                 {
@@ -864,6 +872,9 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         }
         Cmd::Navigate { pane, location, select } => {
             navigate(app, pane, location, NavOpts { select, ..NavOpts::user() });
+        }
+        Cmd::NavigateTyped { pane, location } => {
+            navigate(app, pane, location, NavOpts { typed: true, ..NavOpts::user() });
         }
         Cmd::Open { pane, key } => open_entry(app, pane, &key),
         Cmd::OpenInNewTab { location, activate } => open_in_new_tab(app, location, activate),
