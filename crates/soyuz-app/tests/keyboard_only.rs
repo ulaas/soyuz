@@ -82,7 +82,11 @@ fn script(data: &Path, lang: &str, palette_query: &str, new_folder: &str) -> Str
         "wait:500".into(),
         "keys:{Enter}".into(),
         "wait_for:palette=closed".into(),
-        // The new folder starts in inline rename: accept the default name.
+        // The new folder starts in inline rename once its job is done and the list has it; the
+        // cursor moves to it in that same step. Enter any earlier goes to the list and opens the
+        // item under the cursor. Then accept the default name.
+        format!("wait_for:cursor={new_folder}"),
+        "wait:300".into(),
         "keys:{Enter}".into(),
         format!("wait_for:exists={}", data.join(new_folder).display()),
         format!("wait_for:has={new_folder}"),
