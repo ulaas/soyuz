@@ -98,7 +98,9 @@ fn go_to_folder(data: PathBuf) {
                 open(a)
                     && drawn_with(a, &typed2)
                     && match selected(a) {
-                        Some(Exec::Go(soyuz_core::Location::Dir(p))) => p == &t1,
+                        Some(Exec::Go(soyuz_core::Location::Dir(p)) | Exec::GoTyped(soyuz_core::Location::Dir(p))) => {
+                            p == &t1
+                        }
                         Some(Exec::Complete { go: Some(soyuz_core::Location::Dir(p)), .. }) => p == &t1,
                         _ => false,
                     }

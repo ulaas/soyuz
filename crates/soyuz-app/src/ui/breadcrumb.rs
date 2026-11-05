@@ -35,6 +35,8 @@ const SEP_W: f32 = 18.0;
 const CRUMB_PAD: f32 = 8.0;
 /// The "…" button of the collapsed crumbs.
 const MORE_W: f32 = 28.0;
+/// The room the current folder's name keeps before the "…" button makes way (default text size).
+const NAME_MIN: f32 = 64.0;
 
 fn kind_glyph(c: &Crumb) -> &'static str {
     match c.kind {
@@ -137,7 +139,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let n = list.len();
     for i in 0..n {
         if hidden.contains(&i) {
-            if hidden.first() == Some(&i) {
+            if hidden.first() == Some(&i) && more_fits(avail, crate::theme::font::grow(NAME_MIN)) {
                 // Overflow dropdown with the collapsed ancestors.
                 let r = Rect::from_min_size(pos2(x, cy - h / 2.0), vec2(MORE_W, h));
                 let resp = ui.interact(r, Id::unique("soyuz.crumb.more"), Sense::click());
@@ -259,6 +261,12 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     if bg.clicked() {
         start_edit(c);
     }
+}
+
+/// Whether the "…" button and its chevron leave the current folder's name `name_min` of `avail`.
+/// In the narrowest path field the name alone is shown: the Up button still reaches the parents.
+fn more_fits(avail: f32, name_min: f32) -> bool {
+    avail - MORE_W - SEP_W >= name_min
 }
 
 /// The crumbs that go under the "…" button when the path does not fit in `avail`. The
@@ -504,6 +512,12 @@ mod tests {
         assert_eq!(collapsed(&[80.0, 100.0], 150.0), vec![0], "also with two crumbs");
         // Too narrow even for the name alone: still only the name, which gets cut.
         assert_eq!(collapsed(&[80.0, 70.0, 300.0], 120.0), vec![0, 1]);
+    }
+
+    #[test]
+    fn the_name_keeps_its_room_before_the_more_button() {
+        assert!(more_fits(110.0, 64.0));
+        assert!(!more_fits(109.0, 64.0));
     }
 
     #[test]

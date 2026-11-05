@@ -40,6 +40,8 @@ const MAX_RESULTS: usize = 200;
 pub enum Exec {
     Action(Action),
     Go(Location),
+    /// Go to a path typed by hand: if it does not exist, stay on the error page.
+    GoTyped(Location),
     /// Replace the input (Tab completion; Enter also navigates for paths).
     Complete {
         text: String,
@@ -541,7 +543,7 @@ fn rank_paths(app: &mut AppCore, q: &str, prefix: Option<char>) -> Vec<Item> {
         && let Some(loc) = Location::parse(&full)
     {
         let mut it = Item::new(
-            Exec::Go(loc.clone()),
+            Exec::GoTyped(loc.clone()),
             tr!("actions-palette-go-to", path = loc.display()),
             IconId::ArrowSquareRight,
             tr!("actions-section-path"),
@@ -880,12 +882,16 @@ pub fn run(app: &mut AppCore, host: &dyn Host, exec: Exec, mods: RunMods) {
         }
         Exec::Go(loc) => {
             close(app);
-            go(app, loc, mods.command);
+            go(app, loc, mods.command, false);
+        }
+        Exec::GoTyped(loc) => {
+            close(app);
+            go(app, loc, mods.command, true);
         }
         Exec::Complete { text, go: target } => {
             if let Some(loc) = target.filter(|_| !mods.shift) {
                 close(app);
-                go(app, loc, mods.command);
+                go(app, loc, mods.command, false);
             } else {
                 app.palette.input = text;
                 app.palette.cursor_to_end = true;
@@ -928,7 +934,7 @@ pub fn run(app: &mut AppCore, host: &dyn Host, exec: Exec, mods: RunMods) {
     }
 }
 
-fn go(app: &mut AppCore, loc: Location, new_tab: bool) {
+fn go(app: &mut AppCore, loc: Location, new_tab: bool, typed: bool) {
     if let Location::Dir(p) = &loc
         && p.as_os_str().is_empty()
     {
@@ -936,9 +942,11 @@ fn go(app: &mut AppCore, loc: Location, new_tab: bool) {
     }
     if new_tab {
         ops::open_in_new_tab(app, loc, true);
+        // The listing's answer comes through the mailbox, after this.
+        app.ws.pane_mut().typed_location = typed;
     } else {
         let id = app.ws.pane().id;
-        ops::navigate(app, id, loc, NavOpts::user());
+        ops::navigate(app, id, loc, NavOpts { typed, ..NavOpts::user() });
     }
     app.ui.focus = crate::core::Focus::List;
 }
@@ -948,7 +956,9 @@ fn completion_of(item: &Item) -> Option<String> {
     match &item.exec {
         Exec::Complete { text, .. } => Some(text.clone()),
         Exec::Shell(line) => Some(format!(">{line}")),
-        Exec::Go(Location::Dir(p)) => Some(format!(":{}{}", soyuz_fs::strip_verbatim(p).display(), sep())),
+        Exec::Go(Location::Dir(p)) | Exec::GoTyped(Location::Dir(p)) => {
+            Some(format!(":{}{}", soyuz_fs::strip_verbatim(p).display(), sep()))
+        }
         _ => None,
     }
 }

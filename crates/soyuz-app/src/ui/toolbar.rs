@@ -19,8 +19,28 @@ use crate::ui::context_menu::{group_items, sort_items, view_mode_items};
 use crate::ui::views::computer::volume_label;
 use crate::ui::widgets::{menu_caption, menu_check, menu_item, menu_separator, rail_button, submenu};
 
-fn filter_w() -> f32 {
-    crate::theme::font::grow(210.0)
+/// The filter field's width, and the least it shrinks to (default text size).
+const FILTER_W: f32 = 210.0;
+const FILTER_MIN: f32 = 110.0;
+/// What the path field keeps before the filter folds (default text size).
+const OMNI_MIN: f32 = 120.0;
+/// Narrower than this the path field shows nothing useful, so it is not drawn.
+const OMNI_DRAWN: f32 = 48.0;
+const FILTER_GAP: f32 = 8.0;
+/// The toolbar's buttons on the right: settings, panes, preview, search, palette, sort, view.
+const RIGHT_BUTTONS: f32 = 7.0;
+
+/// The filter field's width in `middle` points shared with the path field, or `None` when it
+/// folds into a button. A filter in use stays a field, whatever it costs the path.
+fn filter_width(middle: f32, omni_min: f32, min: f32, max: f32, in_use: bool) -> Option<f32> {
+    let spare = middle - omni_min - FILTER_GAP;
+    if spare >= min {
+        Some(spare.min(max))
+    } else if in_use {
+        Some(min.min(middle).max(0.0))
+    } else {
+        None
+    }
 }
 
 fn tip(app: &SoyuzApp, label: &str, action: &Action) -> String {
@@ -67,6 +87,16 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             history_menu(ui, &fwd, app, false);
             x += 6.0;
 
+            // In a narrow window the filter shrinks, then folds into a button until it is used.
+            // Every other button stays; below that, the path field gives way.
+            let middle = full.right() - RIGHT_BUTTONS * (bsz + 2.0) - 6.0 - x;
+            let in_use = app.core.ui.filter_focus
+                || app.core.ws.pane().filter_active()
+                || ui.memory(|m| m.has_focus(Id::unique("soyuz.filter")));
+            let filter_field = {
+                use crate::theme::font::grow;
+                filter_width(middle, grow(OMNI_MIN), grow(FILTER_MIN), grow(FILTER_W), in_use)
+            };
             // Right side controls (laid out right to left).
             let mut rx = full.right();
             let mut right_btn = |ui: &mut Ui, glyph: &str, tip: &str, on: bool| {
@@ -132,17 +162,26 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let view = right_btn(ui, mode_glyph, tr!("app-toolbar-view"), false);
             view_menu(ui, &view, app);
             sort_menu(ui, &sort, app);
+            if filter_field.is_none()
+                && right_btn(ui, ph::FUNNEL_SIMPLE, &tip(app, tr!("app-toolbar-filter"), &Action::Filter), false)
+                    .clicked()
+            {
+                app.core.ui.filter_focus = true;
+            }
             rx -= 6.0;
 
             // Filter field.
-            let w = filter_w();
-            let fr = Rect::from_min_size(pos2(rx - w, full.center().y - 16.0), vec2(w, 32.0));
-            filter(ui, fr, app);
-            rx = fr.left() - 8.0;
+            if let Some(w) = filter_field {
+                let fr = Rect::from_min_size(pos2(rx - w, full.center().y - 16.0), vec2(w, 32.0));
+                filter(ui, fr, app);
+                rx = fr.left() - FILTER_GAP;
+            }
 
             // Omnibar fills the middle.
-            let omni =
-                Rect::from_min_max(pos2(x, full.center().y - 16.0), pos2(rx.max(x + 120.0), full.center().y + 16.0));
+            let omni = Rect::from_min_max(pos2(x, full.center().y - 16.0), pos2(rx.max(x), full.center().y + 16.0));
+            if omni.width() < OMNI_DRAWN {
+                return;
+            }
             let root_label = {
                 let pane = app.core.ws.pane();
                 match &pane.location {
@@ -452,5 +491,27 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
             crate::theme::font::ui(11.0),
             p.text_tertiary,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::filter_width;
+
+    const W: fn(f32, bool) -> Option<f32> = |middle, in_use| filter_width(middle, 120.0, 110.0, 210.0, in_use);
+
+    #[test]
+    fn the_filter_shrinks_before_it_folds() {
+        assert_eq!(W(600.0, false), Some(210.0), "room for all of it");
+        assert_eq!(W(278.0, false), Some(150.0), "the path keeps its least");
+        assert_eq!(W(238.0, false), Some(110.0), "the least it shrinks to");
+        assert_eq!(W(237.0, false), None, "then it folds");
+    }
+
+    #[test]
+    fn a_filter_in_use_stays_a_field() {
+        assert_eq!(W(150.0, true), Some(110.0));
+        assert_eq!(W(80.0, true), Some(80.0), "never wider than the room");
+        assert_eq!(W(-20.0, true), Some(0.0), "and never negative");
     }
 }
