@@ -206,10 +206,100 @@ pub fn is_pdf_thumbnailable(path: &Path) -> bool {
     PDF_PAGES.load(Ordering::Relaxed) && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
 }
 
+/// What the slots add up to, kept as they change: eviction checks it after every decode
+/// while the UI thread waits for the same lock.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Totals {
+    ready: usize,
+    failed: usize,
+    ready_bytes: u64,
+}
+
+impl Totals {
+    fn add(&mut self, s: &Slot) {
+        match s {
+            Slot::Ready { bytes, .. } => {
+                self.ready += 1;
+                self.ready_bytes += bytes;
+            }
+            Slot::Failed { .. } => self.failed += 1,
+            Slot::Pending { .. } => {}
+        }
+    }
+
+    fn sub(&mut self, s: &Slot) {
+        match s {
+            Slot::Ready { bytes, .. } => {
+                self.ready -= 1;
+                self.ready_bytes -= bytes;
+            }
+            Slot::Failed { .. } => self.failed -= 1,
+            Slot::Pending { .. } => {}
+        }
+    }
+}
+
+/// The slots and their [`Totals`]. Reads go through `Deref`; every change of a slot's kind
+/// or size goes through the methods here.
+#[derive(Default)]
+struct SlotTable {
+    map: HashMap<ThumbKey, Slot>,
+    totals: Totals,
+}
+
+impl std::ops::Deref for SlotTable {
+    type Target = HashMap<ThumbKey, Slot>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+impl FromIterator<(ThumbKey, Slot)> for SlotTable {
+    fn from_iter<I: IntoIterator<Item = (ThumbKey, Slot)>>(iter: I) -> Self {
+        let mut t = SlotTable::default();
+        for (k, s) in iter {
+            t.insert(k, s);
+        }
+        t
+    }
+}
+
+impl SlotTable {
+    fn insert(&mut self, key: ThumbKey, slot: Slot) {
+        self.totals.add(&slot);
+        if let Some(old) = self.map.insert(key, slot) {
+            self.totals.sub(&old);
+        }
+    }
+
+    fn remove(&mut self, key: &ThumbKey) {
+        if let Some(old) = self.map.remove(key) {
+            self.totals.sub(&old);
+        }
+    }
+
+    /// For updating the use stamps of a slot; its kind and size stay.
+    fn get_mut(&mut self, key: &ThumbKey) -> Option<&mut Slot> {
+        self.map.get_mut(key)
+    }
+
+    fn retain(&mut self, mut keep: impl FnMut(&Slot) -> bool) {
+        let totals = &mut self.totals;
+        self.map.retain(|_, s| {
+            let kept = keep(s);
+            if !kept {
+                totals.sub(s);
+            }
+            kept
+        });
+    }
+}
+
 struct Shared {
     queue: Mutex<Vec<(ThumbKey, Kind)>>,
     cv: Condvar,
-    slots: Mutex<HashMap<ThumbKey, Slot>>,
+    slots: Mutex<SlotTable>,
     frame: AtomicU64,
     /// [`now_secs`] at the latest [`Thumbs::begin_frame`].
     frame_secs: AtomicU64,
@@ -247,7 +337,7 @@ impl Thumbs {
         let shared = Arc::new(Shared {
             queue: Mutex::new(Vec::new()),
             cv: Condvar::new(),
-            slots: Mutex::new(HashMap::new()),
+            slots: Mutex::new(SlotTable::default()),
             frame: AtomicU64::new(0),
             frame_secs: AtomicU64::new(now_secs()),
         });
@@ -338,7 +428,7 @@ impl Thumbs {
 
     /// Number of ready textures (for diagnostics/tests).
     pub fn ready_count(&self) -> usize {
-        self.shared.slots.lock().values().filter(|s| matches!(s, Slot::Ready { .. })).count()
+        self.shared.slots.lock().totals.ready
     }
 }
 
@@ -420,12 +510,12 @@ fn idle_trimmer(shared: &Shared, wake: &Wake) {
 /// (textures used in the last [`KEEP_FRAMES`] frames stay) or their number exceeds
 /// [`MAX_TEXTURES`] (a hard limit: recent ones go too), and the oldest failures beyond
 /// [`MAX_FAILED`]; then publish the totals.
-fn evict(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64) {
+fn evict(slots: &mut SlotTable, frame: u64, budget: u64) {
     evict_with(slots, frame, budget, MAX_TEXTURES, MAX_FAILED);
 }
 
-fn evict_with(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64, max_ready: usize, max_failed: usize) {
-    let ready = slots.values().filter(|s| matches!(s, Slot::Ready { .. })).count();
+fn evict_with(slots: &mut SlotTable, frame: u64, budget: u64, max_ready: usize, max_failed: usize) {
+    let ready = slots.totals.ready;
     if ready > max_ready {
         let mut by_age: Vec<(u64, ThumbKey)> = slots
             .iter()
@@ -441,7 +531,7 @@ fn evict_with(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64, max_
             slots.remove(&k);
         }
     }
-    let failed = slots.values().filter(|s| matches!(s, Slot::Failed { .. })).count();
+    let failed = slots.totals.failed;
     if failed > max_failed {
         let mut by_age: Vec<(u64, ThumbKey)> = slots
             .iter()
@@ -456,42 +546,31 @@ fn evict_with(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64, max_
             slots.remove(&k);
         }
     }
-    let mut total: u64 = slots.values().map(|s| if let Slot::Ready { bytes, .. } = s { *bytes } else { 0 }).sum();
-    if total > budget {
-        let mut by_age: Vec<(u64, u64, ThumbKey)> = slots
+    if slots.totals.ready_bytes > budget {
+        let mut by_age: Vec<(u64, ThumbKey)> = slots
             .iter()
             .filter_map(|(k, s)| match s {
-                Slot::Ready { used, bytes, .. } if frame.saturating_sub(*used) > KEEP_FRAMES => {
-                    Some((*used, *bytes, k.clone()))
-                }
+                Slot::Ready { used, .. } if frame.saturating_sub(*used) > KEEP_FRAMES => Some((*used, k.clone())),
                 _ => None,
             })
             .collect();
-        by_age.sort_by_key(|(u, _, _)| *u);
+        by_age.sort_by_key(|(u, _)| *u);
         // Free a little extra (1/8 of the budget) so eviction doesn't run on every decode.
         let target = budget - budget / 8;
-        for (_, bytes, k) in by_age {
-            if total <= target {
+        for (_, k) in by_age {
+            if slots.totals.ready_bytes <= target {
                 break;
             }
             slots.remove(&k);
-            total -= bytes;
         }
     }
     publish(slots);
 }
 
 /// Publish the totals [`memory`] reports.
-fn publish(slots: &HashMap<ThumbKey, Slot>) {
-    let (mut bytes, mut count) = (0, 0);
-    for s in slots.values() {
-        if let Slot::Ready { bytes: b, .. } = s {
-            bytes += b;
-            count += 1;
-        }
-    }
-    USED_BYTES.store(bytes, Ordering::Relaxed);
-    READY.store(count, Ordering::Relaxed);
+fn publish(slots: &SlotTable) {
+    USED_BYTES.store(slots.totals.ready_bytes, Ordering::Relaxed);
+    READY.store(slots.totals.ready as u64, Ordering::Relaxed);
 }
 
 /// Drop the textures and failures not drawn for `idle` seconds at `now` ([`now_secs`]).
@@ -501,9 +580,9 @@ fn publish(slots: &HashMap<ThumbKey, Slot>) {
 /// Nothing more is freed while every window is minimized: eframe runs no egui pass then,
 /// so dropped textures would only be released on restore, just when the visible ones
 /// are needed again.
-fn trim_idle(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, now: u64, idle: u64) -> usize {
+fn trim_idle(slots: &mut SlotTable, frame: u64, now: u64, idle: u64) -> usize {
     let before = slots.len();
-    slots.retain(|_, s| match s.last_use() {
+    slots.retain(|s| match s.last_use() {
         Some((used, used_at)) => used >= frame || now.saturating_sub(used_at) < idle,
         None => true,
     });
@@ -699,8 +778,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn totals_follow_every_change() {
+        let recount = |t: &SlotTable| {
+            let mut sum = Totals::default();
+            t.values().for_each(|s| sum.add(s));
+            sum
+        };
+        let failed = || Slot::Failed { used: 0, used_at: 0, label: None };
+        let mut t: SlotTable = (0..6).map(|i| (key(i), ready(i as u64, 0, 64))).collect();
+        t.insert(key(10), Slot::Pending { wanted: 0 });
+        t.insert(key(11), failed());
+        assert_eq!(t.totals, recount(&t));
+        assert_eq!((t.totals.ready, t.totals.failed), (6, 1));
+        // A slot replaced by another kind, and a removal of something absent.
+        t.insert(key(10), ready(1, 0, 128));
+        t.insert(key(0), failed());
+        t.remove(&key(99));
+        t.remove(&key(1));
+        assert_eq!(t.totals, recount(&t));
+        evict_with(&mut t, 100, gpu_bytes(64 * 64 * 4) * 3, 100, 100);
+        assert_eq!(t.totals, recount(&t));
+        evict_with(&mut t, 100, u64::MAX, 2, 1);
+        assert_eq!(t.totals, recount(&t));
+        trim_idle(&mut t, 200, 1000, 60);
+        assert_eq!(t.totals, recount(&t));
+        assert_eq!(t.totals, Totals::default());
+    }
+
+    #[test]
     fn eviction_keeps_the_budget_and_recent_textures() {
-        let mut slots = HashMap::new();
+        let mut slots = SlotTable::default();
         let up = super::super::preview_gfx::no_upload();
         let tex = |i: usize| Tex::upload_rgba(&up, format!("t{i}"), &RgbaImage::new(16, 16));
         // 10 textures of 1 KiB each, used in frames 0..10.
@@ -742,14 +849,14 @@ mod tests {
         let est = 300 * gpu_bytes(128 * 128 * 4);
         assert!((38_000_000..46_000_000).contains(&est), "{est}");
         // The budget sees the estimate: ten 64 px textures take 1.25 MiB, not 160 KiB.
-        let mut slots: HashMap<ThumbKey, Slot> = (0..10).map(|i| (key(i), ready(i as u64, 0, 64))).collect();
+        let mut slots: SlotTable = (0..10).map(|i| (key(i), ready(i as u64, 0, 64))).collect();
         evict(&mut slots, 100, 640 * 1024);
         assert_eq!(slots.len(), 4, "7/8 of 640 KiB holds four 128 KiB textures");
     }
 
     #[test]
     fn texture_count_is_capped_even_for_recent_textures() {
-        let mut slots: HashMap<ThumbKey, Slot> = (0..20).map(|i| (key(i), ready(i as u64, 0, 1))).collect();
+        let mut slots: SlotTable = (0..20).map(|i| (key(i), ready(i as u64, 0, 1))).collect();
         // All drawn within KEEP_FRAMES and far under the byte budget: only the cap applies.
         evict_with(&mut slots, 19, u64::MAX, 16, 100);
         let left: Vec<u64> = slots.values().filter_map(|s| s.last_use().map(|u| u.0)).collect();
@@ -759,7 +866,7 @@ mod tests {
 
     #[test]
     fn failures_are_evicted_too() {
-        let mut slots: HashMap<ThumbKey, Slot> =
+        let mut slots: SlotTable =
             (0..20).map(|i| (key(i), Slot::Failed { used: i as u64, used_at: 0, label: None })).collect();
         slots.insert(key(100), ready(0, 0, 1));
         evict_with(&mut slots, 20, u64::MAX, 100, 8);
@@ -772,7 +879,7 @@ mod tests {
 
     #[test]
     fn idle_trim_frees_what_was_not_drawn_lately() {
-        let mut slots: HashMap<ThumbKey, Slot> = HashMap::new();
+        let mut slots = SlotTable::default();
         slots.insert(key(0), ready(5, 100, 64)); // drawn in frame 5 at t=100
         slots.insert(key(1), ready(9, 100, 64)); // drawn in the latest frame (9), also at t=100
         slots.insert(key(2), ready(8, 150, 64)); // drawn recently
