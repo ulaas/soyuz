@@ -459,6 +459,14 @@ impl AppCore {
     /// Phase 3: results of background work (lists, watcher, devices, …).
     pub fn pump_services(&mut self, host: &dyn Host) {
         ops::drain_mailbox(self, host);
+        // Streamed chunks held back for the merge interval need a frame even if the listing
+        // goes quiet.
+        let held = crate::models::windows::all_workspaces_mut(self)
+            .iter()
+            .any(|ws| ws.tab().panes.iter().any(|p| p.merge_pending()));
+        if held {
+            host.redraw_after(crate::state::pane::MERGE_INTERVAL);
+        }
         crate::services::crash::pump(self, host);
         crate::models::devices::pump(self);
         crate::models::disk_health::pump(self);

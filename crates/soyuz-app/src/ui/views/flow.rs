@@ -357,8 +357,7 @@ fn body(
                 } else if single_open {
                     v.cmds.push(Cmd::Open { pane: pane.id, key });
                 } else {
-                    let order = pane.visible_keys();
-                    pane.selection.click(&order, key.clone(), click_mods);
+                    pane.click(key.clone(), click_mods);
                     pane.cursor = Some(key);
                 }
             }

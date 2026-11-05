@@ -1,8 +1,9 @@
 //! Pure listing maintenance: incremental sorted merge of streamed chunks, in-place
 //! watcher patches, filtering and grouping into the visible order.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime};
 
 use soyuz_core::{Attributes, EntryInfo, GroupBy, NamePattern, SortSpec, compare_entries};
@@ -87,6 +88,11 @@ impl ViewFilter<'_> {
     }
 }
 
+/// Indices of `entries` the filter lets through, in sorted order.
+pub fn filter_visible(entries: &[EntryInfo], filter: &ViewFilter<'_>) -> Vec<usize> {
+    (0..entries.len()).filter(|&i| filter.accepts(&entries[i])).collect()
+}
+
 /// Indices of `entries` to show (in sorted order, regrouped when grouping) plus group spans.
 pub fn compute_visible(
     entries: &[EntryInfo],
@@ -94,25 +100,114 @@ pub fn compute_visible(
     group: GroupBy,
     now: SystemTime,
 ) -> (Vec<usize>, Vec<GroupSpan>) {
-    let mut vis: Vec<usize> = (0..entries.len()).filter(|&i| filter.accepts(&entries[i])).collect();
+    let mut vis = filter_visible(entries, filter);
     if group == GroupBy::None {
         return (vis, Vec::new());
     }
-    let keys: Vec<(u32, String)> = entries.iter().map(|e| group_key(e, group, now)).collect();
-    // Stable: keeps the sort order inside each group.
-    vis.sort_by(|&a, &b| keys[a].0.cmp(&keys[b].0).then_with(|| keys[a].1.cmp(&keys[b].1)));
-    let mut spans: Vec<GroupSpan> = Vec::new();
-    for (pos, &i) in vis.iter().enumerate() {
-        let label = &keys[i].1;
-        match spans.last_mut() {
-            Some(s) if &s.label == label => {
-                s.len += 1;
-                s.count += 1;
-            }
-            _ => spans.push(GroupSpan { label: label.clone(), start: pos, len: 1, count: 1 }),
-        }
-    }
+    let spans = GroupIds::build(entries, group, now, 0).apply(&mut vis);
     (vis, spans)
+}
+
+/// The group of every entry as a small id, each label built once. [`group_key`] stays the
+/// one definition of a group: it runs once per distinct [`group_memo_key`].
+pub struct GroupIds {
+    group: GroupBy,
+    i18n_gen: u64,
+    /// Entry index → id.
+    ids: Vec<u32>,
+    /// Id → label.
+    labels: Vec<String>,
+    /// Id → place in the `(order, label)` order of the groups.
+    rank: Vec<u32>,
+}
+
+impl GroupIds {
+    pub fn build(entries: &[EntryInfo], group: GroupBy, now: SystemTime, i18n_gen: u64) -> Self {
+        let mut memo: HashMap<(u32, Cow<'_, str>), u32> = HashMap::new();
+        let mut interned: HashMap<(u32, String), u32> = HashMap::new();
+        let mut ids = Vec::with_capacity(entries.len());
+        for e in entries {
+            let id = match memo.entry(group_memo_key(e, group, now)) {
+                std::collections::hash_map::Entry::Occupied(o) => *o.get(),
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    let next = interned.len() as u32;
+                    *v.insert(*interned.entry(group_key(e, group, now)).or_insert(next))
+                }
+            };
+            ids.push(id);
+        }
+        let mut groups: Vec<((u32, String), u32)> = interned.into_iter().collect();
+        groups.sort_unstable();
+        let mut labels = vec![String::new(); groups.len()];
+        let mut rank = vec![0; groups.len()];
+        for (place, ((_, label), id)) in groups.into_iter().enumerate() {
+            labels[id as usize] = label;
+            rank[id as usize] = place as u32;
+        }
+        GroupIds { group, i18n_gen, ids, labels, rank }
+    }
+
+    /// Still right for this listing? Date groups depend on the clock and are always rebuilt
+    /// (no label is built per entry for them either).
+    pub fn reusable(&self, entries: usize, group: GroupBy, i18n_gen: u64) -> bool {
+        self.group == group && group != GroupBy::Date && self.i18n_gen == i18n_gen && self.ids.len() == entries
+    }
+
+    /// Order `vis` by group (stable: the sort order stays inside each group) and give the spans.
+    pub fn apply(&self, vis: &mut [usize]) -> Vec<GroupSpan> {
+        vis.sort_by_key(|&i| self.rank[self.ids[i] as usize]);
+        let mut spans: Vec<GroupSpan> = Vec::new();
+        let mut last = None;
+        for (pos, &i) in vis.iter().enumerate() {
+            let id = self.ids[i];
+            let label = &self.labels[id as usize];
+            match spans.last_mut() {
+                Some(s) if last == Some(id) || &s.label == label => {
+                    s.len += 1;
+                    s.count += 1;
+                }
+                _ => spans.push(GroupSpan { label: label.clone(), start: pos, len: 1, count: 1 }),
+            }
+            last = Some(id);
+        }
+        spans
+    }
+}
+
+/// Entries with equal keys have equal [`group_key`]s (the reverse need not hold: `jpg` and
+/// `jpeg` are one kind). Two extensions differing only in ASCII case share every label.
+fn group_memo_key<'a>(e: &'a EntryInfo, group: GroupBy, now: SystemTime) -> (u32, Cow<'a, str>) {
+    let none = |n: u32| (n, Cow::Borrowed(""));
+    match group {
+        GroupBy::None | GroupBy::Tag => none(0),
+        GroupBy::Kind => {
+            use soyuz_core::{EntryKind, LinkTarget};
+            match (e.is_dir_like(), e.kind, e.extension()) {
+                (true, ..) => none(0),
+                (_, EntryKind::Device, _) => none(1),
+                (_, EntryKind::Fifo, _) => none(2),
+                (_, EntryKind::Socket, _) => none(3),
+                (_, EntryKind::Symlink { target: LinkTarget::Missing }, _) => none(4),
+                (.., None) => none(5),
+                (.., Some(x)) => (6, ascii_lower(x)),
+            }
+        }
+        GroupBy::Extension => match e.extension() {
+            _ if e.is_dir_like() => none(0),
+            Some(x) => (1, ascii_lower(x)),
+            None => none(2),
+        },
+        GroupBy::FirstLetter => {
+            let c = first_letter(e);
+            if c.is_alphabetic() { none(u32::from(c) + 1) } else { none(0) }
+        }
+        GroupBy::Size => none(if e.is_dir_like() { 0 } else { size_order(e.size) }),
+        GroupBy::Date => none(e.modified.map_or(9, |t| date_order(t, now))),
+    }
+}
+
+fn ascii_lower(s: &str) -> Cow<'_, str> {
+    if s.bytes().any(|b| b.is_ascii_uppercase()) { Cow::Owned(s.to_ascii_lowercase()) } else { Cow::Borrowed(s) }
 }
 
 /// What a pane shows when nothing is visible.
@@ -177,23 +272,23 @@ pub fn group_key(e: &EntryInfo, group: GroupBy, now: SystemTime) -> (u32, String
             None => (2, tr!("views-group-no-extension").into()),
         },
         GroupBy::FirstLetter => {
-            let c = e.name.chars().next().map(|c| c.to_uppercase().next().unwrap_or(c)).unwrap_or('#');
+            let c = first_letter(e);
             if c.is_alphabetic() { (1, c.to_string()) } else { (0, "#".into()) }
         }
         GroupBy::Size => {
             if e.is_dir_like() {
                 return (0, tr!("views-group-folders").into());
             }
-            const MIB: u64 = 1024 * 1024;
-            let s = e.size;
-            match s {
-                0 => (1, tr!("views-group-size-empty").into()),
-                1..16_384 => (2, tr!("views-group-size-tiny").into()),
-                16_384..1_048_576 => (3, tr!("views-group-size-small").into()),
-                1_048_576..134_217_728 => (4, tr!("views-group-size-medium").into()),
-                _ if s < 1024 * MIB => (5, tr!("views-group-size-large").into()),
-                _ => (6, tr!("views-group-size-huge").into()),
-            }
+            let order = size_order(e.size);
+            let label = match order {
+                1 => tr!("views-group-size-empty"),
+                2 => tr!("views-group-size-tiny"),
+                3 => tr!("views-group-size-small"),
+                4 => tr!("views-group-size-medium"),
+                5 => tr!("views-group-size-large"),
+                _ => tr!("views-group-size-huge"),
+            };
+            (order, label.into())
         }
         GroupBy::Date => match e.modified {
             None => (9, tr!("views-group-date-unknown").into()),
@@ -203,25 +298,58 @@ pub fn group_key(e: &EntryInfo, group: GroupBy, now: SystemTime) -> (u32, String
     }
 }
 
-fn date_bucket(t: SystemTime, now: SystemTime) -> (u32, String) {
+/// The first letter, upper-cased (`#` for an empty name).
+fn first_letter(e: &EntryInfo) -> char {
+    e.name.chars().next().map(|c| c.to_uppercase().next().unwrap_or(c)).unwrap_or('#')
+}
+
+/// Group order of a file size.
+fn size_order(s: u64) -> u32 {
+    const MIB: u64 = 1024 * 1024;
+    match s {
+        0 => 1,
+        1..16_384 => 2,
+        16_384..1_048_576 => 3,
+        1_048_576..134_217_728 => 4,
+        _ if s < 1024 * MIB => 5,
+        _ => 6,
+    }
+}
+
+/// Group order of a modification time.
+fn date_order(t: SystemTime, now: SystemTime) -> u32 {
     let age = now.duration_since(t).unwrap_or(Duration::ZERO);
     let day = 86_400;
     let secs = age.as_secs();
     if t > now {
-        (0, tr!("views-group-date-future").into())
+        0
     } else if secs < day {
-        (1, tr!("views-group-date-today").into())
+        1
     } else if secs < 2 * day {
-        (2, tr!("views-group-date-yesterday").into())
+        2
     } else if secs < 7 * day {
-        (3, tr!("views-group-date-week").into())
+        3
     } else if secs < 31 * day {
-        (4, tr!("views-group-date-month").into())
+        4
     } else if secs < 365 * day {
-        (5, tr!("views-group-date-year").into())
+        5
     } else {
-        (6, tr!("views-group-date-older").into())
+        6
     }
+}
+
+fn date_bucket(t: SystemTime, now: SystemTime) -> (u32, String) {
+    let order = date_order(t, now);
+    let label = match order {
+        0 => tr!("views-group-date-future"),
+        1 => tr!("views-group-date-today"),
+        2 => tr!("views-group-date-yesterday"),
+        3 => tr!("views-group-date-week"),
+        4 => tr!("views-group-date-month"),
+        5 => tr!("views-group-date-year"),
+        _ => tr!("views-group-date-older"),
+    };
+    (order, label.into())
 }
 
 /// Human type description ("Folder", "PNG image", "Rust source", "ZIP archive", ...).
@@ -398,6 +526,54 @@ mod tests {
         assert_eq!(ordered, ["a", "z", "a.png", "b.png", "c.rs"]);
         let labels: Vec<(&str, usize, usize)> = groups.iter().map(|g| (g.label.as_str(), g.start, g.len)).collect();
         assert_eq!(labels, [("Folders", 0, 2), ("PNG image", 2, 2), ("Rust source", 4, 1)]);
+    }
+
+    /// The id-based grouping gives what building `(order, label)` per entry gave.
+    #[test]
+    fn group_ids_match_the_per_entry_keys() {
+        let now = SystemTime::now();
+        let day = Duration::from_secs(86_400);
+        let mut v = Vec::new();
+        for (i, name) in [
+            "a.PNG", "b.png", "c.jpg", "d.JPEG", "e.jpeg", "Makefile", ".hidden", "z.rs", "Z.RS", "ä.weird", "Ä.WEIRD",
+            "1.txt", "_x", "ıx.txt", "İx.TXT", "é", "É", "x.Weird",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut f = file(name, [0, 10, 20_000, 2_000_000, 200_000_000, 2_000_000_000][i % 6]);
+            f.modified = [Some(now), Some(now - day * 3), Some(now - day * 40), Some(now + day), None][i % 5];
+            v.push(f);
+        }
+        v.push(dir("folder"));
+        v.push(dir("Other.dir"));
+        let mut broken = file("gone.txt", 1);
+        broken.kind = EntryKind::Symlink { target: soyuz_core::LinkTarget::Missing };
+        v.push(broken);
+        let mut pipe = file("p.txt", 1);
+        pipe.kind = EntryKind::Fifo;
+        v.push(pipe);
+        let f = ViewFilter { show_hidden: false, show_system: false, pattern: None };
+        for group in
+            [GroupBy::Kind, GroupBy::Extension, GroupBy::FirstLetter, GroupBy::Size, GroupBy::Date, GroupBy::Tag]
+        {
+            let mut vis: Vec<usize> = (0..v.len()).filter(|&i| f.accepts(&v[i])).collect();
+            let keys: Vec<(u32, String)> = v.iter().map(|e| group_key(e, group, now)).collect();
+            vis.sort_by(|&a, &b| keys[a].0.cmp(&keys[b].0).then_with(|| keys[a].1.cmp(&keys[b].1)));
+            let mut spans: Vec<GroupSpan> = Vec::new();
+            for (pos, &i) in vis.iter().enumerate() {
+                match spans.last_mut() {
+                    Some(s) if s.label == keys[i].1 => {
+                        s.len += 1;
+                        s.count += 1;
+                    }
+                    _ => spans.push(GroupSpan { label: keys[i].1.clone(), start: pos, len: 1, count: 1 }),
+                }
+            }
+            let (got_vis, got_spans) = compute_visible(&v, &f, group, now);
+            assert_eq!(got_vis, vis, "{group:?}");
+            assert_eq!(got_spans, spans, "{group:?}");
+        }
     }
 
     #[test]

@@ -494,8 +494,7 @@ pub fn row_press(p: &mut Pane, index: usize, ctx: RowCtx) -> Option<RowEffect> {
             } else if ctx.single_click_open && !any_mod && p.entry(&key).is_some_and(|e| e.is_dir_like()) {
                 Some(RowEffect::Open(key))
             } else {
-                let order = p.visible_keys();
-                p.selection.click(&order, key.clone(), ctx.mods);
+                p.click(key.clone(), ctx.mods);
                 p.cursor = Some(key);
                 None
             }

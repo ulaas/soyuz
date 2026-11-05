@@ -4,6 +4,7 @@
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Stable identity of an entry inside one directory listing: its name.
 pub type EntryKey = Arc<str>;
@@ -40,13 +41,38 @@ impl BandMode {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 pub struct Selection {
     keys: BTreeSet<EntryKey>,
     anchor: Option<EntryKey>,
+    /// Unique per set of keys ever built ([`Selection::generation`]).
+    generation: u64,
+}
+
+impl PartialEq for Selection {
+    fn eq(&self, other: &Self) -> bool {
+        self.keys == other.keys && self.anchor == other.anchor
+    }
+}
+
+impl Eq for Selection {}
+
+/// A process-wide counter, so a selection assigned over another one cannot repeat its value.
+fn next_generation() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 impl Selection {
+    /// Changes whenever the keys may have changed (lets callers cache what they derive).
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    fn touch(&mut self) {
+        self.generation = next_generation();
+    }
+
     pub fn len(&self) -> usize {
         self.keys.len()
     }
@@ -72,16 +98,24 @@ impl Selection {
     }
 
     pub fn clear(&mut self) {
-        self.keys.clear();
+        self.clear_keys();
         self.anchor = None;
+    }
+
+    /// Unselect everything, keeping the anchor (a range about to be redrawn).
+    pub fn clear_keys(&mut self) {
+        self.keys.clear();
+        self.touch();
     }
 
     pub fn insert(&mut self, key: EntryKey) {
         self.keys.insert(key);
+        self.touch();
     }
 
     pub fn remove(&mut self, key: &str) {
         self.keys.remove(key);
+        self.touch();
     }
 
     /// Select exactly `key` and make it the anchor.
@@ -89,6 +123,7 @@ impl Selection {
         self.keys.clear();
         self.keys.insert(key.clone());
         self.anchor = Some(key);
+        self.touch();
     }
 
     /// Toggle `key` and make it the anchor.
@@ -97,6 +132,7 @@ impl Selection {
             self.keys.insert(key.clone());
         }
         self.anchor = Some(key);
+        self.touch();
     }
 
     /// Select the inclusive range between `from` and `to` in `order`. With `additive`
@@ -108,6 +144,7 @@ impl Selection {
         if !additive {
             self.keys.clear();
         }
+        self.touch();
         match (a, b) {
             (Some(a), Some(b)) => {
                 let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
@@ -135,17 +172,20 @@ impl Selection {
 
     pub fn select_all(&mut self, order: &[EntryKey]) {
         self.keys = order.iter().cloned().collect();
+        self.touch();
     }
 
     /// Invert within `order` (selected keys outside `order`, e.g. filtered out, are dropped).
     pub fn invert(&mut self, order: &[EntryKey]) {
         let next: BTreeSet<EntryKey> = order.iter().filter(|k| !self.keys.contains(&***k)).cloned().collect();
         self.keys = next;
+        self.touch();
     }
 
     /// Drop keys for which `exists` is false (after a relist / patch).
     pub fn retain(&mut self, mut exists: impl FnMut(&str) -> bool) {
         self.keys.retain(|k| exists(k));
+        self.touch();
         if self.anchor.as_deref().is_some_and(|a| !exists(a)) {
             self.anchor = None;
         }
@@ -172,7 +212,7 @@ impl Selection {
                 }
             }
         }
-        Selection { keys, anchor: hits.first().cloned().or_else(|| base.anchor.clone()) }
+        Selection { keys, anchor: hits.first().cloned().or_else(|| base.anchor.clone()), generation: next_generation() }
     }
 
     /// Selected keys in `order` order.

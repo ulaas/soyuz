@@ -289,6 +289,27 @@ pub fn fold_for_match(s: &str) -> String {
     out
 }
 
+/// `fold_for_match(s).starts_with(folded_prefix)`, without building the folded string (and
+/// stopping at the first difference): `folded_prefix` is already folded.
+pub fn fold_starts_with(s: &str, folded_prefix: &str) -> bool {
+    let mut want = folded_prefix.chars();
+    for c in s.chars() {
+        let mut matches = |f: char| want.next().is_none_or(|w| w == f);
+        let ok = match c {
+            'I' | 'İ' | 'ı' => matches('i'),
+            c if c.is_ascii() => matches(c.to_ascii_lowercase()),
+            c => c.to_lowercase().filter(|&m| m != '\u{307}').all(&mut matches),
+        };
+        if !ok {
+            return false;
+        }
+        if want.as_str().is_empty() {
+            return true;
+        }
+    }
+    want.next().is_none()
+}
+
 /// One char of [`fold_for_match`] (for char-by-char fuzzy matchers).
 #[inline]
 pub fn fold_char_for_match(c: char) -> char {
@@ -302,6 +323,33 @@ pub fn fold_char_for_match(c: char) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fold_starts_with_matches_the_folded_string() {
+        let names = [
+            "",
+            "a",
+            "IMG_1",
+            "img",
+            "İstanbul",
+            "ılık",
+            "Straße",
+            "STRASSE",
+            "Σίσυφος",
+            "É",
+            "ǅ",
+            "日本語",
+            "i\u{307}x",
+        ];
+        let prefixes =
+            ["", "i", "im", "img_", "ist", "ıl", "stra", "straß", "σ", "σί", "é", "ǆ", "日本", "ix", "zzz", "imgzzzz"];
+        for s in names {
+            for p in prefixes {
+                let p = fold_for_match(p);
+                assert_eq!(fold_starts_with(s, &p), fold_for_match(s).starts_with(&p), "{s:?} {p:?}");
+            }
+        }
+    }
 
     #[test]
     fn tags() {
