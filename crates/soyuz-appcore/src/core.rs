@@ -299,7 +299,7 @@ impl AppCore {
             preview: crate::models::preview::PreviewModel::new(config.layout.preview_pane),
             quicklook: Default::default(),
             search: crate::models::search::SearchState::new(&config),
-            welcome: !welcome_seen,
+            welcome: !welcome_seen && config.appearance.welcome_tips,
             welcome_seen,
             tree: Default::default(),
             settings_open: false,

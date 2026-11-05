@@ -5,8 +5,8 @@
 use egui::{Align, Layout, RichText, Ui};
 
 use super::DialogCtx;
-use super::conflict::{Btn, button};
 use crate::models::dialogs::{QuitChoice, QuitModel};
+use crate::ui::widgets::{Btn, pill_button};
 
 /// Draw the quit confirmation. Returns `false` to close.
 pub(crate) fn show(ui: &mut Ui, m: &mut QuitModel, ctx: &mut DialogCtx<'_>) -> bool {
@@ -16,13 +16,13 @@ pub(crate) fn show(ui: &mut Ui, m: &mut QuitModel, ctx: &mut DialogCtx<'_>) -> b
     let mut choice = None;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        if button(ui, tr!("dialogs-quit-cancel-jobs"), Btn::Danger).clicked() {
+        if pill_button(ui, None, tr!("dialogs-quit-cancel-jobs"), Btn::Danger).clicked() {
             choice = Some(QuitChoice::CancelAndQuit);
         }
-        if button(ui, tr!("dialogs-quit-when-finished"), Btn::Primary).clicked() {
+        if pill_button(ui, None, tr!("dialogs-quit-when-finished"), Btn::Primary).clicked() {
             choice = Some(QuitChoice::QuitWhenFinished);
         }
-        if button(ui, tr!("dialogs-quit-keep-open"), Btn::Secondary).clicked() {
+        if pill_button(ui, None, tr!("dialogs-quit-keep-open"), Btn::Secondary).clicked() {
             choice.get_or_insert(QuitChoice::KeepOpen);
         }
     });

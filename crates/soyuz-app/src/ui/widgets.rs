@@ -15,6 +15,7 @@ use crate::theme::tokens::{radius, size, space};
 use crate::theme::{Palette, icons, palette};
 
 pub mod dropdown;
+pub mod fit;
 
 /// 2 px accent ring with a 1 px `bg.window` gap, drawn around `rect`.
 pub fn focus_ring(ui: &Ui, rect: Rect) {
@@ -366,13 +367,25 @@ pub fn wrapped_galley(
 
 /// A menu row: optional icon, label, right-aligned shortcut. Hover fill, disabled state.
 pub fn menu_item(ui: &mut Ui, icon: Option<&str>, label: &str, shortcut: Option<&str>, enabled: bool) -> Response {
+    menu_item_marked(ui, icon, label, shortcut, enabled, false)
+}
+
+/// A [`menu_item`] that can also be the row the keyboard is on (`marked`).
+pub fn menu_item_marked(
+    ui: &mut Ui,
+    icon: Option<&str>,
+    label: &str,
+    shortcut: Option<&str>,
+    enabled: bool,
+    marked: bool,
+) -> Response {
     let p = palette(ui.ctx());
     let width = ui.available_width().clamp(160.0, 420.0);
     let h = (ui.spacing().interact_size.y + 4.0).max(28.0);
     let (rect, resp) = ui.allocate_exact_size(vec2(width, h), if enabled { Sense::click() } else { Sense::hover() });
     crate::ui::a11y::menu_item(&resp, label);
     if ui.is_rect_visible(rect) {
-        let hovered = enabled && (resp.hovered() || resp.has_focus());
+        let hovered = enabled && (marked || resp.hovered() || resp.has_focus());
         if hovered {
             ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.accent_subtle);
         }
@@ -552,38 +565,173 @@ pub fn spinner(ui: &Ui, center: Pos2, r: f32, color: Color32) {
     ui.ctx().request_repaint();
 }
 
-/// A pill-shaped text button with optional icon (primary = accent filled).
-pub fn pill_button(ui: &mut Ui, icon: Option<&str>, label: &str, primary: bool) -> Response {
-    let p = palette(ui.ctx());
-    let font = FontId::proportional(12.5);
-    let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::PLACEHOLDER);
-    let icon_w = if icon.is_some() { 20.0 } else { 0.0 };
-    let size = vec2(galley.size().x + 24.0 + icon_w, (ui.spacing().interact_size.y + 2.0).max(26.0));
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    crate::ui::a11y::button(&resp, label);
-    let hover = resp.hovered();
-    let (bg, fg) = if primary {
-        (if hover { p.accent_hover } else { p.accent }, p.on_accent())
-    } else {
-        (if hover { p.bg_surface3 } else { p.bg_surface2 }, p.text_primary)
-    };
-    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), bg);
-    if !primary {
-        ui.painter().rect_stroke(
-            rect,
-            CornerRadius::same(radius::ROW),
-            Stroke::new(1.0, p.border_subtle),
-            StrokeKind::Inside,
-        );
+/// What a [`pill_button`] does, by emphasis.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Btn {
+    /// The answer the dialog expects: accent fill.
+    Primary,
+    /// Any other answer: quiet fill and outline.
+    Secondary,
+    /// Destroys something: danger fill.
+    Danger,
+    /// Risky, among other buttons on a card: danger tint.
+    DangerSoft,
+    /// An action on a surface that has its own color (a toast's Undo): accent tint.
+    AccentSoft,
+    /// Rarely needed: no fill until hovered.
+    Ghost,
+}
+
+/// The fill, text and outline of a pill. `hover` runs 0..=1.
+fn pill_colors(p: &Palette, kind: Btn, hover: f32, pressed: bool) -> (Color32, Color32, Option<Color32>) {
+    let dark = |c: Color32| crate::theme::tokens::mix(c, Color32::BLACK, 0.12);
+    let mix = crate::theme::tokens::mix;
+    match kind {
+        Btn::Primary => {
+            let bg = mix(p.accent, p.accent_hover, hover);
+            (if pressed { dark(p.accent_hover) } else { bg }, p.on_accent(), None)
+        }
+        Btn::Danger => {
+            let bg = mix(mix(p.danger, p.bg_surface3, 0.12), p.danger, hover);
+            (if pressed { dark(p.danger) } else { bg }, p.on_color(p.danger), None)
+        }
+        Btn::Secondary => {
+            let bg = mix(p.bg_surface2, p.bg_surface3, hover);
+            let bg = if pressed { mix(p.bg_surface3, p.text_primary, 0.08) } else { bg };
+            (bg, p.text_primary, Some(p.border_subtle))
+        }
+        Btn::DangerSoft => {
+            let a = if pressed { 0.26 } else { 0.08 + 0.10 * hover };
+            (p.danger.gamma_multiply(a), p.danger, Some(p.danger.gamma_multiply(0.35)))
+        }
+        Btn::AccentSoft => {
+            let a = if pressed { 0.30 } else { 0.13 + 0.11 * hover };
+            (p.accent.gamma_multiply(a), p.accent, None)
+        }
+        Btn::Ghost => {
+            let bg = if pressed { p.bg_surface3 } else { p.bg_surface2.gamma_multiply(hover) };
+            (bg, mix(p.text_secondary, p.text_primary, hover), None)
+        }
     }
-    let mut x = rect.left() + 12.0;
+}
+
+fn pill_paint(ui: &Ui, rect: Rect, resp: &Response, icon: Option<&str>, galley: Arc<Galley>, kind: Btn, enabled: bool) {
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    let p = palette(ui.ctx());
+    let hover = ui.ctx().animate_bool_with_time(
+        resp.id.with("pill"),
+        enabled && resp.hovered(),
+        crate::theme::anim(ui.ctx(), crate::theme::tokens::motion::HOVER),
+    );
+    let pressed = enabled && resp.is_pointer_button_down_on();
+    let (bg, fg, stroke) = if enabled {
+        pill_colors(&p, kind, hover, pressed)
+    } else {
+        let stroke = (kind != Btn::Ghost).then_some(p.border_subtle);
+        (p.bg_surface2.gamma_multiply(0.6), p.text_tertiary, stroke)
+    };
+    let corner = CornerRadius::same(radius::ROW);
+    ui.painter().rect_filled(rect, corner, bg);
+    if let Some(s) = stroke {
+        ui.painter().rect_stroke(rect, corner, Stroke::new(1.0, s), StrokeKind::Inside);
+    }
+    let content = galley.size().x
+        + if icon.is_some() { PILL_ICON + if galley.is_empty() { 0.0 } else { PILL_ICON_GAP } } else { 0.0 };
+    let mut x = rect.center().x - content / 2.0;
     if let Some(g) = icon {
-        ui.painter().text(pos2(x, rect.center().y), Align2::LEFT_CENTER, g, icons::font(14.0), fg);
-        x += icon_w;
+        ui.painter().text(pos2(x + PILL_ICON / 2.0, rect.center().y), Align2::CENTER_CENTER, g, icons::font(14.0), fg);
+        x += PILL_ICON + PILL_ICON_GAP;
     }
     ui.painter().galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
     if resp.has_focus() {
         focus_ring(ui, rect);
+    }
+}
+
+const PILL_ICON: f32 = 14.0;
+const PILL_ICON_GAP: f32 = 6.0;
+const PILL_PAD: f32 = 12.0;
+/// Short answers ("OK") still make a comfortable target.
+const PILL_MIN_W: f32 = 64.0;
+
+fn pill_font() -> FontId {
+    FontId::proportional(12.5)
+}
+
+/// The button of the app: text, optional icon, a [`Btn`] kind. An empty label makes it an
+/// icon button (the caller names it for assistive technology).
+pub fn pill_button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Btn) -> Response {
+    pill_button_on(ui, icon, label, kind, true)
+}
+
+/// [`pill_button`] that can be switched off.
+pub fn pill_button_on(ui: &mut Ui, icon: Option<&str>, label: &str, kind: Btn, enabled: bool) -> Response {
+    let galley = ui.painter().layout_no_wrap(label.to_string(), pill_font(), Color32::PLACEHOLDER);
+    let height = (ui.spacing().interact_size.y + 2.0).max(26.0);
+    let width = match (icon.is_some(), label.is_empty()) {
+        (true, true) => height,
+        (true, false) => galley.size().x + 2.0 * PILL_PAD + PILL_ICON + PILL_ICON_GAP,
+        _ => (galley.size().x + 2.0 * PILL_PAD).max(PILL_MIN_W),
+    };
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, height), sense);
+    if !label.is_empty() {
+        crate::ui::a11y::button(&resp, label);
+    }
+    pill_paint(ui, rect, &resp, icon, galley, kind, enabled);
+    resp
+}
+
+/// A [`pill_button`] in a rectangle the caller laid out (a toast's action).
+pub fn pill_at(ui: &mut Ui, rect: Rect, id: egui::Id, label: &str, kind: Btn) -> Response {
+    let resp = ui.interact(rect, id, Sense::click());
+    crate::ui::a11y::button(&resp, label);
+    let galley = ui.painter().layout_no_wrap(label.to_string(), pill_font(), Color32::PLACEHOLDER);
+    pill_paint(ui, rect, &resp, None, galley, kind, true);
+    resp
+}
+
+/// Width [`pill_at`] needs for `label`.
+pub fn pill_width(ui: &Ui, label: &str) -> f32 {
+    (ui.painter().layout_no_wrap(label.to_string(), pill_font(), Color32::PLACEHOLDER).size().x + 2.0 * PILL_PAD)
+        .max(56.0)
+}
+
+/// A place to jump to or a choice among a few: icon and text, tinted when `on`.
+pub fn chip(ui: &mut Ui, icon: Option<&str>, label: &str, on: bool) -> Response {
+    let p = palette(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(label.to_string(), pill_font(), Color32::PLACEHOLDER);
+    let icon_w = if icon.is_some() { PILL_ICON + 5.0 } else { 0.0 };
+    let height = ui.spacing().interact_size.y.max(24.0);
+    let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + 20.0 + icon_w, height), Sense::click());
+    crate::ui::a11y::toggle(&resp, label, on);
+    if ui.is_rect_visible(rect) {
+        let hover = ui.ctx().animate_bool_with_time(
+            resp.id.with("chip"),
+            resp.hovered(),
+            crate::theme::anim(ui.ctx(), crate::theme::tokens::motion::HOVER),
+        );
+        let corner = CornerRadius::same(radius::ROW);
+        let fill = if on { p.accent_subtle } else { p.bg_surface2.gamma_multiply(0.5 + 0.5 * hover) };
+        ui.painter().rect_filled(rect, corner, fill);
+        let fg = if on { p.accent } else { crate::theme::tokens::mix(p.text_secondary, p.text_primary, hover) };
+        let mut x = rect.left() + 10.0;
+        if let Some(g) = icon {
+            ui.painter().text(
+                pos2(x + PILL_ICON / 2.0, rect.center().y),
+                Align2::CENTER_CENTER,
+                g,
+                icons::font(13.0),
+                fg,
+            );
+            x += icon_w;
+        }
+        ui.painter().galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
+        if resp.has_focus() {
+            focus_ring(ui, rect);
+        }
     }
     resp
 }

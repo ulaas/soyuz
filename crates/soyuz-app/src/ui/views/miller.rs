@@ -15,7 +15,7 @@ use crate::services::AuxState;
 use crate::services::thumbs;
 use crate::state::pane::Pane;
 use crate::theme::{icons as ticons, icons::ph, palette};
-use crate::ui::widgets::{spinner, trunc_galley};
+use crate::ui::widgets::spinner;
 
 const COL_W: f32 = 250.0;
 const ROW_H: f32 = 26.0;
@@ -152,13 +152,15 @@ fn aux_column(
             }
             let color = p.text_primary.gamma_multiply(a);
             let hidden = soyuz_core::naming::has_hidden_controls(&e.name);
-            let g = trunc_galley(
+            let fitted = crate::ui::widgets::fit::entry_name(
                 ui.painter(),
                 &super::display_name(e),
+                e.is_dir_like(),
                 FontId::proportional(13.0),
                 color,
                 r.width() - 56.0 - if hidden { 14.0 } else { 0.0 },
             );
+            let g = fitted.galley;
             let gw = g.size().x;
             ui.painter().galley(pos2(r.left() + 30.0, r.center().y - g.size().y / 2.0), g, color);
             if hidden {
@@ -170,6 +172,11 @@ fn aux_column(
                 );
             }
             let resp = if hidden { resp.on_hover_text(crate::ui::widgets::hidden_controls_tip()) } else { resp };
+            let resp = if fitted.elided && v.config.appearance.name_tooltips {
+                resp.on_hover_text(crate::ui::widgets::shown_name(&e.name))
+            } else {
+                resp
+            };
             if e.is_dir_like() {
                 ui.painter().text(
                     pos2(r.right() - 10.0, r.center().y),

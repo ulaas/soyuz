@@ -77,12 +77,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         .stroke(Stroke::new(1.0, p.border_strong))
         .corner_radius(CornerRadius::same(14))
         .inner_margin(Margin::ZERO)
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 18],
-            blur: 56,
-            spread: 0,
-            color: Color32::from_black_alpha((p.shadow_alpha * 255.0 * 1.2).min(255.0) as u8),
-        });
+        .shadow(p.shadow(crate::theme::tokens::shadow::OVERLAY));
     let mut clicked: Option<(Exec, RunMods)> = None;
     let resp = Modal::new(id)
         .area(area)
@@ -445,10 +440,7 @@ fn sequence_hint(ctx: &egui::Context, app: &SoyuzApp) {
     let size = vec2(g.size().x + 46.0, 30.0);
     let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - 60.0), size);
     let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::unique("soyuz.keyseq")));
-    painter.add(
-        egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) }
-            .as_shape(rect, CornerRadius::same(15)),
-    );
+    painter.add(p.shadow(crate::theme::tokens::shadow::POPUP).as_shape(rect, CornerRadius::same(15)));
     painter.rect_filled(rect, CornerRadius::same(15), p.bg_surface3);
     painter.rect_stroke(
         rect,

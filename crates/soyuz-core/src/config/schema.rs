@@ -245,6 +245,28 @@ pub struct Appearance {
     pub icon_pack: String,
     /// On-disk thumbnail cache in `thumbs/` (MiB; 0 = off). Thumbnails survive restarts.
     pub thumb_disk_cache_mib: u64,
+    /// How names and paths too long for their space are cut: `keep_extension`,
+    /// `middle` or `end`.
+    pub name_truncation: NameTruncation,
+    /// Hovering a file whose name was cut shows the whole name.
+    pub name_tooltips: bool,
+    /// New profiles start with the card of first steps (the palette's Welcome tips
+    /// brings it back either way).
+    pub welcome_tips: bool,
+}
+
+/// `[appearance] name_truncation`: where a name too long for its space loses characters.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NameTruncation {
+    /// File names keep their start and extension (`report-fin….pdf`); folders and paths
+    /// are cut in the middle.
+    #[default]
+    KeepExtension,
+    /// Everything is cut in the middle (`report-…al-v3.pdf`).
+    Middle,
+    /// Everything is cut at the end (`report-final…`).
+    End,
 }
 
 /// `[appearance] backdrop`: the system material drawn behind the window (Windows 11).

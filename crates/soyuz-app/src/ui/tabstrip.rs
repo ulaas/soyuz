@@ -532,7 +532,8 @@ fn paint_tab(
         let show_close = active || hovered;
         let text_right = r.right() - if show_close { 30.0 } else { 12.0 };
         let color = if active { p.text_primary } else { p.text_secondary };
-        let g = trunc_galley(painter, &title, FontId::proportional(12.5), color, text_right - (r.left() + 32.0));
+        let room = text_right - (r.left() + 32.0);
+        let g = crate::ui::widgets::fit::ends(painter, &title, FontId::proportional(12.5), color, room).galley;
         painter.galley(pos2(r.left() + 32.0, r.center().y - g.size().y / 2.0), g, color);
     }
     if let Some(c) = folder_color
@@ -581,7 +582,7 @@ fn paint_ghost(ctx: &egui::Context, app: &SoyuzApp, d: Drag, target: Option<&Dro
     let p = palette(ctx);
     let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::unique("soyuz.tab.ghost")));
     let r = Rect::from_min_size(d.last - d.grab, vec2(200.0, 30.0));
-    let shadow = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(90) };
+    let shadow = p.shadow(crate::theme::tokens::shadow::POPUP);
     painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));
     painter.rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface1);
     let title = app.core.ws.tabs.get(d.from).map(|t| location_title(&t.active().location)).unwrap_or_default();

@@ -858,12 +858,7 @@ fn popup<T: PartialEq>(
         .stroke(Stroke::new(1.0, p.border_strong))
         .corner_radius(CornerRadius::same(9))
         .inner_margin(Margin::same(pad as i8));
-    let shadow = egui::epaint::Shadow {
-        offset: [0, 8],
-        blur: 24,
-        spread: 0,
-        color: Color32::from_black_alpha((p.shadow_alpha * 255.0).min(255.0) as u8),
-    };
+    let shadow = p.shadow(crate::theme::tokens::shadow::POPUP);
     let mut draw = |ui: &mut Ui| {
         let inner_w = w - pad * 2.0;
         ui.set_width(inner_w);

@@ -20,7 +20,7 @@ use crate::theme::icons::{self, ph};
 use crate::theme::{Palette, palette};
 use crate::ui::gfx::{self, TexExt};
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{pill_button, spinner, trunc_galley};
+use crate::ui::widgets::{Btn, pill_button, spinner, trunc_galley};
 
 pub use soyuz_appcore::models::preview_info::{group_digits, info_label, info_rows};
 pub use soyuz_appcore::models::preview_load::PreviewAction;
@@ -278,7 +278,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             );
             let br = Rect::from_min_size(pos2(header.right() - 84.0, header.top() + 8.0), vec2(74.0, 24.0));
             let mut bchild = ui.new_child(UiBuilder::new().max_rect(br));
-            if pill_button(&mut bchild, Some(ph::FOLDER_OPEN), tr!("views-preview-browse"), false).clicked() {
+            if pill_button(&mut bchild, Some(ph::FOLDER_OPEN), tr!("views-preview-browse"), Btn::Secondary).clicked() {
                 action = Some(PreviewAction::Open(entry.path.clone()));
             }
             let list = Rect::from_min_max(pos2(rect.left(), header.bottom()), rect.max);
@@ -472,7 +472,8 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             if loaded.kind == Kind::Pdf || loaded.kind == Kind::Image {
                 let br = Rect::from_center_size(rect.center() + vec2(0.0, 74.0), vec2(120.0, 26.0));
                 let mut child = ui.new_child(UiBuilder::new().max_rect(br));
-                if pill_button(&mut child, Some(ph::BINARY), tr!("views-preview-show-bytes"), false).clicked() {
+                if pill_button(&mut child, Some(ph::BINARY), tr!("views-preview-show-bytes"), Btn::Secondary).clicked()
+                {
                     action = Some(PreviewAction::ToggleHex);
                 }
             }
@@ -504,7 +505,7 @@ fn folder_notes(
     ui.painter().galley(pos2(bar.left(), bar.center().y - g.size().y / 2.0 + 2.0), g, p.text_tertiary);
     let br = Rect::from_min_max(pos2(bar.right() - 70.0, bar.top() + 4.0), pos2(bar.right(), bar.bottom()));
     let mut bc = ui.new_child(UiBuilder::new().max_rect(br).layout(egui::Layout::right_to_left(egui::Align::Center)));
-    if pill_button(&mut bc, Some(ph::PENCIL_SIMPLE), tr!("views-preview-folder-notes-edit"), false).clicked() {
+    if pill_button(&mut bc, Some(ph::PENCIL_SIMPLE), tr!("views-preview-folder-notes-edit"), Btn::Secondary).clicked() {
         action = Some(PreviewAction::EditFile(n.path.clone()));
     }
     let body = Rect::from_min_max(pos2(area.left(), bar.bottom() + 4.0), area.max);

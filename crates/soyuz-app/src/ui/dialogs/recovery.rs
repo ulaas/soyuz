@@ -9,11 +9,11 @@ use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, ScrollArea, Se
 use soyuz_jobs::journal::Recovered;
 use soyuz_jobs::{JobKindBrief, JournalJob};
 
-use super::conflict::{Btn, button};
 use super::{Dialog, DialogCtx};
 use crate::models::requests::recovery::{RecoveryModel, job_line};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons::ph, palette};
+use crate::ui::widgets::{Btn, pill_button};
 
 pub struct RecoveryDialog {
     m: RecoveryModel,
@@ -143,21 +143,21 @@ impl Dialog for RecoveryDialog {
         let can_roll_back = self.m.can_roll_back();
         let (mut resume, mut rollback, mut discard, mut later) = (false, false, false, false);
         ui.horizontal(|ui| {
-            later = button(ui, tr!("dialogs-recovery-later"), Btn::Ghost)
+            later = pill_button(ui, None, tr!("dialogs-recovery-later"), Btn::Ghost)
                 .on_hover_text(tr!("dialogs-recovery-later-tip"))
                 .clicked();
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                resume = button(ui, tr!("dialogs-recovery-resume"), Btn::Primary)
+                resume = pill_button(ui, None, tr!("dialogs-recovery-resume"), Btn::Primary)
                     .on_hover_text(tr!("dialogs-recovery-resume-tip"))
                     .clicked();
                 ui.add_enabled_ui(can_roll_back, |ui| {
-                    rollback = button(ui, tr!("dialogs-recovery-rollback"), Btn::Secondary)
+                    rollback = pill_button(ui, None, tr!("dialogs-recovery-rollback"), Btn::Secondary)
                         .on_hover_text(tr!("dialogs-recovery-rollback-tip"))
                         .on_disabled_hover_text(tr!("dialogs-recovery-rollback-none"))
                         .clicked();
                 });
-                discard = button(ui, tr!("dialogs-recovery-discard"), Btn::Secondary)
+                discard = pill_button(ui, None, tr!("dialogs-recovery-discard"), Btn::Secondary)
                     .on_hover_text(tr!("dialogs-recovery-discard-tip"))
                     .clicked();
             });

@@ -304,12 +304,7 @@ pub fn paint_badge(ctx: &egui::Context) {
     let w = 46.0 + title.size().x.max(sub.as_ref().map_or(0.0, |g| g.size().x)) + 14.0;
     let h = if sub.is_some() { 44.0 } else { 32.0 };
     let r = Rect::from_min_size(pos + vec2(16.0, 14.0), vec2(w, h));
-    let shadow = egui::epaint::Shadow {
-        offset: [0, 6],
-        blur: 18,
-        spread: 0,
-        color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-    };
+    let shadow = p.shadow(crate::theme::tokens::shadow::POPUP);
     painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));
     painter.rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface3);
     painter.rect_stroke(r, CornerRadius::same(radius::CARD), Stroke::new(1.0, p.border_strong), StrokeKind::Inside);

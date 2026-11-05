@@ -797,7 +797,11 @@ fn reconcile_prompts(app: &mut AppCore) {
             }
             _ => cfg!(windows),
         };
-        app.dialogs.push(PromptModel::new(job, prompt, title, shared).windows_rules(windows_rules));
+        let general = &app.config.general;
+        let (size_style, date_format) = (general.size_style, general.date_format.clone());
+        app.dialogs.push(
+            PromptModel::new(job, prompt, title, shared).windows_rules(windows_rules).display(size_style, date_format),
+        );
     }
 }
 

@@ -230,15 +230,8 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View, player: bool
         let painter = ui.painter().clone();
         let painter = &painter;
         painter.rect_filled(screen, 0.0, dim);
-        painter.add(
-            egui::epaint::Shadow {
-                offset: [0, 16],
-                blur: 48,
-                spread: 0,
-                color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-            }
-            .as_shape(card, CornerRadius::same(radius::MODAL + 2)),
-        );
+        painter
+            .add(p.shadow(crate::theme::tokens::shadow::WINDOW).as_shape(card, CornerRadius::same(radius::MODAL + 2)));
         painter.rect_filled(card, CornerRadius::same(radius::MODAL + 2), p.bg_surface1);
         painter.rect_stroke(
             card,

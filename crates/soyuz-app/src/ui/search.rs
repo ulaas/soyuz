@@ -25,7 +25,7 @@ use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::theme::tokens::radius;
 use crate::ui::widgets::{
-    NavRow, collapsible_header, menu_check, menu_item, menu_separator, pill_button, spinner, trunc_galley,
+    Btn, NavRow, collapsible_header, menu_check, menu_item, menu_separator, pill_button, spinner, trunc_galley,
 };
 
 const ROW_H: f32 = 44.0;
@@ -143,9 +143,13 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let br = Rect::from_center_size(pos2(rx - bw / 2.0, cy), vec2(bw, 26.0));
     rx = br.left() - 10.0;
     let mut bchild = ui.new_child(UiBuilder::new().max_rect(br));
-    let run_clicked =
-        pill_button(&mut bchild, Some(if running { ph::STOP } else { ph::MAGNIFYING_GLASS }), label, !running)
-            .clicked();
+    let run_clicked = pill_button(
+        &mut bchild,
+        Some(if running { ph::STOP } else { ph::MAGNIFYING_GLASS }),
+        label,
+        if !running { Btn::Primary } else { Btn::Secondary },
+    )
+    .clicked();
 
     // Left: scope chip.
     let scope = soyuz_fs::strip_verbatim(&app.core.ui.search.form.root);
@@ -490,10 +494,10 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if pill_button(ui, None, tr!("common-save"), true).clicked() {
+                if pill_button(ui, None, tr!("common-save"), Btn::Primary).clicked() {
                     done = Some(true);
                 }
-                if pill_button(ui, None, tr!("common-cancel"), false).clicked() {
+                if pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked() {
                     done = Some(false);
                 }
             });

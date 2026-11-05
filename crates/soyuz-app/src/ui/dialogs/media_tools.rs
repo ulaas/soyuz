@@ -10,13 +10,13 @@ use egui::{
 };
 
 use super::DialogCtx;
-use super::conflict::{Btn, button};
 use crate::models::media_tools::{
     AUDIO_CODECS, ConflictChoice, ImageFormat, MediaTool, MediaToolsModel, PlanTone, codec_label, preset_label,
 };
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons::ph, palette};
 use crate::ui::widgets::dropdown as dd;
+use crate::ui::widgets::{Btn, pill_button};
 
 pub(crate) fn icon(m: &MediaToolsModel) -> &'static str {
     match m.tool {
@@ -254,8 +254,11 @@ pub(crate) fn show(ui: &mut Ui, m: &mut MediaToolsModel, ctx: &mut DialogCtx<'_>
     let mut cancel = false;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        go = ui.add_enabled_ui(error.is_none(), |ui| button(ui, m.tool.go_label(), Btn::Primary)).inner.clicked();
-        cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+        go = ui
+            .add_enabled_ui(error.is_none(), |ui| pill_button(ui, None, m.tool.go_label(), Btn::Primary))
+            .inner
+            .clicked();
+        cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
     });
     if super::enter_default(ui) && error.is_none() {
         go = true;

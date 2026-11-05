@@ -205,7 +205,9 @@ app-place-music = Music
 app-place-videos = Videos
 # System folders below the favorites ([sidebar] system_folders).
 app-sysfolders-section = System
-app-sysfolders-hide = Hide system folders…
+app-sysfolders-hide = Hide system folders
+app-sysfolders-hidden = System folders hidden
+app-sysfolders-hidden-body = Settings → Views & layout → System folders shows them again.
 app-sysfolders-hide-tip = Hide the system folders
 app-sysfolders-hide-title = Hide system folders?
 app-sysfolders-hide-message = The system folders below your favorites leave the sidebar. You can show them again any time in Settings → Views & layout → System folders, where you can also choose which ones appear.
@@ -305,6 +307,7 @@ app-picker-folder-path = Folder path
 app-picker-file-name = File name
 # $name is a file name.
 app-picker-replace = { $name } already exists. Press Save again to replace it.
+app-picker-saves-as = Saves as { $name }
 app-picker-open = Open
 app-picker-no-items = No matching items
 # Screen-reader name of a row; $kind is "folder" or "file".

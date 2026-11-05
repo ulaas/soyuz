@@ -4,10 +4,10 @@
 
 use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, Ui};
 
-use super::conflict::{Btn, button};
 use super::{DialogCtx, enter_default};
 pub use crate::models::dialogs::{ConfirmKind, DeleteConfirmModel};
 use crate::theme::{icons::ph, palette};
+use crate::ui::widgets::{Btn, pill_button};
 
 pub(crate) fn icon(m: &DeleteConfirmModel) -> &'static str {
     if m.to_trash() { ph::TRASH } else { ph::WARNING }
@@ -52,8 +52,8 @@ pub(crate) fn show(ui: &mut Ui, m: &mut DeleteConfirmModel, ctx: &mut DialogCtx<
     let mut cancel = false;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        ok = button(ui, confirm, if danger { Btn::Danger } else { Btn::Primary }).clicked();
-        cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+        ok = pill_button(ui, None, confirm, if danger { Btn::Danger } else { Btn::Primary }).clicked();
+        cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
     });
     if enter_default(ui) {
         ok = true;

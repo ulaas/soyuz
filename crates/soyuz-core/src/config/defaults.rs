@@ -119,6 +119,9 @@ impl Default for Appearance {
             write_os_thumbnails: true,
             icon_pack: String::new(),
             thumb_disk_cache_mib: 256,
+            name_truncation: NameTruncation::KeepExtension,
+            name_tooltips: true,
+            welcome_tips: true,
         }
     }
 }

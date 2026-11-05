@@ -214,6 +214,10 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
             pane.resort();
             app.ui.toasts.push(Toast::info(tr!("actions-folder-view-reset")));
         }
+        // The GUI acts at once and its toast undoes it; the terminal UI has no toast buttons.
+        A::ApplyViewToAll if app.frontend_kind != crate::core::FrontendKind::Tui => {
+            app.cmds.push(Cmd::ApplyViewToAll(pane_id));
+        }
         A::ApplyViewToAll => {
             app.frontend.push(FrontendCmd::Confirm {
                 title: tr!("actions-apply-view-title").into(),

@@ -316,12 +316,7 @@ pub fn tool_window(
         .stroke(Stroke::new(1.0, p.border_strong))
         .corner_radius(CornerRadius::same(radius::MODAL))
         .inner_margin(Margin::same(0))
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 36,
-            spread: 0,
-            color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-        });
+        .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
     let mut keep = true;
     // Esc closes the frontmost tool window (a focused text field or an open popup takes
     // Esc first).
@@ -390,38 +385,15 @@ pub fn tool_window(
     keep
 }
 
-/// Small text button with an optional icon; `kind`: 0 normal, 1 primary, 2 danger.
+/// [`crate::ui::widgets::pill_button_on`] by number; `kind`: 0 normal, 1 primary, 2 danger.
 pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: u8, enabled: bool) -> egui::Response {
-    let p = palette(ui.ctx());
-    let font = FontId::proportional(12.5);
-    // PLACEHOLDER so the galley takes `fg` below (secondary buttons are dark in light mode).
-    let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::PLACEHOLDER);
-    let icon_w = if icon.is_some() { 18.0 } else { 0.0 };
-    let size = vec2(galley.size().x + 22.0 + icon_w, 26.0);
-    let (rect, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
-    crate::ui::a11y::button(&resp, label);
-    let hover = enabled && resp.hovered();
-    let (bg, fg, stroke) = match (kind, enabled) {
-        (_, false) => (p.bg_surface2, p.text_tertiary, Some(p.border_subtle)),
-        (1, _) => (if hover { p.accent_hover } else { p.accent }, Color32::WHITE, None),
-        (2, _) => (if hover { p.danger } else { p.danger.gamma_multiply(0.85) }, Color32::WHITE, None),
-        _ => (if hover { p.bg_surface3 } else { p.bg_surface2 }, p.text_primary, Some(p.border_subtle)),
+    use crate::ui::widgets::{Btn, pill_button_on};
+    let kind = match kind {
+        1 => Btn::Primary,
+        2 => Btn::Danger,
+        _ => Btn::Secondary,
     };
-    let cr = CornerRadius::same(radius::ROW);
-    ui.painter().rect_filled(rect, cr, bg);
-    if let Some(s) = stroke {
-        ui.painter().rect_stroke(rect, cr, Stroke::new(1.0, s), egui::StrokeKind::Inside);
-    }
-    let mut x = rect.left() + 11.0;
-    if let Some(g) = icon {
-        ui.painter().text(pos2(x, rect.center().y), Align2::LEFT_CENTER, g, icons::font(13.5), fg);
-        x += icon_w;
-    }
-    ui.painter().galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
-    if resp.has_focus() {
-        crate::ui::widgets::focus_ring(ui, rect);
-    }
-    resp
+    pill_button_on(ui, icon, label, kind, enabled)
 }
 
 /// A thin progress bar (`frac` = None → indeterminate shimmer).

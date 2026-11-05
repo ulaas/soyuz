@@ -5,10 +5,10 @@
 use egui::{Align, FontId, Layout, Margin, RichText, TextEdit, Ui};
 
 use super::DialogCtx;
-use super::conflict::{Btn, button};
 pub use crate::models::dialogs::LinkChoice;
 use crate::models::dialogs::{LinkModel, TransferModel};
 use crate::theme::{icons::ph, palette};
+use crate::ui::widgets::{Btn, pill_button};
 
 fn field(ui: &mut Ui, label: &str, text: &mut String, hint: &str, focus: &mut bool) -> egui::Response {
     let p = palette(ui.ctx());
@@ -57,8 +57,8 @@ pub(crate) fn show_link(ui: &mut Ui, m: &mut LinkModel, ctx: &mut DialogCtx<'_>)
     let mut cancel = false;
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        ok = button(ui, tr!("dialogs-link-create"), Btn::Primary).clicked();
-        cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+        ok = pill_button(ui, None, tr!("dialogs-link-create"), Btn::Primary).clicked();
+        cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
     });
     if super::enter_default(ui) {
         ok = true;
@@ -88,8 +88,8 @@ pub(crate) fn show_transfer(ui: &mut Ui, m: &mut TransferModel, ctx: &mut Dialog
     ui.add_space(8.0);
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        ok = button(ui, if m.mv { tr!("common-move") } else { tr!("common-copy") }, Btn::Primary).clicked();
-        cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+        ok = pill_button(ui, None, if m.mv { tr!("common-move") } else { tr!("common-copy") }, Btn::Primary).clicked();
+        cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
     });
     if super::enter_default(ui) {
         ok = true;

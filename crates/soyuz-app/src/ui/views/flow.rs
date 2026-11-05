@@ -24,7 +24,7 @@ use crate::theme::tokens::{alpha, radius};
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::context_menu;
 use crate::ui::gfx::TexExt;
-use crate::ui::widgets::{hidden_controls_tip, paint_hidden_badge, trunc_galley, wrapped_galley};
+use crate::ui::widgets::{fit, hidden_controls_tip, paint_hidden_badge, trunc_galley};
 
 /// Width reserved for the hidden-characters badge after a name.
 fn badge_w(name: &str) -> f32 {
@@ -187,10 +187,11 @@ fn body(
     if let Some(i) = hovered
         && pane.entry_at(i).is_some_and(|e| soyuz_core::naming::has_hidden_controls(&e.name))
     {
-        bg.clone().on_hover_text(hidden_controls_tip());
+        bg.clone().on_hover_text_at_pointer(hidden_controls_tip());
     }
 
     // ---- paint ----
+    let mut hovered_cut = false;
     let painter = ui.painter_at(list_area);
     let y0 = viewport.min.y - g.header_h;
     let y1 = viewport.max.y - g.header_h;
@@ -277,7 +278,7 @@ fn body(
                         None
                     };
                     let icon = program_icon.as_ref();
-                    match style {
+                    let cut = match style {
                         Style::Details => paint_details_row(&painter, &p, r, e, &st, &g.cols, origin.x, v, icon),
                         Style::Grid | Style::Gallery => {
                             let px = grid_px;
@@ -297,15 +298,26 @@ fn body(
                                 CellVisual::default()
                             };
                             let visual = CellVisual { icon: program_icon.clone(), ..visual };
-                            paint_grid_cell(ui, &painter, &p, r, e, &st, zoom, visual, style == Style::Gallery);
+                            paint_grid_cell(ui, &painter, &p, r, e, &st, zoom, visual, style == Style::Gallery)
                         }
                         Style::List => paint_list_cell(&painter, &p, r, e, &st, false, icon),
                         Style::Column => paint_list_cell(&painter, &p, r, e, &st, true, icon),
+                    };
+                    if cut && hovered == Some(i) {
+                        hovered_cut = true;
                     }
                     crate::ui::ai::touch::paint(&painter, &p, r, &e.path, v.config.appearance.reduced_motion);
                 }
             }
         }
+    }
+
+    // The hovered name lost characters: the whole name, after the usual tooltip delay.
+    if hovered_cut
+        && v.config.appearance.name_tooltips
+        && let Some(e) = hovered.and_then(|i| pane.entry_at(i))
+    {
+        bg.clone().on_hover_text_at_pointer(crate::ui::widgets::shown_name(&e.name));
     }
 
     // Inline rename editor (registered after the background so it gets the clicks).
@@ -617,13 +629,14 @@ fn paint_details_row(
     origin_x: f32,
     v: &ViewCtx<'_>,
     program_icon: Option<&Tex>,
-) {
+) -> bool {
     if !painter.clip_rect().intersects(r) {
-        return;
+        return false;
     }
     paint_item_bg(painter, p, r, st, radius::ROW);
     let a = text_alpha(e, st);
     let cy = r.center().y;
+    let mut cut = false;
     for c in cols {
         let x0 = origin_x + c.x;
         let x1 = x0 + c.w;
@@ -662,13 +675,16 @@ fn paint_details_row(
             deco.paint_badge(painter, p, pos2(x + 8.0, cy), 16.0, p.bg_surface1);
             let tx = x + 24.0;
             let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
-            let galley = trunc_galley(
+            let fitted = fit::entry_name(
                 painter,
                 &super::display_name(e),
+                e.is_dir_like(),
                 FontId::proportional(13.0),
                 color,
                 x1 - tx - 8.0 - deco.trailing_width() - badge_w(&e.name),
             );
+            cut = fitted.elided;
+            let galley = fitted.galley;
             let gw = galley.size().x;
             painter.galley(pos2(tx, cy - galley.size().y / 2.0), galley, color);
             let bw = paint_hidden_badge(painter, p, pos2(tx + gw, cy), &e.name);
@@ -692,6 +708,7 @@ fn paint_details_row(
             painter.galley(pos2(x, cy - galley.size().y / 2.0), galley, color);
         }
     }
+    cut
 }
 
 /// What a grid cell shows instead of (or on top of) its glyph.
@@ -718,9 +735,9 @@ fn paint_grid_cell(
     zoom: f32,
     visual: CellVisual,
     gallery: bool,
-) {
+) -> bool {
     if !painter.clip_rect().intersects(r) {
-        return;
+        return false;
     }
     paint_item_bg(painter, p, r, st, radius::CARD);
     let a = text_alpha(e, st);
@@ -781,10 +798,12 @@ fn paint_grid_cell(
     let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
     let font = FontId::proportional(if zoom < 48.0 { 12.0 } else { 12.5 });
     let rows = if gallery { 1 } else { 2 };
-    let galley = wrapped_galley(painter, &super::display_name(e), font, color, r.width() - 10.0, rows);
+    let fitted =
+        fit::wrapped_entry_name(painter, &super::display_name(e), e.is_dir_like(), font, color, r.width() - 10.0, rows);
     let gy = icon_box.bottom() + 6.0;
-    painter.galley(pos2(r.center().x, gy), galley, color);
+    painter.galley(pos2(r.center().x, gy), fitted.galley, color);
     paint_hidden_badge(painter, p, pos2(icon_box.left() + 2.0, icon_box.top() + 8.0), &e.name);
+    fitted.elided
 }
 
 /// Edge of the file icon in the details / list / column rows (points).
@@ -829,9 +848,9 @@ fn paint_list_cell(
     st: &ItemState,
     miller: bool,
     program_icon: Option<&Tex>,
-) {
+) -> bool {
     if !painter.clip_rect().intersects(r) {
-        return;
+        return false;
     }
     paint_item_bg(painter, p, r, st, radius::ROW);
     let a = text_alpha(e, st);
@@ -861,7 +880,9 @@ fn paint_list_cell(
     let right_pad = if miller && e.is_dir_like() { 24.0 } else { 8.0 };
     let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
     let max_w = r.right() - x - 24.0 - right_pad - deco.trailing_width() - badge_w(&e.name);
-    let galley = trunc_galley(painter, &super::display_name(e), FontId::proportional(13.0), color, max_w);
+    let fitted =
+        fit::entry_name(painter, &super::display_name(e), e.is_dir_like(), FontId::proportional(13.0), color, max_w);
+    let galley = fitted.galley;
     let gw = galley.size().x;
     painter.galley(pos2(x + 24.0, cy - galley.size().y / 2.0), galley, color);
     let bw = paint_hidden_badge(painter, p, pos2(x + 24.0 + gw, cy), &e.name);
@@ -875,6 +896,7 @@ fn paint_list_cell(
             p.text_tertiary,
         );
     }
+    fitted.elided
 }
 
 fn paint_group_header(painter: &Painter, p: &Palette, r: Rect, label: &str, count: usize, collapsed: bool, hot: bool) {

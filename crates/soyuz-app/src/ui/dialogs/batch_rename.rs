@@ -11,7 +11,6 @@
 
 use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, vec2};
 
-use super::conflict::{Btn, button};
 use super::properties_widgets::{badge, caption, check, small_icon_button};
 use super::{Dialog, DialogCtx};
 use crate::app::SoyuzApp;
@@ -22,6 +21,7 @@ use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons, icons::ph, palette};
 use crate::ui::toasts::Toast;
 use crate::ui::widgets::menu_item;
+use crate::ui::widgets::{Btn, pill_button};
 
 pub fn open(app: &mut SoyuzApp) {
     match BatchRenameModel::open(&app.core) {
@@ -55,7 +55,7 @@ impl BatchRenameDialog {
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let presets_btn = button(ui, tr!("dialogs-rename-presets"), Btn::Secondary);
+                let presets_btn = pill_button(ui, None, tr!("dialogs-rename-presets"), Btn::Secondary);
                 crate::ui::native::popup::Menu::menu(&presets_btn).show(|ui| {
                     ui.set_min_width(260.0);
                     crate::ui::widgets::menu_caption(ui, tr!("dialogs-rename-builtin"));
@@ -152,7 +152,7 @@ impl BatchRenameDialog {
         if let Some((a, b)) = swap {
             self.m.spec.rules.swap(a, b);
         }
-        let add = button(ui, tr!("dialogs-rename-add-rule"), Btn::Secondary);
+        let add = pill_button(ui, None, tr!("dialogs-rename-add-rule"), Btn::Secondary);
         crate::ui::native::popup::Menu::menu(&add).show(|ui| {
             ui.set_min_width(220.0);
             for r in Rule::templates() {
@@ -550,9 +550,9 @@ impl Dialog for BatchRenameDialog {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 let enabled = self.m.can_apply();
                 let label = tr!("dialogs-rename-go", count = ok);
-                let r = ui.add_enabled_ui(enabled, |ui| button(ui, &label, Btn::Primary)).inner;
+                let r = ui.add_enabled_ui(enabled, |ui| pill_button(ui, None, &label, Btn::Primary)).inner;
                 go = r.clicked() && enabled;
-                cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+                cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
             });
         });
         if go {

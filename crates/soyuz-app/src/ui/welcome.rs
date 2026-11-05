@@ -1,6 +1,7 @@
 //! First-run welcome card: a dismissible tip card in the bottom-right corner with the
-//! handful of shortcuts that make Soyuz click. Dismissal is remembered in the session;
-//! the card can be brought back from the palette (`Welcome tips`).
+//! handful of shortcuts that make Soyuz click. Esc or its buttons close it; that is
+//! remembered in the session, and the card can be brought back from the palette
+//! (`Welcome tips`). `[appearance] welcome_tips` off: new profiles start without it.
 
 use egui::{Align, Align2, Area, CornerRadius, Frame, Id, Layout, Margin, Order, RichText, Stroke, vec2};
 use soyuz_core::config::Action;
@@ -11,7 +12,7 @@ use crate::keys::chord_label;
 use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{icon_button, kbd, pill_button};
+use crate::ui::widgets::{Btn, icon_button, kbd, pill_button};
 
 const TIPS: &[(Action, &str)] = &[
     (Action::CommandPalette, ph::COMMAND),
@@ -33,13 +34,20 @@ fn tip_text(action: &Action) -> &'static str {
     }
 }
 
+/// Close the card and remember that it was seen (its buttons, Esc).
+pub fn dismiss(app: &mut SoyuzApp) {
+    app.core.ui.welcome = false;
+    app.core.ui.welcome_seen = true;
+    app.core.save_state();
+}
+
 /// Draw the card when it is due. `bottom` is the space taken by the status bar.
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
     if !app.core.ui.welcome || app.dialog_open() || app.gui.settings.is_open() {
         return;
     }
     let p = palette(ctx);
-    let mut dismiss = false;
+    let mut close = false;
     let mut settings = false;
     Area::new(Id::unique("soyuz.welcome"))
         .order(Order::Foreground)
@@ -50,12 +58,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
                 .stroke(Stroke::new(1.0, p.border_strong))
                 .corner_radius(CornerRadius::same(12))
                 .inner_margin(Margin::same(16))
-                .shadow(egui::epaint::Shadow {
-                    offset: [0, 8],
-                    blur: 28,
-                    spread: 0,
-                    color: egui::Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-                })
+                .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW))
                 .show(ui, |ui| {
                     ui.set_width(340.0);
                     crate::ui::a11y::container(
@@ -69,7 +72,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
                         ui.label(RichText::new(tr!("app-welcome-title")).font(semibold(15.0)).color(p.text_primary));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if icon_button(ui, ph::X, tr!("app-welcome-dismiss"), true).clicked() {
-                                dismiss = true;
+                                close = true;
                             }
                         });
                     });
@@ -89,11 +92,11 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
                     }
                     ui.add_space(10.0);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if pill_button(ui, None, tr!("app-welcome-got-it"), true).clicked() {
-                            dismiss = true;
+                        if pill_button(ui, None, tr!("app-welcome-got-it"), Btn::Primary).clicked() {
+                            close = true;
                         }
                         ui.add_space(6.0);
-                        if pill_button(ui, Some(ph::GEAR_SIX), tr!("app-welcome-settings"), false).clicked() {
+                        if pill_button(ui, Some(ph::GEAR_SIX), tr!("app-welcome-settings"), Btn::Secondary).clicked() {
                             settings = true;
                         }
                     });
@@ -101,11 +104,9 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
         });
     if settings {
         app.core.cmds.push(Cmd::Action(Action::Settings));
-        dismiss = true;
+        close = true;
     }
-    if dismiss {
-        app.core.ui.welcome = false;
-        app.core.ui.welcome_seen = true;
-        app.core.save_state();
+    if close {
+        dismiss(app);
     }
 }

@@ -111,7 +111,7 @@ thread_local! {
 /// centre, every frame while a request waits): Allow once / Always for this session /
 /// Deny.
 pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
-    use crate::ui::dialogs::conflict::{Btn, button};
+    use crate::ui::widgets::{Btn, pill_button};
     let Some(text) = app.core.ui.terminal.clip_request.clone() else { return };
     let p = palette(ctx);
     let screen = ctx.content_rect();
@@ -128,12 +128,7 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
                 .stroke(Stroke::new(1.0, p.border_strong))
                 .corner_radius(CornerRadius::same(10))
                 .inner_margin(egui::Margin::same(14))
-                .shadow(egui::epaint::Shadow {
-                    offset: [0, 6],
-                    blur: 18,
-                    spread: 0,
-                    color: Color32::from_black_alpha(60),
-                })
+                .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW))
                 .show(ui, |ui| {
                     ui.set_width(width);
                     ui.horizontal(|ui| {
@@ -172,15 +167,15 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
                     );
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        if button(ui, tr!("panels-terminal-clip-deny"), Btn::Ghost).clicked() {
+                        if pill_button(ui, None, tr!("panels-terminal-clip-deny"), Btn::Ghost).clicked() {
                             answer = Some(ClipDecision::Drop);
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
-                            if button(ui, tr!("panels-terminal-clip-allow-once"), Btn::Primary).clicked() {
+                            if pill_button(ui, None, tr!("panels-terminal-clip-allow-once"), Btn::Primary).clicked() {
                                 answer = Some(ClipDecision::Copy);
                             }
-                            if button(ui, tr!("panels-terminal-clip-always"), Btn::Secondary)
+                            if pill_button(ui, None, tr!("panels-terminal-clip-always"), Btn::Secondary)
                                 .on_hover_text(tr!("panels-terminal-clip-always-tip"))
                                 .clicked()
                             {

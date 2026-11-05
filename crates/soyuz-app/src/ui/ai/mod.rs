@@ -83,38 +83,16 @@ pub enum Tone {
     Quiet,
 }
 
-/// Compact button used on cards.
+/// [`crate::ui::widgets::pill_button_on`] in the words of the cards.
 pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, tone: Tone, enabled: bool) -> Response {
-    let p = palette(ui.ctx());
-    let font = FontId::proportional(12.0);
-    let g = ui.painter().layout_no_wrap(label.to_string(), font, Color32::PLACEHOLDER);
-    let iw = if icon.is_some() { if label.is_empty() { 4.0 } else { 18.0 } } else { 0.0 };
-    let w = g.size().x + 20.0 + iw;
-    let (rect, resp) = ui.allocate_exact_size(vec2(w, 26.0), if enabled { Sense::click() } else { Sense::hover() });
-    let hover = enabled && resp.hovered();
-    let (bg, fg, stroke) = match tone {
-        Tone::Primary => (if hover { p.accent_hover } else { p.accent }, Color32::WHITE, None),
-        Tone::Danger => (
-            if hover { p.danger.gamma_multiply(0.18) } else { p.danger.gamma_multiply(0.08) },
-            p.danger,
-            Some(p.danger.gamma_multiply(0.35)),
-        ),
-        Tone::Normal => (if hover { p.bg_surface3 } else { p.bg_surface2 }, p.text_primary, Some(p.border_subtle)),
-        Tone::Quiet => (if hover { p.bg_surface2 } else { Color32::TRANSPARENT }, p.text_secondary, None),
+    use crate::ui::widgets::{Btn, pill_button_on};
+    let kind = match tone {
+        Tone::Primary => Btn::Primary,
+        Tone::Normal => Btn::Secondary,
+        Tone::Danger => Btn::DangerSoft,
+        Tone::Quiet => Btn::Ghost,
     };
-    let (bg, fg) = if enabled { (bg, fg) } else { (p.bg_surface2.gamma_multiply(0.6), p.text_tertiary) };
-    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), bg);
-    if let Some(s) = stroke {
-        ui.painter().rect_stroke(rect, CornerRadius::same(radius::ROW), Stroke::new(1.0, s), StrokeKind::Inside);
-    }
-    let mut x = rect.left() + 10.0;
-    if let Some(i) = icon {
-        ui.painter().text(pos2(x, rect.center().y), Align2::LEFT_CENTER, i, icons::font(13.0), fg);
-        x += iw;
-    }
-    ui.painter().galley(pos2(x, rect.center().y - g.size().y / 2.0), g, fg);
-    crate::ui::a11y::button(&resp, label);
-    resp
+    pill_button_on(ui, icon, label, kind, enabled)
 }
 
 fn access_icon(a: AiAccess) -> &'static str {

@@ -6,6 +6,15 @@ use crate::theme::apply::{CAPTION, DISPLAY};
 use crate::theme::palette;
 use crate::ui::widgets::kbd;
 
+fn text_width(ui: &Ui, text: &str, style: TextStyle) -> f32 {
+    ui.painter().layout_no_wrap(text.to_string(), style.resolve(ui.style()), Color32::PLACEHOLDER).size().x
+}
+
+/// Width of a [`kbd`] badge: its text, padding and outline.
+fn kbd_width(ui: &Ui, keys: &str) -> f32 {
+    text_width(ui, keys, TextStyle::Small) + 14.0
+}
+
 pub struct EmptyState<'a> {
     pub glyph: &'a str,
     pub glyph_color: Option<Color32>,
@@ -40,9 +49,10 @@ impl EmptyState<'_> {
             ui.add_space(20.0);
             for (keys, what) in self.hints {
                 ui.horizontal(|ui| {
-                    // Center the row manually: measure roughly and pad.
-                    let approx = keys.len() as f32 * 6.5 + what.len() as f32 * 6.5 + 40.0;
-                    ui.add_space(((ui.available_width() - approx) / 2.0).max(0.0));
+                    // A horizontal row ignores the centered parent: measure it and pad.
+                    let gap = ui.spacing().item_spacing.x + 4.0;
+                    let width = kbd_width(ui, keys) + gap + text_width(ui, what, TextStyle::Body);
+                    ui.add_space(((ui.available_width() - width) / 2.0).max(0.0));
                     kbd(ui, keys);
                     ui.add_space(4.0);
                     ui.label(RichText::new(*what).color(p.text_tertiary));

@@ -2,8 +2,8 @@
 
 use egui::style::{ScrollStyle, Selection, WidgetVisuals, Widgets};
 use egui::{
-    Color32, Context, CornerRadius, FontFamily, FontId, Margin, Shadow, Stroke, TextStyle, Theme, ThemePreference,
-    Visuals, vec2,
+    Color32, Context, CornerRadius, FontFamily, FontId, Margin, Stroke, TextStyle, Theme, ThemePreference, Visuals,
+    vec2,
 };
 
 use soyuz_core::config::Density;
@@ -199,18 +199,8 @@ pub fn visuals(p: &Palette) -> Visuals {
     v.menu_corner_radius = CornerRadius::same(p.radius(radius::CARD));
     v.window_fill = p.bg_surface3;
     v.window_stroke = Stroke::new(1.0, p.border_subtle);
-    v.window_shadow = Shadow {
-        offset: [0, 8],
-        blur: 32,
-        spread: 0,
-        color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-    };
-    v.popup_shadow = Shadow {
-        offset: [0, 4],
-        blur: 16,
-        spread: 0,
-        color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-    };
+    v.window_shadow = p.shadow(crate::theme::tokens::shadow::WINDOW);
+    v.popup_shadow = p.shadow(crate::theme::tokens::shadow::POPUP);
     v.panel_fill = p.bg_surface1;
     v.text_cursor.stroke = Stroke::new(2.0, p.accent);
     v.striped = true;

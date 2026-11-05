@@ -82,6 +82,8 @@ pub enum Cmd {
     SetSplit(f32),
     /// Make the pane's view the default for every folder (after confirmation).
     ApplyViewToAll(PaneId),
+    /// Undo of [`Cmd::ApplyViewToAll`]: the views remembered before it.
+    RestoreViews(Box<crate::state::view_memory::ViewMemory>),
     /// Reveal the given path's parent and select it (path typed into the address bar).
     RevealPath(PathBuf),
     /// Open a new integrated terminal session in this folder.

@@ -382,7 +382,18 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
     // The text edit spans the field's full height and centers its row (typed text, hint
     // and cursor alike): with a custom frame egui ignores `margin`, so a shorter child
     // would pin the row to its top.
-    let inner = Rect::from_min_max(pos2(r.left() + 30.0, r.top()), pos2(r.right() - 28.0, r.bottom()));
+    // Filtering: how many of how many, beside the clear button (when there is room).
+    let count = active.then(|| {
+        let text = format!(
+            "{} / {}",
+            crate::ui::statusbar::group_thousands(pane.visible.len()),
+            crate::ui::statusbar::group_thousands(pane.entries.len())
+        );
+        ui.painter().layout_no_wrap(text, crate::theme::fonts::numbers(ui.ctx(), 11.0), p.text_tertiary)
+    });
+    let count = count.filter(|g| r.width() - 58.0 - g.size().x - 6.0 >= 60.0);
+    let count_w = count.as_ref().map_or(0.0, |g| g.size().x + 6.0);
+    let inner = Rect::from_min_max(pos2(r.left() + 30.0, r.top()), pos2(r.right() - 28.0 - count_w, r.bottom()));
     let mut child = ui.new_child(UiBuilder::new().max_rect(inner));
     let esc = focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
     let resp = child.add(
@@ -424,6 +435,10 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
         ui.painter().text(cr.center(), Align2::CENTER_CENTER, ph::X, icons::font(12.0), p.text_tertiary);
         if cresp.clicked() {
             pane.set_filter("");
+        }
+        if let Some(g) = count {
+            let at = pos2(cr.left() - 2.0 - g.size().x, r.center().y - g.size().y / 2.0);
+            ui.painter().galley(at, g, p.text_tertiary);
         }
     } else if !focused {
         let hint = chord_label(&app.core.keymap, &Action::Filter).unwrap_or_default();
