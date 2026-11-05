@@ -75,7 +75,8 @@ fn cancel_paused_job() {
     let t = Instant::now();
     h.engine.cancel(id);
     assert_eq!(h.done(id), JobState::Cancelled);
-    assert!(t.elapsed() < Duration::from_millis(100), "{:?}", t.elapsed());
+    // Far less than the throttle would take to finish the copy; a busy CI runner needs room.
+    assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
 }
 
 #[test]

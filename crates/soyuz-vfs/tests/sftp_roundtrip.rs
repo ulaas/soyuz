@@ -66,8 +66,12 @@ impl russh::server::Handler for Ssh {
         Ok(if user == "alice" && password == "wonder" { Auth::Accept } else { Auth::reject() })
     }
 
-    async fn auth_publickey(&mut self, user: &str, key: &russh::keys::PublicKey) -> Result<Auth, Self::Error> {
-        let ok = user == "bob" && key.to_openssh().map(|s| s.contains(USER_PUB)).unwrap_or(false);
+    async fn auth_publickey(
+        &mut self,
+        user: &str,
+        key: russh::server::VerifiedPublicKey<'_>,
+    ) -> Result<Auth, Self::Error> {
+        let ok = user == "bob" && key.public_key.to_openssh().map(|s| s.contains(USER_PUB)).unwrap_or(false);
         Ok(if ok { Auth::Accept } else { Auth::reject() })
     }
 
