@@ -1,9 +1,11 @@
 //! The theme library and the OS appearance watcher.
 //!
-//! One background thread (`soyuz-theme-watch`) polls every ~1.5 s:
+//! One background thread (`soyuz-theme-watch`) looks after:
 //! - `<config dir>/themes/*.toml`: user themes are (re)parsed when a file's size or
-//!   mtime changes, so editing a theme file updates the window live;
-//! - the OS accent color and dark / light app mode (registry on Windows).
+//!   mtime changes, so editing a theme file updates the window live. The folder is watched;
+//!   it is only scanned on a timer while it cannot be (not created yet, watcher failed);
+//! - the OS accent color and dark / light app mode (registry on Windows), polled every
+//!   [`OS_POLL_FOCUSED`], or [`OS_POLL_UNFOCUSED`] while the main window is not focused.
 //!
 //! Results are published behind a version counter; [`sync`] (once per frame, cheap)
 //! reinstalls the palettes when something the current settings depend on changed and
@@ -20,6 +22,13 @@ use egui::{Color32, Context, Theme, ThemePreference};
 use parking_lot::RwLock;
 
 use super::themes::{self, ThemeDef};
+
+/// How often the OS appearance is read while the main window has the focus.
+const OS_POLL_FOCUSED: Duration = Duration::from_secs(3);
+/// The same while it has not: nobody is looking, and the thread should stay asleep.
+const OS_POLL_UNFOCUSED: Duration = Duration::from_secs(15);
+/// Theme editors save in bursts.
+const THEME_DEBOUNCE: Duration = Duration::from_millis(200);
 
 /// A user theme file that failed to load.
 #[derive(Clone, Debug, PartialEq)]
@@ -133,14 +142,45 @@ pub fn start(ctx: &Context) {
     let ctx = ctx.clone();
     let spawned = std::thread::Builder::new().name("soyuz-theme-watch".into()).spawn(move || {
         let dir = themes_dir();
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let mut watcher = soyuz_fs::Watcher::new(tx, THEME_DEBOUNCE, std::sync::Arc::new(|| {}))
+            .inspect_err(|e| log::warn!("theme files are not watched: {e}"))
+            .ok();
+        let mut watching = false;
+        let mut rescan = true;
         loop {
+            if !watching && let Some(w) = watcher.as_mut() {
+                watching = w.watch(&dir, false).is_ok();
+                // Changes made before the watch began are only seen by a scan.
+                rescan |= watching;
+            }
             let mut changed = poll_os();
-            changed |= scan(&dir);
+            if rescan {
+                changed |= scan(&dir);
+            }
             if changed {
                 VERSION.fetch_add(1, Ordering::Relaxed);
                 ctx.request_repaint();
             }
-            std::thread::sleep(Duration::from_millis(1500));
+            let focused = ctx.input_for(egui::ViewportId::ROOT, |i| i.focused);
+            let wait = if focused { OS_POLL_FOCUSED } else { OS_POLL_UNFOCUSED };
+            rescan = match rx.recv_timeout(wait) {
+                Ok(event) => {
+                    if let soyuz_fs::WatchKind::Lost = event.kind {
+                        if let Some(w) = watcher.as_mut() {
+                            w.unwatch(event.id);
+                        }
+                        watching = false;
+                    }
+                    true
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => !watching,
+                // No watcher: the timer is all there is.
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    std::thread::sleep(wait);
+                    true
+                }
+            };
         }
     });
     if let Err(e) = spawned {
