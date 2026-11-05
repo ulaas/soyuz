@@ -647,7 +647,10 @@ impl Pane {
         }
         let (mut count, mut bytes) = (0, 0);
         for k in self.selection.iter() {
-            if let Some(e) = self.entry(k) {
+            // Only what an operation would act on: an item the filter hides does not count.
+            if self.visible_pos(k).is_some()
+                && let Some(e) = self.entry(k)
+            {
                 count += 1;
                 if !e.is_dir_like() {
                     bytes += e.size;
@@ -1050,6 +1053,12 @@ mod tests {
         assert_eq!(p.selection_stats(), (1, 40));
         p.on_patch(vec![], &["c".to_string()]);
         assert_eq!(p.selection_stats(), (0, 0));
+        p.selection.insert("a".into());
+        assert_eq!(p.selection_stats(), (1, 15));
+        p.set_filter("b");
+        assert_eq!(p.selection_stats(), (0, 0), "the filter hides it, so nothing would act on it");
+        p.set_filter("");
+        assert_eq!(p.selection_stats(), (1, 15), "and it counts again");
     }
 
     #[test]

@@ -4,16 +4,57 @@ A read-only review of the whole codebase by three reviewers: correctness and dat
 safety, performance, and user experience with typography. Each finding below is a
 reviewer's claim until its fix is committed: the fix first confirms it against the code.
 
-Fix order: wave 1 is data safety and bugs in `soyuz-fs` / `soyuz-archive` / `soyuz-vfs`,
-data safety and bugs in `soyuz-appcore` / `soyuz-core` / `soyuz-jobs`, and the small UX items
-in `soyuz-app`. Wave 2 is performance. Wave 3 is the larger typography work: font size
-reaching every surface, tabular figures, radii.
+## Status
 
-Done before the review's reports were merged: Enter on a focused Cancel no longer confirms
-a dialog (UX finding 3, commit 2d06707).
+Fixed unless listed here. Findings below keep the reviewers' wording and line numbers from
+before the fixes.
 
+**Bugs: not fixed**
+- 12 (a directory swapped for a junction during a Windows tree delete): needs a handle-relative
+  tree delete. Checking first would only narrow the race.
+- 15, the cross-process part: two instances changing different settings within the watcher's
+  debounce can still lose one. Unknown keys inside `[[array]]` entries and inline tables are still
+  rewritten whole.
+- 17: a listing that stops partway warns with a notification; there is no banner with Retry.
+- `kinds/sync.rs` overwrites are still `Irreversible`.
 
-### Bugs and data safety
+**Performance: not done**
+- 12 (cell text cache): measured at about 38 µs per frame for 50 rows, too little to justify a
+  staleness risk.
+- 11: rows still make their own hash lookups for git status and tags, one per row.
+- 15 (rubber band).
+- 7: the OS accent and mode are still polled (3 s focused, 15 s unfocused), so a theme flip can take
+  up to 15 s to show in an unfocused window.
+- 6: a change touching only `refs/` waits for the 60 s fallback.
+
+**UX: not done**
+- 8: the welcome card does not dismiss itself after its tips were used.
+- Ideas: conflict mnemonics and an "Identical" tag, omnibar ghost completion, type to filter in Open
+  with, tips as a status-bar strip.
+
+**Known limits**
+- At `font_size` 17 the last Properties tab is cut off, and with a +8 offset all of them run past the
+  window. The search, activity, tool, AI and preview surfaces got the font pass but were not checked by
+  screenshot at the largest size.
+- The terminal UI's notifications have no buttons: Ctrl+Z undoes the newest entry there, and hiding
+  system folders still asks.
+
+**Behaviour to review**
+- A mistyped path in the address bar lands on its nearest existing ancestor with a notification.
+- In a narrow window the filter field folds into a button and less-used toolbar buttons go.
+- `[git] refresh_secs` defaults to 60 instead of 5, now a fallback behind a watcher on the git directory.
+- A remote transfer keeps a `.<name>.soyuzpartinfo` note beside a partial, and a source that changes
+  during a transfer fails instead of committing.
+
+**Verification**
+- Windows: `cargo test --workspace`, workspace clippy, fmt and the banned-name grep pass.
+- Linux: only `clippy -p soyuz-fs --lib` as a cross-check. The freedesktop trash tests added here, the
+  git watcher and the theme thread have not run on Linux.
+- Most new regression tests were not run against the unfixed code.
+- Only a person can check: toast Undo and Esc, crumb Shift+click and Ctrl+click, the rename bubble's flip,
+  Inter Tabular's crispness at 125 % and 150 %, and a real Start menu shortcut in Open with.
+
+## Bugs and data safety
 
 Read-only review of soyuz-jobs, soyuz-fs, soyuz-archive, soyuz-core config, soyuz-appcore, soyuz-vfs transfers, plus the two newest features (`models/file_browser.rs`, `models/requests/open_with.rs`). Items already in CLAUDE.md "Known gaps", REVIEW-1 and REVIEW-2 are not repeated. No files in the repo were changed; no cargo or git write commands were run. Paths are relative to `E:\source\private\soyuz-public\crates\`.
 
@@ -198,7 +239,7 @@ Archive / config / vfs: zip-slip / absolute / drive-letter / `..` handling, syml
 
 appcore: name-keyed selection across sort / patch / relist; `NavHistory` and tab-index clamping; job meta / affected-path routing across windows; `store_file` corrupt-file protection; `split.rs` never overwrites; `dupes.rs` keeps one copy per group and verifies existence; `updates.rs` verifies SHA-256 at download and install; `rename/mod.rs` duplicate / case-only / cycle detection; `file_browser.rs` listing thread and stale-receiver handling; `open_with.rs` `choose` validation (absolute + is_file), `adopt` dedup, `listed_apps` / `preselect` logic (other than item 20).
 
-### Performance
+## Performance
 
 ### Findings (ranked by user-visible impact)
 
@@ -283,7 +324,7 @@ appcore: name-keyed selection across sort / patch / relist; `NavHistory` and tab
 4. **"Idle means idle" gate.** Audit every periodic thread (theme watcher 1.5 s, watcher liveness 1 s, git 5 s, places 20 s, thumbs trim 15 s) behind a focused/visible flag and add a scripted test (`SOYUZ_SCRIPT` + `SOYUZ_FRAME_LOG`) asserting zero repaints and zero thread wakeups over, say, 30 s of idle.
 5. **Listing maintenance off the UI thread.** Let the lister worker own the sorted `Vec<EntryInfo>` + name index + group ids and ship `Arc` snapshots/deltas; the UI thread only swaps a pointer per frame, which removes the streaming-load frame drops (item 2) and makes resort/regroup background work with a stale-but-valid view meanwhile.
 
-### User experience and typography
+## User experience and typography
 
 Scope: `crates/soyuz-app/src/ui`, `crates/soyuz-app/src/theme`, `crates/soyuz-appcore/src/models`. Every finding was verified by reading the code; nothing was compiled or run.
 
