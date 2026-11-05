@@ -2,27 +2,25 @@
 //! `services::preview_text::parse_markdown`, parsed on the worker).
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{Color32, CornerRadius, FontFamily, FontId, Frame, Margin, Stroke, Ui, vec2};
+use egui::{Color32, Frame, Margin, Stroke, Ui, vec2};
 
 use crate::services::preview_text::{Block, Span};
 use crate::theme::Palette;
-use crate::theme::fonts::SEMIBOLD;
 
 fn spans_job(spans: &[Span], size: f32, color: Color32, heading: bool, p: &Palette) -> LayoutJob {
     let mut job = LayoutJob::default();
     for s in spans {
-        let family = if s.code {
-            FontFamily::Monospace
+        let font_id = if s.code {
+            crate::theme::font::mono(size * 0.92)
         } else if heading {
-            crate::theme::fonts::heading(size).family
+            crate::theme::font::heading(size)
         } else if s.bold {
-            FontFamily::Name(SEMIBOLD.into())
+            crate::theme::font::semibold(size)
         } else {
-            FontFamily::Proportional
+            crate::theme::font::ui(size)
         };
-        let font_size = if s.code { size * 0.92 } else { size };
         let mut fmt = TextFormat {
-            font_id: FontId::new(font_size, family),
+            font_id,
             color: if s.link { p.accent } else { color },
             italics: s.italic,
             ..Default::default()
@@ -75,7 +73,7 @@ pub fn show(ui: &mut Ui, blocks: &[Block], p: &Palette) {
                         Block::Task(_, false, _) => "☐".into(),
                         _ => if *depth == 0 { "•" } else { "◦" }.into(),
                     };
-                    ui.label(egui::RichText::new(marker).color(p.text_tertiary).size(13.0));
+                    ui.label(egui::RichText::new(marker).color(p.text_tertiary).size(crate::theme::font::px(13.0)));
                     let mut job = spans_job(spans, 13.0, p.text_secondary, false, p);
                     job.wrap.max_width = ui.available_width();
                     ui.label(job);
@@ -100,16 +98,23 @@ pub fn show(ui: &mut Ui, blocks: &[Block], p: &Palette) {
                 Frame::new()
                     .fill(p.bg_sunken)
                     .stroke(Stroke::new(1.0, p.border_subtle))
-                    .corner_radius(CornerRadius::same(6))
+                    .corner_radius(crate::theme::tokens::radius::same(6))
                     .inner_margin(Margin::symmetric(10, 8))
                     .show(ui, |ui| {
                         ui.set_width(width - 22.0);
                         if !lang.is_empty() {
-                            ui.label(egui::RichText::new(lang).size(10.5).color(p.text_tertiary));
+                            ui.label(
+                                egui::RichText::new(lang).size(crate::theme::font::px(10.5)).color(p.text_tertiary),
+                            );
                         }
                         egui::ScrollArea::horizontal().id_salt(ui.next_auto_id()).show(ui, |ui| {
                             for l in lines {
-                                ui.label(egui::RichText::new(l).monospace().size(12.0).color(p.text_primary));
+                                ui.label(
+                                    egui::RichText::new(l)
+                                        .monospace()
+                                        .size(crate::theme::font::px(12.0))
+                                        .color(p.text_primary),
+                                );
                             }
                         });
                     });
@@ -117,13 +122,15 @@ pub fn show(ui: &mut Ui, blocks: &[Block], p: &Palette) {
             Block::Table(rows) => {
                 Frame::new()
                     .fill(p.bg_surface2.gamma_multiply(0.5))
-                    .corner_radius(CornerRadius::same(6))
+                    .corner_radius(crate::theme::tokens::radius::same(6))
                     .inner_margin(Margin::symmetric(8, 6))
                     .show(ui, |ui| {
                         egui::ScrollArea::horizontal().id_salt(ui.next_auto_id()).show(ui, |ui| {
                             for (i, r) in rows.iter().enumerate() {
                                 let c = if i == 0 { p.text_primary } else { p.text_secondary };
-                                ui.label(egui::RichText::new(r).monospace().size(11.5).color(c));
+                                ui.label(
+                                    egui::RichText::new(r).monospace().size(crate::theme::font::px(11.5)).color(c),
+                                );
                             }
                         });
                     });

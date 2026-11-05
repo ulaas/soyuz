@@ -75,6 +75,7 @@ panels-history-empty-hint = Finished operations appear here and can be undone.
 panels-history-undone = Undone
 panels-history-verified-tip = Every copied file was hash-compared with its source (BLAKE3)
 panels-history-not-undoable = can't be undone
+panels-history-partial = stopped partway
 panels-history-not-undoable-tip = This operation can't be undone (e.g. a permanent delete).
 
 ## Terminal panel

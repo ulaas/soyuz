@@ -22,9 +22,9 @@ use soyuz_core::config::{Action, TabStripMode};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::keys::chord_label;
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{icons::ph, palette};
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{focus_ring, menu_item, menu_separator};
 
 /// Title bar height (the tab strip lives inside it).
@@ -309,9 +309,9 @@ fn brand(ui: &mut Ui, col: Rect, compact_pad: bool, focused: bool, app: &mut Soy
     let open = Popup::is_id_open(&ctx, Popup::default_response_id(&resp));
     let painter = ui.painter();
     if open || resp.is_pointer_button_down_on() {
-        painter.rect_filled(btn, CornerRadius::same(radius::ROW), p.bg_surface3);
+        painter.rect_filled(btn, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface3);
     } else if hover > 0.0 {
-        painter.rect_filled(btn, CornerRadius::same(radius::ROW), p.bg_surface2.gamma_multiply(hover));
+        painter.rect_filled(btn, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2.gamma_multiply(hover));
     }
     let ppp = ctx.pixels_per_point();
     let snap = |v: f32| (v * ppp).round() / ppp;
@@ -514,11 +514,11 @@ fn paint_glyph(painter: &Painter, glyph: Glyph, center: Pos2, color: Color32, pp
         }
         Glyph::Maximize => {
             let r = Rect::from_center_size(c, vec2(2.0 * s, 2.0 * s));
-            painter.rect_stroke(r, CornerRadius::same(1), stroke, StrokeKind::Middle);
+            painter.rect_stroke(r, crate::theme::tokens::radius::same(1), stroke, StrokeKind::Middle);
         }
         Glyph::Restore => {
             let front = Rect::from_min_max(pos2(c.x - s, c.y - s + 2.0), pos2(c.x + s - 2.0, c.y + s));
-            painter.rect_stroke(front, CornerRadius::same(1), stroke, StrokeKind::Middle);
+            painter.rect_stroke(front, crate::theme::tokens::radius::same(1), stroke, StrokeKind::Middle);
             // Back window: only the top and right edges peek out.
             painter.line_segment([pos2(c.x - s + 2.0, c.y - s), pos2(c.x + s, c.y - s)], stroke);
             painter.line_segment([pos2(c.x + s, c.y - s), pos2(c.x + s, c.y + s - 2.0)], stroke);

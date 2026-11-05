@@ -1,11 +1,13 @@
 //! One file pane: location, listing, visible order, selection, cursor and view state.
 //! Pure state — the background requests are issued by `crate::ops`.
 
+use std::cell::Cell;
 use std::collections::HashSet;
 use std::hash::{BuildHasher, RandomState};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
@@ -13,8 +15,15 @@ use soyuz_core::{EntryInfo, FsError, Location, NamePattern, NamePatternSpec, OpC
 
 use super::history::{HistoryEntry, NavHistory};
 use super::listing::{self, GroupSpan, ViewFilter};
-use super::selection::{EntryKey, Selection};
+use super::selection::{ClickMods, EntryKey, Selection};
 use super::view_memory::ViewState;
+
+/// Streamed chunks are merged into a pane at most this often: a merge moves every entry and
+/// recomputes the visible order, which a large folder cannot afford per frame.
+pub const MERGE_INTERVAL: Duration = Duration::from_millis(100);
+
+/// [`Pane::vis_pos`] slot of an entry that is not visible.
+const NOT_VISIBLE: u32 = u32::MAX;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct PaneId(pub u64);
@@ -24,6 +33,15 @@ impl PaneId {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         PaneId(NEXT.fetch_add(1, Ordering::Relaxed))
     }
+}
+
+/// A listing error the pane does not show as a failure.
+#[derive(Clone, Debug)]
+pub struct ListingWarning {
+    /// A refresh failed and the old entries stayed; otherwise the listing stopped partway
+    /// and the pane shows what it got.
+    pub kept_old: bool,
+    pub error: FsError,
 }
 
 #[derive(Clone, Debug)]
@@ -78,13 +96,23 @@ pub struct Pane {
     pub entries: Vec<EntryInfo>,
     /// Streamed entries not merged yet.
     incoming: Vec<EntryInfo>,
-    /// Name → index into `entries`.
+    /// Name → index into `entries`. Rebuilt once a listing is complete; while one streams
+    /// it is out of date (`index_stale`) and lookups scan the entries.
     index: NameIndex,
+    index_stale: bool,
+    /// When streamed chunks were last merged.
+    last_merge: Option<Instant>,
     /// Indices into `entries` in display order (filtered, grouped).
     pub visible: Vec<usize>,
+    /// `entries` index → position in `visible` ([`NOT_VISIBLE`]: not shown).
+    vis_pos: Vec<u32>,
+    /// Group of every entry, kept until `entries` or the grouping change.
+    group_cache: Option<listing::GroupIds>,
     pub groups: Vec<GroupSpan>,
     pub collapsed_groups: HashSet<String>,
     pub selection: Selection,
+    /// [`Pane::selection_stats`] and what it was computed from.
+    stats_cache: Cell<Option<SelectionStats>>,
     pub cursor: Option<EntryKey>,
     pub view: ViewState,
     pub filter: String,
@@ -96,6 +124,12 @@ pub struct Pane {
     pub status: ListingStatus,
     /// A soft relist (refresh / rescan) is running; contents stay visible.
     pub refreshing: bool,
+    /// Typed into the address bar and not listed yet: if it does not exist, stay and show
+    /// the error instead of moving to the nearest existing folder.
+    pub typed_location: bool,
+    /// A listing ended with an error the pane does not show as a failure; a toast tells
+    /// the user (taken by `ops::handle_msg`).
+    pub listing_warning: Option<ListingWarning>,
     /// Visible order must be recomputed before the next draw.
     pub dirty: bool,
     /// Changes reported while a listing was running (it may already have enumerated past
@@ -140,6 +174,15 @@ pub struct Pane {
     pub col_drag: Option<(usize, f32)>,
 }
 
+/// A computed [`Pane::selection_stats`].
+#[derive(Clone, Copy)]
+struct SelectionStats {
+    selection: u64,
+    vis_version: u64,
+    count: usize,
+    bytes: u64,
+}
+
 /// Inputs that determine a [`FlowLayout`](crate::state::layout::FlowLayout).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LayoutSig {
@@ -165,10 +208,15 @@ impl Pane {
             entries: Vec::new(),
             incoming: Vec::new(),
             index: NameIndex::default(),
+            index_stale: false,
+            last_merge: None,
             visible: Vec::new(),
+            vis_pos: Vec::new(),
+            group_cache: None,
             groups: Vec::new(),
             collapsed_groups: HashSet::new(),
             selection: Selection::default(),
+            stats_cache: Cell::new(None),
             cursor: None,
             view,
             filter: String::new(),
@@ -178,6 +226,8 @@ impl Pane {
             ctl: None,
             status: ListingStatus::Loading { since: Instant::now() },
             refreshing: false,
+            typed_location: false,
+            listing_warning: None,
             dirty: true,
             deferred_paths: Vec::new(),
             relist_pending: false,
@@ -216,7 +266,11 @@ impl Pane {
         self.entries.clear();
         self.incoming.clear();
         self.index = NameIndex::default();
+        self.index_stale = false;
+        self.last_merge = None;
         self.visible.clear();
+        self.vis_pos.clear();
+        self.group_cache = None;
         self.groups.clear();
         self.selection.clear();
         self.cursor = None;
@@ -267,11 +321,35 @@ impl Pane {
 
     fn rebuild_index(&mut self) {
         self.index.rebuild(&self.entries);
+        self.index_stale = false;
     }
 
     /// Index into `entries` of the entry named `key`.
     pub fn index_of(&self, key: &str) -> Option<usize> {
+        if self.index_stale {
+            // A repeated name maps to its last entry, as in the index.
+            return self.entries.iter().rposition(|e| e.name == key);
+        }
         self.index.get(&self.entries, key)
+    }
+
+    /// Set the size of the entry at `path` (a folder size arrived). Returns whether the
+    /// pane has that entry. Names of a folder listing are the last path component, so the
+    /// name index finds it; other locations may name entries differently and are scanned.
+    pub fn set_entry_size(&mut self, path: &Path, bytes: u64) -> bool {
+        let found = if matches!(self.location, Location::Dir(_)) {
+            let name = path.file_name().map(|n| n.to_string_lossy());
+            name.and_then(|n| self.index_of(&n)).filter(|&i| self.entries[i].path == path)
+        } else {
+            self.entries.iter().position(|e| e.path == path)
+        };
+        match found {
+            Some(i) => {
+                self.entries[i].size = bytes;
+                true
+            }
+            None => false,
+        }
     }
 
     /// Selection key of `entries[i]`.
@@ -285,8 +363,15 @@ impl Pane {
             if done {
                 self.refreshing = false;
                 if let Some(e) = err {
-                    self.status = ListingStatus::Failed(e);
-                    self.entries.clear();
+                    if e.kind == soyuz_core::FsErrorKind::NotFound {
+                        self.status = ListingStatus::Failed(e);
+                        self.entries.clear();
+                    } else {
+                        // The folder is still there: keep what the pane shows, cursor and
+                        // selection included, and say the view may be out of date.
+                        self.status = ListingStatus::Ready;
+                        self.listing_warning = Some(ListingWarning { kept_old: true, error: e });
+                    }
                 } else {
                     let mut fresh = chunk;
                     sort_entries(&mut fresh, &self.view.sort);
@@ -299,8 +384,7 @@ impl Pane {
         }
         self.incoming.extend(chunk);
         if !done {
-            // Merged once per frame in `flush_incoming` (cheap even for 100k entries).
-            self.dirty = true;
+            // Merged by `refresh_visible`, at most every `MERGE_INTERVAL`.
             return false;
         }
         let incoming = std::mem::take(&mut self.incoming);
@@ -310,6 +394,7 @@ impl Pane {
                 Some(e) if self.entries.is_empty() => ListingStatus::Failed(e),
                 Some(e) => {
                     log::warn!("listing {} incomplete: {e}", self.location.display());
+                    self.listing_warning = Some(ListingWarning { kept_old: false, error: e });
                     ListingStatus::Ready
                 }
                 None => ListingStatus::Ready,
@@ -333,16 +418,21 @@ impl Pane {
             // of the buffer).
             self.entries.shrink_to_fit();
         }
-        self.rebuild_index();
-        if !self.is_loading() {
+        self.group_cache = None;
+        if self.is_loading() {
+            // Rebuilt once, when the listing completes.
+            self.index_stale = true;
+        } else {
+            self.rebuild_index();
             let (index, entries) = (&self.index, &self.entries);
             self.selection.retain(|k| index.get(entries, k).is_some());
             if self.cursor.as_deref().is_some_and(|c| self.index_of(c).is_none()) {
                 self.cursor = None;
             }
         }
-        let (index, entries) = (&self.index, &self.entries);
-        if let Some(name) = self.pending_cursor.take_if(|n| index.get(entries, n).is_some()) {
+        if self.pending_cursor.as_deref().is_some_and(|n| self.index_of(n).is_some())
+            && let Some(name) = self.pending_cursor.take()
+        {
             let key = EntryKey::from(name);
             self.selection.select_only(key.clone());
             self.cursor = Some(key);
@@ -370,6 +460,7 @@ impl Pane {
     /// Re-sort after a sort spec change.
     pub fn resort(&mut self) {
         sort_entries(&mut self.entries, &self.view.sort);
+        self.group_cache = None;
         self.rebuild_index();
         self.recompute_visible();
     }
@@ -378,23 +469,39 @@ impl Pane {
     /// `soyuz_core::sort_entries_keyed`).
     pub fn resort_keyed(&mut self, key: impl Fn(&EntryInfo) -> Option<String>) {
         soyuz_core::sort_entries_keyed(&mut self.entries, &self.view.sort, key);
+        self.group_cache = None;
         self.rebuild_index();
         self.recompute_visible();
     }
 
-    /// Recompute the visible order if needed.
-    /// Merge streamed chunks received since the last frame.
+    /// Merge streamed chunks received so far.
     pub fn flush_incoming(&mut self) {
         if self.incoming.is_empty() {
             return;
         }
         let incoming = std::mem::take(&mut self.incoming);
         listing::merge_sorted(&mut self.entries, incoming, &self.view.sort);
+        self.last_merge = Some(Instant::now());
         self.after_change();
     }
 
+    /// Streamed chunks wait to be merged: the frontend needs another frame within
+    /// [`MERGE_INTERVAL`], even if the listing goes quiet.
+    pub fn merge_pending(&self) -> bool {
+        !self.incoming.is_empty()
+    }
+
+    /// The first chunk shows at once; later ones at most every [`MERGE_INTERVAL`].
+    fn merge_due(&self) -> bool {
+        self.merge_pending()
+            && (self.entries.is_empty() || self.last_merge.is_none_or(|t| t.elapsed() >= MERGE_INTERVAL))
+    }
+
+    /// Merge what streamed in (when due) and recompute the visible order if needed.
     pub fn refresh_visible(&mut self, show_hidden: bool, show_system: bool) {
-        self.flush_incoming();
+        if self.merge_due() {
+            self.flush_incoming();
+        }
         // Group labels are translated: rebuild them after a language switch.
         let i18n_gen = crate::i18n::generation();
         if self.i18n_gen != i18n_gen {
@@ -416,7 +523,16 @@ impl Pane {
         let (show_hidden, show_system) = self.vis_flags;
         self.now = SystemTime::now();
         let f = ViewFilter { show_hidden, show_system, pattern: self.filter_pattern.as_ref() };
-        let (mut vis, mut groups) = listing::compute_visible(&self.entries, &f, self.view.group, self.now);
+        let mut vis = listing::filter_visible(&self.entries, &f);
+        let mut groups = Vec::new();
+        if self.view.group != soyuz_core::GroupBy::None {
+            let i18n_gen = crate::i18n::generation();
+            let reuse = self.group_cache.take().filter(|c| c.reusable(self.entries.len(), self.view.group, i18n_gen));
+            let ids =
+                reuse.unwrap_or_else(|| listing::GroupIds::build(&self.entries, self.view.group, self.now, i18n_gen));
+            groups = ids.apply(&mut vis);
+            self.group_cache = Some(ids);
+        }
         if !self.collapsed_groups.is_empty() && !groups.is_empty() {
             // Collapsed groups keep their header but hide their items.
             let mut kept = Vec::with_capacity(vis.len());
@@ -431,6 +547,11 @@ impl Pane {
             vis = kept;
             groups = spans;
         }
+        self.vis_pos.clear();
+        self.vis_pos.resize(self.entries.len(), NOT_VISIBLE);
+        for (pos, &i) in vis.iter().enumerate() {
+            self.vis_pos[i] = pos as u32;
+        }
         self.visible = vis;
         self.groups = groups;
         self.dirty = false;
@@ -443,7 +564,11 @@ impl Pane {
         }
         self.filter = text.to_string();
         self.filter_pattern = compile_filter(text);
-        self.dirty = true;
+        self.recompute_visible();
+        // A cursor the filter hides must not stay the target of Delete, Rename or Enter.
+        if self.cursor.is_some() && self.cursor_pos().is_none() {
+            self.cursor = None;
+        }
     }
 
     pub fn filter_active(&self) -> bool {
@@ -478,7 +603,12 @@ impl Pane {
     /// Visible position of `key`.
     pub fn visible_pos(&self, key: &str) -> Option<usize> {
         let idx = self.index_of(key)?;
-        self.visible.iter().position(|&i| i == idx)
+        match self.vis_pos.get(idx).copied() {
+            Some(NOT_VISIBLE) => None,
+            Some(pos) if self.visible.get(pos as usize) == Some(&idx) => Some(pos as usize),
+            // `visible` was edited behind the map.
+            _ => self.visible.iter().position(|&i| i == idx),
+        }
     }
 
     pub fn cursor_pos(&self) -> Option<usize> {
@@ -491,7 +621,8 @@ impl Pane {
     }
 
     /// Selected entries in visible order (falls back to the cursor entry when nothing
-    /// is selected).
+    /// visible is selected and the cursor itself is on screen: an entry the filter hides
+    /// is never acted on).
     pub fn selected_entries(&self) -> Vec<&EntryInfo> {
         let mut v: Vec<&EntryInfo> = self
             .visible
@@ -500,26 +631,64 @@ impl Pane {
             .map(|&i| &self.entries[i])
             .collect();
         if v.is_empty()
-            && let Some(e) = self.cursor.as_deref().and_then(|c| self.entry(c))
+            && let Some(pos) = self.cursor_pos()
+            && let Some(e) = self.entry_at(pos)
         {
             v.push(e);
         }
         v
     }
 
-    /// Total size of selected files and the number of selected items.
+    /// Number of selected items and the total size of the selected files. The status bar
+    /// asks every frame: computed once per change of the selection or the listing (only
+    /// folders change size without a new `vis_version`, and they do not count).
     pub fn selection_stats(&self) -> (usize, u64) {
-        let mut n = 0;
-        let mut bytes = 0;
+        let (selection, vis_version) = (self.selection.generation(), self.vis_version);
+        if let Some(c) = self.stats_cache.get()
+            && (c.selection, c.vis_version) == (selection, vis_version)
+        {
+            return (c.count, c.bytes);
+        }
+        let (mut count, mut bytes) = (0, 0);
         for k in self.selection.iter() {
-            if let Some(e) = self.entry(k) {
-                n += 1;
+            // Only what an operation would act on: an item the filter hides does not count.
+            if self.visible_pos(k).is_some()
+                && let Some(e) = self.entry(k)
+            {
+                count += 1;
                 if !e.is_dir_like() {
                     bytes += e.size;
                 }
             }
         }
-        (n, bytes)
+        self.stats_cache.set(Some(SelectionStats { selection, vis_version, count, bytes }));
+        (count, bytes)
+    }
+
+    /// Click semantics of [`Selection::click`] in the visible order. Only a Shift range
+    /// looks at the order, and it allocates a key per item of the range alone.
+    pub fn click(&mut self, key: EntryKey, mods: ClickMods) {
+        match self.selection.anchor().cloned() {
+            Some(anchor) if mods.range => self.select_visible_range(&anchor, &key, mods.toggle),
+            _ => self.selection.click(&[], key, mods),
+        }
+    }
+
+    /// [`Selection::select_range`] over the visible order, without building a key list.
+    fn select_visible_range(&mut self, from: &str, to: &str, additive: bool) {
+        let pos = |key: &str| self.visible.iter().position(|&i| self.entries[i].name == key);
+        let (a, b) = (pos(from), pos(to));
+        if !additive {
+            self.selection.clear_keys();
+        }
+        let range = match (a, b) {
+            (Some(a), Some(b)) => a.min(b)..a.max(b) + 1,
+            (_, Some(b)) => b..b + 1,
+            _ => return,
+        };
+        for vis_index in range {
+            self.selection.insert(self.key_of(self.visible[vis_index]));
+        }
     }
 
     /// Move the cursor to visible position `pos`; `extend` grows the selection from the
@@ -529,8 +698,7 @@ impl Pane {
         let Some(key) = self.key_at(pos).map(EntryKey::from) else { return };
         if extend {
             let anchor = self.selection.anchor().cloned().or_else(|| self.cursor.clone()).unwrap_or(key.clone());
-            let order = self.visible_keys();
-            self.selection.select_range(&order, &anchor, &key, false);
+            self.select_visible_range(&anchor, &key, false);
             self.selection.set_anchor(Some(anchor));
         } else if !keep {
             self.selection.select_only(key.clone());
@@ -553,7 +721,7 @@ impl Pane {
         let n = self.visible.len();
         (0..n)
             .map(|k| (start + k) % n)
-            .find(|&p| self.entry_at(p).is_some_and(|e| soyuz_core::fold_for_match(&e.name).starts_with(&needle)))
+            .find(|&p| self.entry_at(p).is_some_and(|e| soyuz_core::fold_starts_with(&e.name, &needle)))
     }
 }
 
@@ -697,6 +865,56 @@ mod tests {
         assert!(p.entry("zz").is_some());
     }
 
+    #[test]
+    fn an_entry_the_filter_hides_is_never_the_target() {
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        p.on_listing(vec![file("a.txt"), file("b.txt")], true, None);
+        p.refresh_visible(true, true);
+        p.move_cursor(0, false, false);
+        assert_eq!(p.selected_entries()[0].name, "a.txt");
+        p.set_filter("b");
+        assert!(p.selected_entries().is_empty(), "a.txt is selected but off screen");
+        assert_eq!(p.cursor_pos(), None);
+        assert_eq!(p.cursor, None);
+        // A cursor hidden some other way (hidden files turned off) is not a target either.
+        p.set_filter("");
+        p.refresh_visible(true, true);
+        p.cursor = Some("a.txt".into());
+        p.selection.clear();
+        assert_eq!(p.selected_entries().len(), 1);
+        p.visible.retain(|&i| p.entries[i].name != "a.txt");
+        assert!(p.selected_entries().is_empty());
+    }
+
+    #[test]
+    fn a_failed_refresh_keeps_the_entries_unless_the_folder_is_gone() {
+        use soyuz_core::FsErrorKind;
+        let err = |kind| FsError::with_message(kind, "read_dir", None, "boom");
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        p.on_listing(vec![file("a"), file("b")], true, None);
+        p.move_cursor(0, false, false);
+        p.refreshing = true;
+        p.on_listing(Vec::new(), true, Some(err(FsErrorKind::Io)));
+        assert_eq!(p.entries.len(), 2, "the pane stays as it was");
+        assert!(matches!(p.status, ListingStatus::Ready));
+        assert!(p.cursor.is_some() && !p.selection.is_empty());
+        assert!(p.listing_warning.take().is_some_and(|w| w.kept_old));
+        p.refreshing = true;
+        p.on_listing(Vec::new(), true, Some(err(FsErrorKind::NotFound)));
+        assert!(p.entries.is_empty() && matches!(p.status, ListingStatus::Failed(_)));
+        assert!(p.listing_warning.is_none());
+    }
+
+    #[test]
+    fn a_listing_that_stops_partway_warns() {
+        let err = FsError::with_message(soyuz_core::FsErrorKind::Io, "read_dir", None, "stalled");
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        p.status = ListingStatus::Loading { since: Instant::now() };
+        p.on_listing(vec![file("a")], true, Some(err));
+        assert!(matches!(p.status, ListingStatus::Ready));
+        assert!(p.listing_warning.take().is_some_and(|w| !w.kept_old));
+    }
+
     /// Changes reported while a listing runs wait for it; a relist request wins.
     #[test]
     fn deferred_work_waits_for_the_listing() {
@@ -783,6 +1001,166 @@ mod tests {
         p.move_cursor(0, true, false);
         let sel: Vec<&str> = p.selection.iter().map(|k| &**k).collect();
         assert_eq!(sel, ["a", "b"]);
+    }
+
+    /// Shift clicks and Shift+arrows select the same set as the key-list form in `Selection`.
+    #[test]
+    fn range_selection_matches_the_key_list_form() {
+        let names = ["a", "b", "c", "d", "e", "f"];
+        let order: Vec<EntryKey> = names.iter().map(|n| EntryKey::from(*n)).collect();
+        let shift = ClickMods { toggle: false, range: true };
+        let ctrl = ClickMods { toggle: true, range: false };
+        let ctrl_shift = ClickMods { toggle: true, range: true };
+        let plain = ClickMods::default();
+        let script = [
+            ("b", plain),
+            ("e", shift),
+            ("a", shift),
+            ("f", ctrl),
+            ("c", ctrl_shift),
+            ("d", ctrl),
+            ("b", plain),
+            ("b", shift),
+        ];
+        let mut p = pane_with(&names);
+        let mut reference = Selection::default();
+        for (key, mods) in script {
+            p.click(key.into(), mods);
+            reference.click(&order, key.into(), mods);
+            assert_eq!(p.selection, reference, "{key} {mods:?}");
+        }
+        // A range to a key the visible order lacks selects just the target, or nothing.
+        p.selection.select_only("b".into());
+        p.selection.set_anchor(Some("gone".into()));
+        p.click("d".into(), shift);
+        assert_eq!(p.selection.iter().map(|k| &**k).collect::<Vec<_>>(), ["d"]);
+        p.click("gone-too".into(), shift);
+        assert!(p.selection.is_empty());
+    }
+
+    #[test]
+    fn selection_stats_follow_the_selection_and_the_listing() {
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        p.on_listing(vec![sized("a", 10), sized("b", 20), sized("c", 40)], true, None);
+        p.refresh_visible(true, true);
+        assert_eq!(p.selection_stats(), (0, 0));
+        p.selection.insert("a".into());
+        p.selection.insert("b".into());
+        assert_eq!(p.selection_stats(), (2, 30));
+        assert_eq!(p.selection_stats(), (2, 30), "from the cache");
+        p.selection.toggle("b".into());
+        assert_eq!(p.selection_stats(), (1, 10));
+        p.on_patch(vec![sized("a", 15)], &[]);
+        assert_eq!(p.selection_stats(), (1, 15), "the file changed size");
+        p.selection =
+            Selection::from_band(&Selection::default(), &["c".into()], super::super::selection::BandMode::Add);
+        assert_eq!(p.selection_stats(), (1, 40));
+        p.on_patch(vec![], &["c".to_string()]);
+        assert_eq!(p.selection_stats(), (0, 0));
+        p.selection.insert("a".into());
+        assert_eq!(p.selection_stats(), (1, 15));
+        p.set_filter("b");
+        assert_eq!(p.selection_stats(), (0, 0), "the filter hides it, so nothing would act on it");
+        p.set_filter("");
+        assert_eq!(p.selection_stats(), (1, 15), "and it counts again");
+    }
+
+    #[test]
+    fn visible_position_map_follows_every_change() {
+        let mut p = pane_with(&["a", "b", "c", "d"]);
+        let check = |p: &Pane| {
+            for (i, e) in p.entries.iter().enumerate() {
+                let linear = p.visible.iter().position(|&v| v == i);
+                assert_eq!(p.visible_pos(&e.name), linear, "{}", e.name);
+            }
+        };
+        check(&p);
+        p.set_filter("b");
+        check(&p);
+        p.set_filter("");
+        p.view.sort.dir = soyuz_core::SortDir::Desc;
+        p.resort();
+        check(&p);
+        p.on_patch(vec![file("aa")], &["c".to_string()]);
+        check(&p);
+        p.view.group = soyuz_core::GroupBy::FirstLetter;
+        p.dirty = true;
+        p.refresh_visible(true, true);
+        check(&p);
+        assert_eq!(p.visible_pos("nope"), None);
+    }
+
+    #[test]
+    fn folder_size_finds_the_entry_by_path() {
+        let mut p = pane_with(&["a", "b"]);
+        assert!(p.set_entry_size(&PathBuf::from("/d").join("b"), 7));
+        assert_eq!(p.entry("b").map(|e| e.size), Some(7));
+        assert!(!p.set_entry_size(&PathBuf::from("/other").join("b"), 9), "same name, other folder");
+        assert!(!p.set_entry_size(&PathBuf::from("/d").join("missing"), 9));
+        assert_eq!(p.entry("b").map(|e| e.size), Some(7));
+        // Other locations: names may repeat, every path is found.
+        p.location = Location::Recent;
+        let (x, y) = (PathBuf::from("/x").join("same"), PathBuf::from("/y").join("same"));
+        p.set_entries_ordered(vec![
+            EntryInfo::minimal(x.clone(), EntryKind::File),
+            EntryInfo::minimal(y, EntryKind::File),
+        ]);
+        assert!(p.set_entry_size(&x, 5));
+        assert_eq!(p.entries[0].size, 5);
+    }
+
+    /// While a listing streams, chunks wait for the merge interval, lookups still work and
+    /// nothing changes about the finished result.
+    #[test]
+    fn streaming_merges_are_throttled() {
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        p.on_listing(vec![file("c")], false, None);
+        p.refresh_visible(true, true);
+        assert_eq!(shown(&p), ["c"], "the first chunk shows at once");
+        let v0 = p.vis_version;
+        p.on_listing(vec![file("a")], false, None);
+        assert!(p.merge_pending());
+        // (Just merged, however slow this machine is.)
+        p.last_merge = Some(Instant::now() + Duration::from_secs(3600));
+        p.refresh_visible(true, true);
+        assert_eq!(shown(&p), ["c"], "the next one waits");
+        assert_eq!(p.vis_version, v0, "and a waiting frame recomputes nothing");
+        // Lookups during the stream see what is merged, through the stale index.
+        assert_eq!(p.index_of("c"), Some(0));
+        assert_eq!(p.visible_pos("c"), Some(0));
+        p.pending_cursor = Some("a".into());
+        p.last_merge = Some(Instant::now() - MERGE_INTERVAL);
+        p.refresh_visible(true, true);
+        assert!(!p.merge_pending());
+        assert_eq!(shown(&p), ["a", "c"]);
+        assert_eq!(p.cursor.as_deref(), Some("a"), "a pending cursor lands mid-stream");
+        assert_eq!(p.index_of("c"), Some(1));
+        assert_eq!(p.visible_pos("c"), Some(1));
+        // `done` merges the rest at once and rebuilds the index.
+        p.on_listing(vec![file("b")], false, None);
+        p.on_listing(vec![file("d")], true, None);
+        assert_eq!(shown(&p), ["a", "b", "c", "d"]);
+        assert!(!p.index_stale);
+        assert_eq!(p.index_of("d"), Some(3));
+    }
+
+    #[test]
+    fn group_cache_follows_entries_and_grouping() {
+        let mut p = pane_with(&["a.rs", "b.md", "c.rs"]);
+        p.view.group = soyuz_core::GroupBy::Extension;
+        p.dirty = true;
+        p.refresh_visible(true, true);
+        let labels = |p: &Pane| p.groups.iter().map(|g| (g.label.clone(), g.len)).collect::<Vec<_>>();
+        assert_eq!(labels(&p), [(".md".to_string(), 1), (".rs".to_string(), 2)]);
+        p.set_filter("a");
+        assert_eq!(labels(&p), [(".rs".to_string(), 1)], "the filter reuses the cached groups");
+        p.set_filter("");
+        p.on_patch(vec![file("d.txt")], &["b.md".to_string()]);
+        assert_eq!(labels(&p), [(".rs".to_string(), 2), (".txt".to_string(), 1)], "new entries");
+        p.view.group = soyuz_core::GroupBy::FirstLetter;
+        p.dirty = true;
+        p.refresh_visible(true, true);
+        assert_eq!(p.groups.iter().map(|g| g.label.as_str()).collect::<Vec<_>>(), ["A", "C", "D"], "new grouping");
     }
 
     #[test]

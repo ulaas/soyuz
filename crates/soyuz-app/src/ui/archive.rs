@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use egui::{Align2, CornerRadius, FontId, Key, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2};
+use egui::{Align2, Key, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2};
 use soyuz_archive::ArchiveFormat;
 
 use crate::app::SoyuzApp;
@@ -101,7 +101,9 @@ impl Dialog for ExtractDialog {
         let p = palette(ui.ctx());
         ui.label(RichText::new(self.form.summary()).color(p.text_secondary));
         ui.add_space(10.0);
-        ui.label(RichText::new(tr!("views-archive-destination")).size(11.5).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("views-archive-destination")).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+        );
         ui.add_space(2.0);
         let r = ui.add(
             TextEdit::singleline(&mut self.form.dest).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 7)),
@@ -146,7 +148,7 @@ impl Dialog for CreateDialog {
             .color(p.text_secondary),
         );
         ui.add_space(10.0);
-        ui.label(RichText::new(tr!("views-archive-name")).size(11.5).color(p.text_tertiary));
+        ui.label(RichText::new(tr!("views-archive-name")).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
         ui.add_space(2.0);
         let r = ui.add(
             TextEdit::singleline(&mut self.form.name).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 7)),
@@ -163,22 +165,22 @@ impl Dialog for CreateDialog {
             self.focus = false;
         }
         ui.add_space(10.0);
-        ui.label(RichText::new(tr!("views-archive-format")).size(11.5).color(p.text_tertiary));
+        ui.label(RichText::new(tr!("views-archive-format")).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
         ui.add_space(2.0);
         // Text segmented control.
         let formats = writable_formats();
         let cell = vec2(68.0, 26.0);
         let (rect, _) = ui.allocate_exact_size(vec2(cell.x * formats.len() as f32 + 4.0, cell.y + 4.0), Sense::hover());
-        ui.painter().rect_filled(rect, CornerRadius::same(6), p.bg_surface2);
+        ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(6), p.bg_surface2);
         for (i, f) in formats.iter().enumerate() {
             let r = egui::Rect::from_min_size(pos2(rect.left() + 2.0 + i as f32 * cell.x, rect.top() + 2.0), cell);
             let resp = ui.interact(r, ui.scope_id().with(("fmt", i)), Sense::click());
             let sel = *f == self.form.format;
             if sel {
-                ui.painter().rect_filled(r, CornerRadius::same(5), p.bg_surface1);
+                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(5), p.bg_surface1);
                 ui.painter().rect_stroke(
                     r,
-                    CornerRadius::same(5),
+                    crate::theme::tokens::radius::same(5),
                     Stroke::new(1.0, p.border_subtle),
                     StrokeKind::Inside,
                 );
@@ -190,23 +192,35 @@ impl Dialog for CreateDialog {
             } else {
                 p.text_tertiary
             };
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, format_label(*f), FontId::proportional(12.0), c);
+            ui.painter().text(r.center(), Align2::CENTER_CENTER, format_label(*f), crate::theme::font::ui(12.0), c);
             if resp.clicked() {
                 self.form.set_format(*f);
             }
         }
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(tr!("views-archive-compression")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("views-archive-compression"))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_tertiary),
+            );
             let mut lvl = self.form.level as f32;
             ui.add(egui::Slider::new(&mut lvl, 0.0..=9.0).step_by(1.0).show_value(false));
             self.form.level = lvl.round() as u8;
             let label = level_label(self.form.level);
-            ui.label(RichText::new(format!("{label} ({})", self.form.level)).size(11.5).color(p.text_secondary));
+            ui.label(
+                RichText::new(format!("{label} ({})", self.form.level))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_secondary),
+            );
         });
         if self.form.format.supports_password() {
             ui.add_space(8.0);
-            ui.label(RichText::new(tr!("views-archive-password-optional")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("views-archive-password-optional"))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_tertiary),
+            );
             ui.add_space(2.0);
             ui.add(
                 TextEdit::singleline(&mut self.form.password)
@@ -215,7 +229,11 @@ impl Dialog for CreateDialog {
                     .margin(Margin::symmetric(10, 7)),
             );
             if self.form.format == ArchiveFormat::SevenZ && !self.form.password.is_empty() {
-                ui.label(RichText::new(tr!("views-archive-names-encrypted")).size(11.0).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("views-archive-names-encrypted"))
+                        .size(crate::theme::font::px(11.0))
+                        .color(p.text_tertiary),
+                );
             }
         }
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));

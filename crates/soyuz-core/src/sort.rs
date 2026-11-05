@@ -33,8 +33,8 @@ impl Default for SortSpec {
 }
 
 /// Sort `v` by `spec`. [`compare_entries`] is a total order (ties fall back to the path),
-/// so an unstable sort gives the same result as a stable one, about 4× faster with the
-/// natural comparator (`cargo bench -p soyuz-core --bench sort`).
+/// so an unstable sort gives the same result as a stable one (`cargo bench -p soyuz-core
+/// --bench sort`).
 pub fn sort_entries(v: &mut [EntryInfo], spec: &SortSpec) {
     v.sort_unstable_by(|a, b| compare_entries(a, b, spec));
 }
@@ -54,14 +54,14 @@ pub fn compare_entries(a: &EntryInfo, b: &EntryInfo, spec: &SortSpec) -> Orderin
     let primary = match spec.column {
         Column::Name => name(a, b),
         Column::Size => a.size.cmp(&b.size),
-        Column::Kind => kind_key(a).cmp(&kind_key(b)),
+        Column::Kind => kind_cmp(a, b),
         Column::Modified => a.modified.cmp(&b.modified),
         Column::Created => a.created.cmp(&b.created),
         Column::Accessed => a.accessed.cmp(&b.accessed),
         Column::Attributes => a.attrs.bits().cmp(&b.attrs.bits()),
         Column::Mode => a.mode.cmp(&b.mode),
         Column::Owner => a.owner.cmp(&b.owner),
-        Column::Extension => ext_key(a).cmp(&ext_key(b)),
+        Column::Extension => ext_cmp(a, b),
         Column::Path => cmp_names(&a.path.to_string_lossy(), &b.path.to_string_lossy(), spec),
         // Columns whose data lives outside `EntryInfo` (app services) sort by name here.
         Column::Tags
@@ -115,19 +115,36 @@ fn cmp_names(a: &str, b: &str, spec: &SortSpec) -> Ordering {
     if spec.natural {
         natural_cmp(a, b, spec.case_insensitive)
     } else if spec.case_insensitive {
-        a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
+        cmp_lower(a, b).then_with(|| a.cmp(b))
     } else {
         a.cmp(b)
     }
 }
 
-fn ext_key(e: &EntryInfo) -> String {
-    e.extension().map(str::to_lowercase).unwrap_or_default()
+/// `a.to_lowercase().cmp(&b.to_lowercase())`, without allocating when both are ASCII. Other
+/// text keeps the String form: whole-string lower-casing has context rules (final sigma)
+/// that a char-by-char fold would not match.
+fn cmp_lower(a: &str, b: &str) -> Ordering {
+    if a.is_ascii() && b.is_ascii() {
+        a.bytes().map(|c| c.to_ascii_lowercase()).cmp(b.bytes().map(|c| c.to_ascii_lowercase()))
+    } else {
+        a.to_lowercase().cmp(&b.to_lowercase())
+    }
+}
+
+/// By lower-cased extension; no extension sorts first.
+fn ext_cmp(a: &EntryInfo, b: &EntryInfo) -> Ordering {
+    cmp_lower(a.extension().unwrap_or_default(), b.extension().unwrap_or_default())
 }
 
 /// Directories first, then by lower-cased extension.
-fn kind_key(e: &EntryInfo) -> (u8, String) {
-    if e.is_dir_like() { (0, String::new()) } else { (1, ext_key(e)) }
+fn kind_cmp(a: &EntryInfo, b: &EntryInfo) -> Ordering {
+    match (a.is_dir_like(), b.is_dir_like()) {
+        (true, true) => Ordering::Equal,
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        (false, false) => ext_cmp(a, b),
+    }
 }
 
 #[cfg(test)]
@@ -185,6 +202,30 @@ mod tests {
         let spec = SortSpec { column: Column::Kind, folders_first: false, ..SortSpec::default() };
         sort_entries(&mut v, &spec);
         assert_eq!(names(&v), ["d", "a.txt", "y.TXT", "x.zip"]);
+    }
+
+    /// The allocation-free comparison agrees with the String one it replaced.
+    #[test]
+    fn cmp_lower_matches_to_lowercase() {
+        let words = ["", "a", "A", "ab", "AB", "aB", "txt", "TXT", "Z", "_", "ı", "I", "İ", "Σ", "aΣ", "ß"];
+        for x in words {
+            for y in words {
+                assert_eq!(cmp_lower(x, y), x.to_lowercase().cmp(&y.to_lowercase()), "{x:?} vs {y:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn extension_sort_ignores_case_and_puts_no_extension_first() {
+        let mut v = vec![
+            e("c.ZIP", EntryKind::File, 0),
+            e("none", EntryKind::File, 0),
+            e("b.Txt", EntryKind::File, 0),
+            e("a.txt", EntryKind::File, 0),
+        ];
+        let spec = SortSpec { column: Column::Extension, folders_first: false, ..SortSpec::default() };
+        sort_entries(&mut v, &spec);
+        assert_eq!(names(&v), ["none", "a.txt", "b.Txt", "c.ZIP"]);
     }
 
     #[test]

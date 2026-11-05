@@ -9,8 +9,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use egui::{
-    Align2, Area, CornerRadius, DragAndDrop, FontId, Frame, Id, Margin, Order, Panel, Rect, ScrollArea, Sense, Stroke,
-    StrokeKind, Ui, pos2, vec2,
+    Align2, Area, DragAndDrop, Frame, Id, Margin, Order, Panel, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, pos2,
+    vec2,
 };
 use soyuz_core::config::DragDefault;
 use soyuz_core::{EntryInfo, Location, SizeStyle, format_size};
@@ -87,10 +87,10 @@ impl Shelf {
             .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
             .show(root, |ui| {
                 let card = ui.available_rect_before_wrap();
-                ui.painter().rect_filled(card, CornerRadius::same(radius::MODAL), p.bg_surface1);
+                ui.painter().rect_filled(card, crate::theme::tokens::radius::same(radius::MODAL), p.bg_surface1);
                 ui.painter().rect_stroke(
                     card,
-                    CornerRadius::same(radius::MODAL),
+                    crate::theme::tokens::radius::same(radius::MODAL),
                     Stroke::new(1.0, p.border_subtle),
                     StrokeKind::Inside,
                 );
@@ -127,7 +127,7 @@ impl Shelf {
             pos2(hr.left() + 34.0, hr.center().y),
             Align2::LEFT_CENTER,
             tr!("tools-shelf-title"),
-            crate::ui::views::flow::semibold(13.5),
+            crate::theme::font::semibold(13.5),
             p.text_primary,
         );
         if !d.items.is_empty() {
@@ -135,7 +135,7 @@ impl Shelf {
                 pos2(hr.left() + 80.0, hr.center().y),
                 Align2::LEFT_CENTER,
                 d.items.len().to_string(),
-                FontId::proportional(11.5),
+                crate::theme::font::ui(11.5),
                 p.text_tertiary,
             );
         }
@@ -169,10 +169,10 @@ impl Shelf {
             && card.contains(pos)
         {
             let painter = ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("soyuz.shelf.hl")));
-            painter.rect_filled(card, CornerRadius::same(radius::MODAL), p.accent.gamma_multiply(0.08));
+            painter.rect_filled(card, crate::theme::tokens::radius::same(radius::MODAL), p.accent.gamma_multiply(0.08));
             painter.rect_stroke(
                 card,
-                CornerRadius::same(radius::MODAL),
+                crate::theme::tokens::radius::same(radius::MODAL),
                 Stroke::new(2.0, p.accent),
                 StrokeKind::Inside,
             );
@@ -196,12 +196,12 @@ impl Shelf {
                 c + vec2(0.0, 4.0),
                 Align2::CENTER_CENTER,
                 tr!("tools-shelf-empty-title"),
-                crate::ui::views::flow::semibold(13.0),
+                crate::theme::font::semibold(13.0),
                 p.text_primary,
             );
             let g = ui.painter().layout(
                 tr!("tools-shelf-empty-body").into(),
-                FontId::proportional(11.5),
+                crate::theme::font::ui(11.5),
                 p.text_secondary,
                 list.width() - 40.0,
             );
@@ -225,9 +225,9 @@ impl Shelf {
                     let selected = sel_snapshot.contains(&i);
                     let painter = ui.painter();
                     if selected {
-                        painter.rect_filled(r, CornerRadius::same(6), p.accent_subtle);
+                        painter.rect_filled(r, crate::theme::tokens::radius::same(6), p.accent_subtle);
                     } else if resp.hovered() {
-                        painter.rect_filled(r, CornerRadius::same(6), p.bg_surface2);
+                        painter.rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface2);
                     }
                     let e = item
                         .entry
@@ -245,7 +245,7 @@ impl Shelf {
                     let g = trunc_galley(
                         painter,
                         &name,
-                        FontId::proportional(12.5),
+                        crate::theme::font::ui(12.5),
                         p.text_primary.gamma_multiply(a),
                         r.width() - 44.0,
                     );
@@ -268,7 +268,7 @@ impl Shelf {
                     let g = trunc_galley(
                         painter,
                         &sub,
-                        FontId::proportional(11.0),
+                        crate::theme::font::ui(11.0),
                         if item.missing { p.danger } else { p.text_tertiary },
                         r.width() - 44.0,
                     );
@@ -345,7 +345,7 @@ impl Shelf {
                 count = n,
                 dest = to
             ))
-            .font(FontId::proportional(11.5))
+            .font(crate::theme::font::ui(11.5))
             .color(p.text_tertiary),
         );
         fu.horizontal(|ui| {
@@ -401,12 +401,12 @@ impl Shelf {
                 let painter = ui.painter();
                 painter.rect_filled(
                     strip,
-                    CornerRadius::same(10),
+                    crate::theme::tokens::radius::same(10),
                     if hot { p.accent.gamma_multiply(0.25) } else { p.bg_surface3.gamma_multiply(0.92) },
                 );
                 painter.rect_stroke(
                     strip,
-                    CornerRadius::same(10),
+                    crate::theme::tokens::radius::same(10),
                     Stroke::new(if hot { 2.0 } else { 1.0 }, if hot { p.accent } else { p.border_strong }),
                     StrokeKind::Inside,
                 );
@@ -421,7 +421,7 @@ impl Shelf {
                     strip.center() + vec2(0.0, 10.0),
                     Align2::CENTER_CENTER,
                     tr!("tools-shelf-title"),
-                    FontId::proportional(10.5),
+                    crate::theme::font::ui(10.5),
                     p.text_secondary,
                 );
             });

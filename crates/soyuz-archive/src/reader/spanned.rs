@@ -18,6 +18,10 @@ const ZIP64_LOCATOR_SIG: u32 = 0x0706_4b50;
 const ZIP64_EOCD_SIG: u32 = 0x0606_4b50;
 const CDH_SIG: u32 = 0x0201_4b50;
 
+/// Largest central directory read into memory (some three million entries): the size comes
+/// from the file, and an allocation failure would abort the process.
+const MAX_DIRECTORY: u64 = 256 * 1024 * 1024;
+
 /// The disks of a spanned set, in order, when `path` is its `.zip` (the last disk, which
 /// has a `.z01` sibling) or its `.z01`. `None` for ordinary files.
 pub(crate) fn spanned_parts(path: &Path) -> Option<Vec<PathBuf>> {
@@ -164,7 +168,8 @@ fn find_directory(disks: &mut SplitReader, count: usize) -> Result<Directory, Ar
         if rec_disk >= count {
             return Err(corrupt("zip64 end record names a missing disk"));
         }
-        let rec = read_at(disks, disks.start(rec_disk) + rec_off, 56)?;
+        let rec_at = disks.start(rec_disk).checked_add(rec_off).ok_or_else(|| corrupt("bad zip64 end record"))?;
+        let rec = read_at(disks, rec_at, 56)?;
         if u32_at(&rec, 0) != Some(ZIP64_EOCD_SIG) {
             return Err(corrupt("bad zip64 end record"));
         }
@@ -183,16 +188,28 @@ fn find_directory(disks: &mut SplitReader, count: usize) -> Result<Directory, Ar
     if cd_disk as usize >= count {
         return Err(corrupt("the directory starts on a missing disk"));
     }
-    dir.offset += disks.start(cd_disk as usize);
+    dir.offset = dir
+        .offset
+        .checked_add(disks.start(cd_disk as usize))
+        .ok_or_else(|| corrupt("the directory runs past the last disk"))?;
     Ok(dir)
+}
+
+/// The directory lies inside the set and is small enough to read into memory.
+fn check_directory(offset: u64, size: u64, total: u64) -> Result<(), ArchiveError> {
+    if offset.checked_add(size).is_none_or(|end| end > total) {
+        return Err(corrupt("the directory runs past the last disk"));
+    }
+    if size > MAX_DIRECTORY {
+        return Err(corrupt("the directory is too large"));
+    }
+    Ok(())
 }
 
 /// The new central directory (global offsets, disk 0) plus zip64 / plain end records.
 fn rebuild_directory(disks: &mut SplitReader, count: usize) -> Result<Vec<u8>, ArchiveError> {
     let dir = find_directory(disks, count)?;
-    if dir.offset + dir.size > disks.total() {
-        return Err(corrupt("the directory runs past the last disk"));
-    }
+    check_directory(dir.offset, dir.size, disks.total())?;
     let cd = read_at(disks, dir.offset, dir.size)?;
     let mut out = Vec::with_capacity(cd.len() + 128);
     let mut at = 0usize;
@@ -288,7 +305,7 @@ fn rewrite_entry(rec: &[u8], name_len: usize, extra_len: usize, disks: &SplitRea
     if disk as usize >= disks.parts() {
         return Err(corrupt("an entry starts on a missing disk"));
     }
-    let global = disks.start(disk as usize) + offset;
+    let global = disks.start(disk as usize).checked_add(offset).ok_or_else(|| corrupt("bad entry offset"))?;
 
     let mut z64 = Vec::new();
     let big = |v: u64| v >= u64::from(u32::MAX);
@@ -415,6 +432,55 @@ pub(crate) mod tests {
         let parts = spanned_parts(&zip_path).unwrap();
         let err = SpannedReader::open(&parts).err().unwrap();
         assert!(err.to_string().contains("missing"), "{err}");
+    }
+
+    /// A two-disk set whose last disk holds a zip64 end record with these values.
+    fn zip64_set(dir: &Path, rec_off: Option<u64>, cd_off: u64, cd_size: u64) -> Vec<PathBuf> {
+        let first = vec![0u8; 1024];
+        let mut last = ZIP64_EOCD_SIG.to_le_bytes().to_vec();
+        last.extend_from_slice(&44u64.to_le_bytes());
+        last.extend_from_slice(&[45, 0, 45, 0]);
+        last.extend_from_slice(&1u32.to_le_bytes()); // this disk
+        last.extend_from_slice(&0u32.to_le_bytes()); // directory disk
+        last.extend_from_slice(&0u64.to_le_bytes());
+        last.extend_from_slice(&0u64.to_le_bytes());
+        last.extend_from_slice(&cd_size.to_le_bytes());
+        last.extend_from_slice(&cd_off.to_le_bytes());
+        last.extend_from_slice(&ZIP64_LOCATOR_SIG.to_le_bytes());
+        last.extend_from_slice(&1u32.to_le_bytes()); // record on the last disk
+        last.extend_from_slice(&rec_off.unwrap_or(0).to_le_bytes());
+        last.extend_from_slice(&2u32.to_le_bytes());
+        last.extend_from_slice(&EOCD_SIG.to_le_bytes());
+        last.extend_from_slice(&[0xFF; 16]); // the values live in the zip64 record
+        last.extend_from_slice(&0u16.to_le_bytes());
+        let zip = write_set(dir, "s", &[first, last]);
+        spanned_parts(&zip).unwrap()
+    }
+
+    #[test]
+    fn a_huge_directory_size_is_refused_not_allocated() {
+        let d = tempfile::tempdir().unwrap();
+        // 0x200 + this size wraps around to 0x100, which looks in bounds.
+        let parts = zip64_set(d.path(), None, 0x200, 0xFFFF_FFFF_FFFF_FF00);
+        let err = SpannedReader::open(&parts).err().unwrap();
+        assert!(err.to_string().contains("past the last disk"), "{err}");
+    }
+
+    #[test]
+    fn an_overflowing_record_offset_is_refused() {
+        let d = tempfile::tempdir().unwrap();
+        let parts = zip64_set(d.path(), Some(u64::MAX), 0, 0);
+        let err = SpannedReader::open(&parts).err().unwrap();
+        assert!(err.to_string().contains("zip64"), "{err}");
+    }
+
+    #[test]
+    fn a_directory_over_the_limit_is_refused() {
+        assert!(check_directory(0, MAX_DIRECTORY, u64::MAX).is_ok());
+        let err = check_directory(0, MAX_DIRECTORY + 1, u64::MAX).err().unwrap();
+        assert!(err.to_string().contains("too large"), "{err}");
+        assert!(check_directory(u64::MAX, 1, u64::MAX).is_err());
+        assert!(check_directory(10, 11, 20).is_err());
     }
 
     #[test]

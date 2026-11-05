@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use egui::{Align2, CursorIcon, DragAndDrop, FontId, Id, Key, Rect, Sense, Stroke, TextEdit, Ui, pos2, vec2};
+use egui::{Align2, CursorIcon, DragAndDrop, Id, Key, Rect, Sense, Stroke, TextEdit, Ui, pos2, vec2};
 use soyuz_core::Location;
 use soyuz_core::config::PortalPin;
 
@@ -96,7 +96,7 @@ fn rows(ui: &mut Ui, st: &mut PortalState, c: &mut PortalCtx<'_>) -> Rect {
             let g = crate::ui::widgets::trunc_galley(
                 ui.painter(),
                 tr!("app-portal-empty"),
-                FontId::proportional(12.0),
+                crate::theme::font::ui(12.0),
                 p.text_tertiary,
                 rect.width() - 42.0,
             );

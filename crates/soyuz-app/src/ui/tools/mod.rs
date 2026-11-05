@@ -28,19 +28,18 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Frame, Id, Key, LayerId, Margin, Modifiers, Order, Rect, Sense, Stroke, Ui,
-    Vec2, pos2, vec2,
+    Align2, Color32, Frame, Id, Key, LayerId, Margin, Modifiers, Order, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2,
 };
 use soyuz_core::Location;
 use soyuz_core::config::{Action, DragDefault};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::dnd;
 use crate::ui::toasts::Toast;
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::icon_button;
 
 pub use crate::models::tools::{
@@ -314,14 +313,9 @@ pub fn tool_window(
     let frame = Frame::new()
         .fill(p.bg_surface1)
         .stroke(Stroke::new(1.0, p.border_strong))
-        .corner_radius(CornerRadius::same(radius::MODAL))
+        .corner_radius(crate::theme::tokens::radius::same(radius::MODAL))
         .inner_margin(Margin::same(0))
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 10],
-            blur: 36,
-            spread: 0,
-            color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-        });
+        .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
     let mut keep = true;
     // Esc closes the frontmost tool window (a focused text field or an open popup takes
     // Esc first).
@@ -364,7 +358,7 @@ pub fn tool_window(
                 let sg = crate::ui::widgets::trunc_galley(
                     painter,
                     subtitle,
-                    FontId::proportional(12.0),
+                    crate::theme::font::ui(12.0),
                     p.text_tertiary,
                     hr.width() - tw - 34.0 - 70.0,
                 );
@@ -390,50 +384,27 @@ pub fn tool_window(
     keep
 }
 
-/// Small text button with an optional icon; `kind`: 0 normal, 1 primary, 2 danger.
+/// [`crate::ui::widgets::pill_button_on`] by number; `kind`: 0 normal, 1 primary, 2 danger.
 pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: u8, enabled: bool) -> egui::Response {
-    let p = palette(ui.ctx());
-    let font = FontId::proportional(12.5);
-    // PLACEHOLDER so the galley takes `fg` below (secondary buttons are dark in light mode).
-    let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::PLACEHOLDER);
-    let icon_w = if icon.is_some() { 18.0 } else { 0.0 };
-    let size = vec2(galley.size().x + 22.0 + icon_w, 26.0);
-    let (rect, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
-    crate::ui::a11y::button(&resp, label);
-    let hover = enabled && resp.hovered();
-    let (bg, fg, stroke) = match (kind, enabled) {
-        (_, false) => (p.bg_surface2, p.text_tertiary, Some(p.border_subtle)),
-        (1, _) => (if hover { p.accent_hover } else { p.accent }, Color32::WHITE, None),
-        (2, _) => (if hover { p.danger } else { p.danger.gamma_multiply(0.85) }, Color32::WHITE, None),
-        _ => (if hover { p.bg_surface3 } else { p.bg_surface2 }, p.text_primary, Some(p.border_subtle)),
+    use crate::ui::widgets::{Btn, pill_button_on};
+    let kind = match kind {
+        1 => Btn::Primary,
+        2 => Btn::Danger,
+        _ => Btn::Secondary,
     };
-    let cr = CornerRadius::same(radius::ROW);
-    ui.painter().rect_filled(rect, cr, bg);
-    if let Some(s) = stroke {
-        ui.painter().rect_stroke(rect, cr, Stroke::new(1.0, s), egui::StrokeKind::Inside);
-    }
-    let mut x = rect.left() + 11.0;
-    if let Some(g) = icon {
-        ui.painter().text(pos2(x, rect.center().y), Align2::LEFT_CENTER, g, icons::font(13.5), fg);
-        x += icon_w;
-    }
-    ui.painter().galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
-    if resp.has_focus() {
-        crate::ui::widgets::focus_ring(ui, rect);
-    }
-    resp
+    pill_button_on(ui, icon, label, kind, enabled)
 }
 
 /// A thin progress bar (`frac` = None → indeterminate shimmer).
 pub fn progress_bar(ui: &mut Ui, width: f32, frac: Option<f32>) {
     let p = palette(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(width, 4.0), Sense::hover());
-    ui.painter().rect_filled(r, CornerRadius::same(2), p.border_subtle);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(2), p.border_subtle);
     match frac {
         Some(f) => {
             let mut fill = r;
             fill.set_width((r.width() * f.clamp(0.0, 1.0)).max(3.0));
-            ui.painter().rect_filled(fill, CornerRadius::same(2), p.accent);
+            ui.painter().rect_filled(fill, crate::theme::tokens::radius::same(2), p.accent);
         }
         None => {
             let t = ui.input(|i| i.time) as f32;
@@ -441,7 +412,7 @@ pub fn progress_bar(ui: &mut Ui, width: f32, frac: Option<f32>) {
             let x = r.left() + (t * 0.8).fract() * (r.width() + w) - w;
             let seg = Rect::from_min_max(pos2(x.max(r.left()), r.top()), pos2((x + w).min(r.right()), r.bottom()));
             if seg.width() > 0.0 {
-                ui.painter().rect_filled(seg, CornerRadius::same(2), p.accent);
+                ui.painter().rect_filled(seg, crate::theme::tokens::radius::same(2), p.accent);
             }
             ui.ctx().request_repaint();
         }
@@ -450,10 +421,10 @@ pub fn progress_bar(ui: &mut Ui, width: f32, frac: Option<f32>) {
 
 /// Small colored chip ("Only left").
 pub fn chip(ui: &mut Ui, text: &str, color: Color32) -> egui::Response {
-    let galley = ui.painter().layout_no_wrap(text.to_string(), FontId::proportional(11.0), color);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), crate::theme::font::ui(11.0), color);
     let size = vec2(galley.size().x + 14.0, 18.0);
     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
-    ui.painter().rect_filled(r, CornerRadius::same(9), color.gamma_multiply(0.16));
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(9), color.gamma_multiply(0.16));
     ui.painter().galley(pos2(r.left() + 7.0, r.center().y - galley.size().y / 2.0), galley, color);
     resp
 }
@@ -462,13 +433,13 @@ pub fn chip(ui: &mut Ui, text: &str, color: Color32) -> egui::Response {
 pub fn filter_chip(ui: &mut Ui, text: &str, count: usize, color: Color32, on: &mut bool) -> egui::Response {
     let p = palette(ui.ctx());
     let label = format!("{text}  {count}");
-    let galley = ui.painter().layout_no_wrap(label, FontId::proportional(11.5), p.text_primary);
+    let galley = ui.painter().layout_no_wrap(label, crate::theme::font::ui(11.5), p.text_primary);
     let size = vec2(galley.size().x + 28.0, 24.0);
     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
     if resp.clicked() {
         *on = !*on;
     }
-    let cr = CornerRadius::same(12);
+    let cr = crate::theme::tokens::radius::same(12);
     if *on {
         ui.painter().rect_filled(r, cr, color.gamma_multiply(0.18));
         ui.painter().rect_stroke(r, cr, Stroke::new(1.0, color.gamma_multiply(0.6)), egui::StrokeKind::Inside);
@@ -493,9 +464,9 @@ pub fn filter_chip(ui: &mut Ui, text: &str, count: usize, color: Color32, on: &m
 /// A non-counting toggle chip (method / preset / tab pickers).
 pub fn toggle_chip(ui: &mut Ui, text: &str, on: &mut bool, color: Color32) -> egui::Response {
     let p = palette(ui.ctx());
-    let galley = ui.painter().layout_no_wrap(text.to_string(), FontId::proportional(11.5), p.text_primary);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), crate::theme::font::ui(11.5), p.text_primary);
     let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 18.0, 24.0), Sense::click());
-    let cr = CornerRadius::same(12);
+    let cr = crate::theme::tokens::radius::same(12);
     if *on {
         ui.painter().rect_filled(r, cr, color.gamma_multiply(0.18));
         ui.painter().rect_stroke(r, cr, Stroke::new(1.0, color.gamma_multiply(0.6)), egui::StrokeKind::Inside);
@@ -518,7 +489,7 @@ pub fn text_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32) -> egu
             .hint_text(hint)
             .desired_width(width)
             .margin(Margin::symmetric(8, 5))
-            .font(FontId::proportional(12.5)),
+            .font(crate::theme::font::ui(12.5)),
     )
 }
 
@@ -537,13 +508,13 @@ pub fn git_chip(ui: &mut Ui, dir: Option<&std::path::Path>, pane: crate::state::
         text.push_str(&format!("  ↓{}", s.behind));
     }
     let dirty = s.changed + s.untracked + s.conflicts;
-    let font = FontId::proportional(11.5);
+    let font = crate::theme::font::ui(11.5);
     let g = ui.painter().layout_no_wrap(text, font.clone(), p.text_secondary);
     let extra = if dirty > 0 { format!("{dirty}") } else { String::new() };
     let eg = ui.painter().layout_no_wrap(extra.clone(), font, p.warning);
     let w = 18.0 + g.size().x + if dirty > 0 { eg.size().x + 16.0 } else { 0.0 } + 12.0;
     let (r, resp) = ui.allocate_exact_size(vec2(w, 18.0), Sense::click());
-    let cr = CornerRadius::same(9);
+    let cr = crate::theme::tokens::radius::same(9);
     ui.painter().rect_filled(r, cr, if resp.hovered() { p.bg_surface3 } else { p.bg_surface2 });
     let color = if s.conflicts > 0 {
         p.danger
@@ -601,7 +572,7 @@ pub fn shelf_toggle(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
     let p = palette(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(if n > 0 { 38.0 } else { 22.0 }, 18.0), Sense::click());
     if open || resp.hovered() {
-        ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2);
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_surface2);
     }
     let color = if open { p.accent } else { p.text_tertiary };
     ui.painter().text(pos2(r.left() + 11.0, r.center().y), Align2::CENTER_CENTER, ph::TRAY, icons::font(12.5), color);
@@ -610,7 +581,7 @@ pub fn shelf_toggle(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
             pos2(r.left() + 22.0, r.center().y),
             Align2::LEFT_CENTER,
             n.to_string(),
-            FontId::proportional(11.0),
+            crate::theme::font::ui(11.0),
             color,
         );
     }

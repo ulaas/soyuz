@@ -75,10 +75,10 @@ fn roles() -> [RoleInfo; 6] {
 fn base_size(c: &Config, kind: FontRoleKind) -> f32 {
     match kind {
         FontRoleKind::Ui => c.appearance.font_size,
-        FontRoleKind::UiSemibold => 15.0,
+        FontRoleKind::UiSemibold => 15.0 * crate::theme::font::factor(c.appearance.font_size),
         FontRoleKind::Terminal => c.terminal.font_size,
         FontRoleKind::Code | FontRoleKind::Hex => c.editor.font_size,
-        FontRoleKind::Numbers => 12.5,
+        FontRoleKind::Numbers => 12.5 * crate::theme::font::factor(c.appearance.font_size),
     }
 }
 
@@ -179,7 +179,9 @@ fn role_editor(ui: &mut Ui, p: &Palette, fonts: &mut Fonts, info: &RoleInfo, bas
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         family_field(ui, &mut role.family, info.hint, kind, role.embedded);
-        ui.label(RichText::new(tr!("settings-fonts-embedded")).size(12.0).color(p.text_secondary));
+        ui.label(
+            RichText::new(tr!("settings-fonts-embedded")).size(crate::theme::font::px(12.0)).color(p.text_secondary),
+        );
         switch(ui, &mut role.embedded);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let changed = *role != default;
@@ -196,7 +198,7 @@ fn role_editor(ui: &mut Ui, p: &Palette, fonts: &mut Fonts, info: &RoleInfo, bas
     let font = FontId::new(size, tfonts::family(kind));
     egui::Frame::new()
         .fill(p.bg_sunken)
-        .corner_radius(egui::CornerRadius::same(6))
+        .corner_radius(crate::theme::tokens::radius::same(6))
         .inner_margin(Margin::symmetric(10, 6))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -209,13 +211,13 @@ fn role_editor(ui: &mut Ui, p: &Palette, fonts: &mut Fonts, info: &RoleInfo, bas
             match &r.notice {
                 Some(n) => {
                     ui.label(crate::theme::icons::icon(ph::WARNING, 12.0).color(p.warning));
-                    ui.label(RichText::new(n).size(11.5).color(p.warning));
+                    ui.label(RichText::new(n).size(crate::theme::font::px(11.5)).color(p.warning));
                 }
                 None => {
                     ui.label(crate::theme::icons::icon(ph::CHECK_CIRCLE, 12.0).color(p.text_tertiary));
                     ui.label(
                         RichText::new(tr!("settings-fonts-using", font = r.source.describe()))
-                            .size(11.5)
+                            .size(crate::theme::font::px(11.5))
                             .color(p.text_tertiary),
                     );
                 }
@@ -278,11 +280,12 @@ pub struct FontChoice {
 }
 
 /// Embedded faces offered for a role: monospace fonts for the monospace roles, every
-/// weight for headings, the regular faces otherwise.
+/// weight for headings, the regular faces otherwise; the figures-only face for numbers.
 fn embedded_for(kind: FontRoleKind) -> impl Iterator<Item = &'static str> {
     Embedded::all()
         .map(Embedded::font)
         .filter(move |f| match kind {
+            _ if f.partial => kind == FontRoleKind::Numbers,
             k if k.is_mono() => f.mono,
             FontRoleKind::UiSemibold => !f.mono,
             _ => !f.mono && f.name == f.family,

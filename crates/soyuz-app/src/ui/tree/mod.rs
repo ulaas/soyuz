@@ -16,10 +16,7 @@ use std::time::Duration;
 
 use egui::accesskit::Role;
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
-use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Id, Key, Modifiers, Rect, Response, Sense, Stroke, TextEdit, Ui,
-    pos2, vec2,
-};
+use egui::{Align, Align2, Color32, Id, Key, Modifiers, Rect, Response, Sense, Stroke, TextEdit, Ui, pos2, vec2};
 use soyuz_core::Location;
 use soyuz_core::config::DragDefault;
 use soyuz_fs::VolumeInfo;
@@ -38,17 +35,19 @@ fn filter_id() -> Id {
 }
 
 /// Indentation per tree level (compressed down to `INDENT_MIN` for deep trees so
-/// labels keep at least `LABEL_MIN` points).
+/// labels keep at least `label_min()` points).
 const INDENT: f32 = 12.0;
 const INDENT_MIN: f32 = 5.0;
-const LABEL_MIN: f32 = 110.0;
+fn label_min() -> f32 {
+    crate::theme::font::grow(110.0)
+}
 
 /// Indentation for a view whose deepest visible row has `max_depth`.
 pub fn indent_for(width: f32, max_depth: usize) -> f32 {
     if max_depth == 0 {
         return INDENT;
     }
-    ((width - 48.0 - LABEL_MIN) / max_depth as f32).clamp(INDENT_MIN, INDENT)
+    ((width - 48.0 - label_min()) / max_depth as f32).clamp(INDENT_MIN, INDENT)
 }
 
 /// The filter box ("Filter folders"), with a clear button while it has text.
@@ -61,11 +60,11 @@ pub fn filter_box(ui: &mut Ui, s: &mut TreeState) {
     let rect = rect.shrink2(vec2(4.0, 0.0));
     let focused = ui.ctx().memory(|m| m.has_focus(id));
     let painter = ui.painter();
-    painter.rect_filled(rect, CornerRadius::same(radius::ROW), p.bg_surface2);
+    painter.rect_filled(rect, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
     if focused {
         painter.rect_stroke(
             rect,
-            CornerRadius::same(radius::ROW),
+            crate::theme::tokens::radius::same(radius::ROW),
             Stroke::new(1.0, p.accent),
             egui::StrokeKind::Inside,
         );
@@ -86,7 +85,7 @@ pub fn filter_box(ui: &mut Ui, s: &mut TreeState) {
         .id(id)
         .frame(egui::Frame::NONE)
         .hint_text(egui::RichText::new(tr!("views-tree-filter")).color(p.text_tertiary))
-        .font(FontId::proportional(12.5))
+        .font(crate::theme::font::ui(12.5))
         .desired_width(text_rect.width())
         .margin(egui::Margin::ZERO);
     let resp = child.add(edit);
@@ -96,7 +95,7 @@ pub fn filter_box(ui: &mut Ui, s: &mut TreeState) {
         let c = ui.interact(cr, id.with("clear"), Sense::click());
         crate::ui::a11y::button(&c, tr!("views-tree-clear-filter"));
         if c.hovered() {
-            ui.painter().rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface3);
+            ui.painter().rect_filled(cr, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface3);
         }
         ui.painter().text(cr.center(), Align2::CENTER_CENTER, ph::X, icons::font(11.0), p.text_secondary);
         if c.clicked() {
@@ -111,7 +110,7 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
     let ctx = ui.ctx().clone();
     crate::models::tree::pump(&crate::host::EguiHost::new(&ctx), a, io, crate::ui::views::computer::volume_label);
     let filter_focused = ctx.memory(|m| m.has_focus(filter_id()));
-    let h = (size::ROW_COMPACT + 2.0).max(ui.spacing().interact_size.y + 2.0);
+    let h = crate::theme::font::height(size::ROW_COMPACT + 2.0, 13.0).max(ui.spacing().interact_size.y + 2.0);
     if a.keyboard || filter_focused {
         keyboard(&ctx, a, io, filter_focused, h);
     }
@@ -128,7 +127,7 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
             pos2(all.left() + 12.0, all.center().y),
             Align2::LEFT_CENTER,
             msg,
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
         );
         return;
@@ -281,7 +280,7 @@ fn row_ui(
         return resp;
     }
     let painter = ui.painter_at(rect.expand(3.0));
-    let rounding = CornerRadius::same(radius::ROW);
+    let rounding = crate::theme::tokens::radius::same(radius::ROW);
     let hover = ctx.animate_bool_with_time(id.with("hover"), resp.hovered(), crate::theme::anim(&ctx, 0.10));
     if current {
         painter.rect_filled(rect, rounding, p.accent_subtle);
@@ -336,7 +335,7 @@ fn row_ui(
     }
     let lx = x0 + 40.0;
     let max_w = (rect.right() - lx - if row.failed { 24.0 } else { 6.0 }).max(8.0);
-    let font = FontId::proportional(12.5);
+    let font = crate::theme::font::ui(12.5);
     let galley = match row.matched {
         Some((a, b)) if b > a && b <= row.name.len() => {
             let mut job = LayoutJob { break_on_newline: false, ..Default::default() };
@@ -473,7 +472,7 @@ mod tests {
         assert_eq!(indent_for(400.0, 3), INDENT, "shallow: full indent");
         let i = indent_for(220.0, 10);
         assert!((INDENT_MIN..INDENT).contains(&i));
-        assert!(220.0 - 48.0 - i * 10.0 >= LABEL_MIN - 0.01, "labels keep their minimum width");
+        assert!(220.0 - 48.0 - i * 10.0 >= label_min() - 0.01, "labels keep their minimum width");
         assert_eq!(indent_for(200.0, 40), INDENT_MIN, "never below the minimum");
     }
 }

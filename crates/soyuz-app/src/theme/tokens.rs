@@ -118,9 +118,23 @@ impl Palette {
 
     /// Text / icon color on an accent fill: white, or near-black for light accents.
     pub fn on_accent(&self) -> Color32 {
-        let c = self.accent;
+        self.on_color(self.accent)
+    }
+
+    /// Text / icon color on a fill of `c`: white, or near-black for light fills.
+    pub fn on_color(&self, c: Color32) -> Color32 {
         let lum = 0.2126 * f32::from(c.r()) + 0.7152 * f32::from(c.g()) + 0.0722 * f32::from(c.b());
         if lum > 165.0 { hex(0x10131A) } else { Color32::WHITE }
+    }
+
+    /// A [`shadow`] token in this palette's shadow color.
+    pub fn shadow(&self, (down, blur): (i8, u8)) -> egui::epaint::Shadow {
+        egui::epaint::Shadow {
+            offset: [0, down],
+            blur,
+            spread: 0,
+            color: Color32::from_black_alpha((self.shadow_alpha * 255.0).min(255.0) as u8),
+        }
     }
 
     /// High-contrast palettes (borders at ≥ 3:1 against the window) keep outlines on
@@ -174,7 +188,7 @@ impl Palette {
 
     /// Scale a token radius by the palette's [`Self::radius_scale`].
     pub fn radius(&self, r: u8) -> u8 {
-        (f32::from(r) * self.radius_scale).round().clamp(0.0, 32.0) as u8
+        radius::scale_by(r, self.radius_scale)
     }
 
     /// Apply `[theme.colors]` overrides (token name → `#RRGGBB` / `#RRGGBBAA`).
@@ -302,12 +316,44 @@ pub mod space {
     pub const XXXL: f32 = 32.0;
 }
 
-/// Corner radii.
+/// Corner radii. Custom-painted surfaces take theirs through [`radius::same`] /
+/// [`radius::scaled`], so a theme's `[radii] scale` reaches them like it reaches egui's
+/// widgets ([`Palette::radius`]).
 pub mod radius {
+    use std::sync::atomic::{AtomicU32, Ordering};
+
     pub const CONTROL: u8 = 4;
     pub const ROW: u8 = 6;
     pub const CARD: u8 = 8;
     pub const MODAL: u8 = 10;
+    /// Fully round ends, whatever the height (a theme with `scale = 0` stays square).
+    pub const PILL: u8 = 255;
+
+    const ONE: u32 = 0x3F80_0000; // 1.0_f32
+    static SCALE: AtomicU32 = AtomicU32::new(ONE);
+
+    /// Remember the active theme's `[radii] scale` (from `theme::install`).
+    pub fn set_scale(scale: f32) {
+        SCALE.store(scale.to_bits(), Ordering::Relaxed);
+    }
+
+    /// `r` under a scale.
+    pub fn scale_by(r: u8, scale: f32) -> u8 {
+        if r == PILL && scale > 0.0 {
+            return PILL;
+        }
+        (f32::from(r) * scale).round().clamp(0.0, 32.0) as u8
+    }
+
+    /// `r` under the active theme's scale.
+    pub fn scaled(r: u8) -> u8 {
+        scale_by(r, f32::from_bits(SCALE.load(Ordering::Relaxed)))
+    }
+
+    /// The same radius on all corners, under the active theme's scale.
+    pub fn same(r: u8) -> egui::CornerRadius {
+        egui::CornerRadius::same(scaled(r))
+    }
 }
 
 /// Fixed component sizes (points).
@@ -337,6 +383,17 @@ pub mod type_scale {
     pub const TITLE: f32 = 15.0;
     pub const CAPTION: f32 = 11.5;
     pub const DISPLAY: f32 = 22.0;
+}
+
+/// Elevation of surfaces above the window: `(offset down, blur)` in points, colored with
+/// [`Palette::shadow`]. Content (a picture's drop shadow) keeps its own.
+pub mod shadow {
+    /// Menus, dropdowns, toasts, drag chips.
+    pub const POPUP: (i8, u8) = (4, 16);
+    /// Dialogs, pickers, tool windows, the welcome card.
+    pub const WINDOW: (i8, u8) = (12, 40);
+    /// What takes over the window: the command palette, settings.
+    pub const OVERLAY: (i8, u8) = (18, 56);
 }
 
 /// Animation timings (seconds); all become 0 with `reduced_motion`.
@@ -426,6 +483,10 @@ mod tests {
         );
         d.radius_scale = 1.5;
         assert_eq!(d.radius(radius::ROW), 9);
+        assert_eq!(d.radius(radius::PILL), radius::PILL, "stays round");
+        d.radius_scale = 0.0;
+        assert_eq!(d.radius(radius::PILL), 0, "a square theme has no pills");
+        assert_eq!(d.radius(radius::MODAL), 0);
     }
 
     #[test]

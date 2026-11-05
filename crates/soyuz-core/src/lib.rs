@@ -29,7 +29,7 @@ pub use control::{Control, OpControl};
 pub use entry::{Attributes, DeviceId, EntryInfo, EntryKind, EntryKindSet, LinkTarget, SearchId};
 pub use error::{FsError, FsErrorKind, FsResult};
 pub use filter::{Filter, NamePattern, NamePatternSpec, PatternError, PatternKind};
-pub use locale::{Locale, fold_for_match};
+pub use locale::{Locale, fold_for_match, fold_starts_with};
 pub use location::{Location, join_vpath, split_vpath};
 pub use naming::{NameError, fs_needs_windows_names, natural_cmp, unique_name, validate_name, validate_name_with};
 pub use policy::{ConflictResolution, ErrorAction, Overwrite};

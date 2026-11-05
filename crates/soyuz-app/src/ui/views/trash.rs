@@ -3,24 +3,29 @@
 //! Empty trash and deleting individual items permanently (`JobKind::PurgeTrash`) run as
 //! jobs, serialized with each other by the engine.
 
-use egui::{Align2, CornerRadius, FontId, Id, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2};
+use egui::{Align2, Id, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2};
 use soyuz_core::{EntryInfo, format_size, format_time};
 
 use super::ViewCtx;
-use super::flow::{selection_fill, semibold};
+use super::flow::selection_fill;
 use super::icons;
 use crate::cmd::Cmd;
 use crate::ops::fileops::FileOpCmd;
 use crate::state::pane::Pane;
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{icons as ticons, icons::ph, palette};
 use crate::ui::empty_state::EmptyState;
-use crate::ui::widgets::{pill_button, spinner, trunc_galley};
+use crate::ui::widgets::{Btn, pill_button, spinner, trunc_galley};
 
 pub use crate::models::trash::{TrashState, key};
 
-const HEADER_H: f32 = 56.0;
-const COLS_H: f32 = 30.0;
+fn header_h() -> f32 {
+    crate::theme::font::grow(56.0)
+}
+fn cols_h() -> f32 {
+    crate::theme::font::grow(30.0)
+}
 
 pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     let p = palette(ui.ctx());
@@ -37,10 +42,10 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     let ts = &mut v.fileops.trash;
 
     // ---- header: title, counts, actions ----
-    let hr = Rect::from_min_size(rect.min, vec2(rect.width(), HEADER_H));
+    let hr = Rect::from_min_size(rect.min, vec2(rect.width(), header_h()));
     let painter = ui.painter_at(rect);
     let icon_r = Rect::from_min_size(hr.min + vec2(14.0, 12.0), vec2(32.0, 32.0));
-    painter.rect_filled(icon_r, CornerRadius::same(9), p.danger.gamma_multiply(0.12));
+    painter.rect_filled(icon_r, crate::theme::tokens::radius::same(9), p.danger.gamma_multiply(0.12));
     painter.text(icon_r.center(), Align2::CENTER_CENTER, ph::TRASH, ticons::font_fill(17.0), p.danger);
     painter.text(
         pos2(icon_r.right() + 12.0, hr.top() + 20.0),
@@ -54,7 +59,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         pos2(icon_r.right() + 12.0, hr.top() + 38.0),
         Align2::LEFT_CENTER,
         sub,
-        FontId::proportional(11.5),
+        crate::theme::font::ui(11.5),
         p.text_tertiary,
     );
     let has_sel = !ts.selected.is_empty();
@@ -93,9 +98,9 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         }
         let ts = &mut v.fileops.trash;
         let restore = if compact {
-            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore"), true).clicked()
+            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore"), Btn::Primary).clicked()
         } else {
-            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore-selected"), true)
+            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore-selected"), Btn::Primary)
                 .clicked()
         };
         if restore {
@@ -156,11 +161,11 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         (tr!("views-trash-col-deleted"), body.left() + 10.0 + w * 0.68, w * 0.18),
         (crate::i18n::labels::column(soyuz_core::Column::Size), body.left() + 10.0 + w * 0.86, w * 0.14 - 20.0),
     ];
-    let ch = Rect::from_min_size(body.min, vec2(w, COLS_H));
+    let ch = Rect::from_min_size(body.min, vec2(w, cols_h()));
     for (i, (label, x, cw)) in cols.iter().enumerate() {
         let align = if i == 3 { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER };
         let tx = if i == 3 { x + cw } else { x + 8.0 };
-        painter.text(pos2(tx, ch.center().y), align, *label, FontId::proportional(12.0), p.text_secondary);
+        painter.text(pos2(tx, ch.center().y), align, *label, crate::theme::font::ui(12.0), p.text_secondary);
         if i > 0 {
             painter.line_segment(
                 [pos2(*x - 1.0, ch.top() + 9.0), pos2(*x - 1.0, ch.bottom() - 9.0)],
@@ -175,7 +180,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
 
     // ---- rows ----
     let list = Rect::from_min_max(pos2(body.left(), ch.bottom()), body.max);
-    let row_h = v.config.appearance.density.row_height();
+    let row_h = crate::theme::font::height(v.config.appearance.density.row_height(), 13.0);
     let mut child = ui.new_child(UiBuilder::new().max_rect(list));
     let n = ts.items.len();
     let focused = v.focused;
@@ -192,9 +197,13 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                 let r = r.shrink2(vec2(4.0, 0.0));
                 let selected = ts.selected.contains(&key(it));
                 if selected {
-                    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), selection_fill(&p, focused));
+                    ui.painter().rect_filled(
+                        r,
+                        crate::theme::tokens::radius::same(radius::ROW),
+                        selection_fill(&p, focused),
+                    );
                 } else if resp.hovered() {
-                    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
+                    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
                 }
                 let e = EntryInfo::minimal(crate::models::trash::name_path(it), it.kind);
                 let cy = r.center().y;
@@ -209,7 +218,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                 let g = trunc_galley(
                     ui.painter(),
                     &e.name,
-                    FontId::proportional(13.0),
+                    crate::theme::font::ui(13.0),
                     p.text_primary,
                     cols[0].2 - 40.0 - if soyuz_core::naming::has_hidden_controls(&e.name) { 14.0 } else { 0.0 },
                 );
@@ -227,19 +236,24 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                     resp
                 };
                 let origin = crate::models::trash::origin(it);
-                let g =
-                    trunc_galley(ui.painter(), &origin, FontId::proportional(12.5), p.text_secondary, cols[1].2 - 18.0);
+                let g = trunc_galley(
+                    ui.painter(),
+                    &origin,
+                    crate::theme::font::ui(12.5),
+                    p.text_secondary,
+                    cols[1].2 - 18.0,
+                );
                 ui.painter().galley(pos2(cols[1].1 + 8.0, cy - g.size().y / 2.0), g, p.text_secondary);
                 let when = format_time(it.deleted_at, &v.config.general.date_format);
                 let g =
-                    trunc_galley(ui.painter(), &when, FontId::proportional(12.5), p.text_secondary, cols[2].2 - 18.0);
+                    trunc_galley(ui.painter(), &when, crate::theme::font::ui(12.5), p.text_secondary, cols[2].2 - 18.0);
                 ui.painter().galley(pos2(cols[2].1 + 8.0, cy - g.size().y / 2.0), g, p.text_secondary);
                 let size = format_size(it.size, v.config.general.size_style);
                 ui.painter().text(
                     pos2(cols[3].1 + cols[3].2, cy),
                     Align2::RIGHT_CENTER,
                     size,
-                    FontId::proportional(12.5),
+                    crate::theme::font::ui(12.5),
                     p.text_secondary,
                 );
                 if resp.clicked() {
@@ -278,7 +292,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
 /// Pill button in the danger style (filled when `strong`).
 pub fn danger_pill(ui: &mut Ui, icon: &str, label: &str, strong: bool) -> egui::Response {
     let p = palette(ui.ctx());
-    let font = FontId::proportional(12.5);
+    let font = crate::theme::font::ui(12.5);
     let galley = ui.painter().layout_no_wrap(label.to_string(), font, p.danger);
     let size = vec2(galley.size().x + 44.0, 26.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
@@ -288,17 +302,17 @@ pub fn danger_pill(ui: &mut Ui, icon: &str, label: &str, strong: bool) -> egui::
     } else {
         (if hover { p.danger.gamma_multiply(0.18) } else { p.danger.gamma_multiply(0.10) }, p.danger)
     };
-    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), bg);
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(radius::ROW), bg);
     if !strong {
         ui.painter().rect_stroke(
             rect,
-            CornerRadius::same(radius::ROW),
+            crate::theme::tokens::radius::same(radius::ROW),
             Stroke::new(1.0, p.danger.gamma_multiply(0.4)),
             StrokeKind::Inside,
         );
     }
     ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), Align2::LEFT_CENTER, icon, ticons::font(14.0), fg);
-    let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.5), fg);
+    let g = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(12.5), fg);
     ui.painter().galley(pos2(rect.left() + 32.0, rect.center().y - g.size().y / 2.0), g, fg);
     resp
 }

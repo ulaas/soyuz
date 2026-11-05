@@ -2,6 +2,7 @@
 
 pub mod accent;
 pub mod apply;
+pub mod font;
 pub mod font_fallback;
 pub mod fonts;
 pub mod icons;
@@ -69,6 +70,14 @@ pub fn install(
         text_gamma: [font_roles.text_gamma(true), font_roles.text_gamma(false)],
     };
     set_reduced_motion(ctx, appearance.reduced_motion);
+    tokens::radius::set_scale(dark.radius_scale);
+    font::configure(
+        appearance.font_size,
+        opts.ui_offset,
+        opts.semibold_offset,
+        opts.code_offset,
+        font_roles.role(FontRoleKind::Numbers).offset(),
+    );
     apply::apply(ctx, &opts);
     ctx.data_mut(|d| d.insert_temp(palettes_id(), Palettes { dark, light }));
     warnings.dedup();

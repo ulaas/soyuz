@@ -2,10 +2,7 @@
 //! panes) with one tab per document, the external-change banner, loading / error states
 //! and the "unsaved changes" prompts.
 
-use egui::{
-    Align, Align2, CornerRadius, FontId, Frame, Key, Layout, Margin, Panel, Rect, RichText, Sense, Stroke, Ui, pos2,
-    vec2,
-};
+use egui::{Align, Align2, Frame, Key, Layout, Margin, Panel, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use soyuz_core::config::EditorDock;
 
 use crate::app::SoyuzApp;
@@ -13,10 +10,12 @@ use crate::editors::io::{Answer, Want};
 use crate::editors::{DocKind, External, UnsavedPrompt};
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::dialogs::conflict::{Btn, button};
 use crate::ui::dialogs::{Dialog, DialogCtx};
+use crate::ui::widgets::{Btn, pill_button};
 
-const HEADER_H: f32 = 38.0;
+fn header_h() -> f32 {
+    crate::theme::font::grow(38.0)
+}
 
 /// The docked panel (right or bottom).
 pub fn docked(ui: &mut Ui, app: &mut SoyuzApp) {
@@ -80,16 +79,16 @@ enum TabCmd {
 pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let ctx = ui.ctx().clone();
     let p = palette(&ctx);
-    ui.painter().rect_filled(rect, CornerRadius::same(radius::MODAL), p.bg_surface1);
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(radius::MODAL), p.bg_surface1);
     ui.painter().rect_stroke(
         rect,
-        CornerRadius::same(radius::MODAL),
+        crate::theme::tokens::radius::same(radius::MODAL),
         Stroke::new(1.0, p.border_subtle),
         egui::StrokeKind::Inside,
     );
     let mut focus: Vec<egui::Id> = Vec::new();
     // ---- header: tabs + panel buttons ----
-    let header = Rect::from_min_size(rect.min, vec2(rect.width(), HEADER_H));
+    let header = Rect::from_min_size(rect.min, vec2(rect.width(), header_h()));
     let buttons_w = 3.0 * 28.0 + 10.0;
     let tabs_right = header.right() - buttons_w;
     let mut cmds: Vec<TabCmd> = Vec::new();
@@ -102,7 +101,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         .docs
         .iter()
         .map(|d| {
-            let g = ui.painter().layout_no_wrap(d.name.clone(), FontId::proportional(12.5), p.text_primary);
+            let g = ui.painter().layout_no_wrap(d.name.clone(), crate::theme::font::ui(12.5), p.text_primary);
             (g.size().x + 54.0).clamp(84.0, 220.0)
         })
         .collect();
@@ -119,10 +118,14 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         let active = i == app.core.editors.active;
         crate::ui::a11y::tab(&resp, &d.name, active);
         if active {
-            ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
             ui.painter().hline((r.left() + 8.0)..=(r.right() - 8.0), r.bottom() - 1.0, Stroke::new(2.0, p.accent));
         } else if resp.hovered() {
-            ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2.gamma_multiply(0.6));
+            ui.painter().rect_filled(
+                r,
+                crate::theme::tokens::radius::same(radius::ROW),
+                p.bg_surface2.gamma_multiply(0.6),
+            );
         }
         let fg = if active { p.text_primary } else { p.text_secondary };
         let glyph_color = match &d.kind {
@@ -140,7 +143,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             glyph_color,
         );
         let name_w = (w - 50.0).max(10.0);
-        let g = crate::ui::widgets::trunc_galley(ui.painter(), &d.name, FontId::proportional(12.5), fg, name_w);
+        let g = crate::ui::widgets::trunc_galley(ui.painter(), &d.name, crate::theme::font::ui(12.5), fg, name_w);
         ui.painter().galley(pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, fg);
         let xr = Rect::from_center_size(pos2(r.right() - 13.0, r.center().y), vec2(18.0, 18.0));
         let xresp = ui.interact(xr, ui.scope_id().with(("editor.tab.x", d.id)), Sense::click());
@@ -148,7 +151,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         let dirty = d.is_dirty();
         if xresp.hovered() || (resp.hovered() && !dirty) || (active && !dirty) {
             if xresp.hovered() {
-                ui.painter().rect_filled(xr, CornerRadius::same(4), p.bg_surface3);
+                ui.painter().rect_filled(xr, crate::theme::tokens::radius::same(4), p.bg_surface3);
             }
             ui.painter().text(xr.center(), Align2::CENTER_CENTER, ph::X, icons::font(11.0), p.text_tertiary);
         } else if dirty {
@@ -268,7 +271,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                     body.center(),
                     Align2::CENTER_CENTER,
                     msg,
-                    FontId::proportional(13.0),
+                    crate::theme::font::ui(13.0),
                     p.text_secondary,
                 );
             }
@@ -299,7 +302,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             c + vec2(0.0, 6.0),
             Align2::CENTER_CENTER,
             tr!("editors-empty"),
-            FontId::proportional(14.0),
+            crate::theme::font::ui(14.0),
             p.text_secondary,
         );
         let key = crate::keys::chord_label(&app.core.keymap, &soyuz_core::config::Action::OpenInEditor)
@@ -308,7 +311,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             c + vec2(0.0, 28.0),
             Align2::CENTER_CENTER,
             tr!("editors-empty-hint", key = key),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
         );
     }
@@ -408,14 +411,15 @@ impl Dialog for UnsavedDialog {
         let (mut save, mut discard, mut cancel) = (false, false, false);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            save = button(
+            save = pill_button(
                 ui,
+                None,
                 if self.prompt.target.is_some() { tr!("common-save") } else { tr!("editors-unsaved-save-all") },
                 Btn::Primary,
             )
             .clicked();
-            discard = button(ui, tr!("editors-unsaved-dont-save"), Btn::Danger).clicked();
-            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+            discard = pill_button(ui, None, tr!("editors-unsaved-dont-save"), Btn::Danger).clicked();
+            cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ui.input(|i| i.key_pressed(Key::Enter)) {
             save = true;

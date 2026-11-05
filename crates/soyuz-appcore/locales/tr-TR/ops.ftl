@@ -17,6 +17,7 @@ ops-reveal-failed = Sistem dosya yöneticisinde gösterilemedi
 ops-terminal-failed = Terminal açılamadı
 ops-favorite-added = “{ $name }” sık kullanılanlara eklendi
 ops-view-applied = Görünüm tüm klasörlere uygulandı
+ops-view-restored = Klasör görünümleri geri yüklendi
 
 ## İş başlıkları (kartlar, bildirimler, geçmiş). $state: "active" | "done".
 
@@ -170,6 +171,8 @@ ops-still-undoing = Bu işlem hâlâ geri alınıyor
 ops-nothing-to-redo = Yinelenecek bir şey yok
 ops-history-empty = Geçmiş zaten boş
 ops-not-available = Şu anda kullanılamıyor
+ops-relist-failed = Bu klasör yenilenemedi; önceki içerik gösteriliyor
+ops-listing-incomplete = Bu klasör ancak kısmen listelenebildi
 
 ## Sürükle ve bırak
 

@@ -37,13 +37,18 @@ pub fn show(ui: &mut Ui, rect: Rect, view: &mut DiffView, a: &EntryInfo, b: &Ent
     let side = view.side.unwrap_or(wide);
     let toggle_w = 72.0 + 34.0;
     let names = format!("{}  →  {}", a.name, b.name);
-    let ng =
-        trunc_galley(ui.painter(), &names, FontId::proportional(12.0), p.text_primary, bar.width() - toggle_w - 150.0);
+    let ng = trunc_galley(
+        ui.painter(),
+        &names,
+        crate::theme::font::ui(12.0),
+        p.text_primary,
+        bar.width() - toggle_w - 150.0,
+    );
     ui.painter().galley(pos2(bar.left() + 12.0, bar.center().y - ng.size().y / 2.0), ng, p.text_primary);
     if let Some(Ok(m)) = &view.result {
         let stats_x = bar.right() - toggle_w - 20.0;
-        let g_add = ui.painter().layout_no_wrap(format!("+{}", m.added), FontId::monospace(11.5), p.success);
-        let g_del = ui.painter().layout_no_wrap(format!("−{}", m.removed), FontId::monospace(11.5), p.danger);
+        let g_add = ui.painter().layout_no_wrap(format!("+{}", m.added), crate::theme::font::mono(11.5), p.success);
+        let g_del = ui.painter().layout_no_wrap(format!("−{}", m.removed), crate::theme::font::mono(11.5), p.danger);
         let y = bar.center().y;
         let dw = g_del.size().x;
         ui.painter().galley(pos2(stats_x - dw, y - g_del.size().y / 2.0), g_del, p.danger);
@@ -88,7 +93,7 @@ pub fn show(ui: &mut Ui, rect: Rect, view: &mut DiffView, a: &EntryInfo, b: &Ent
         message(ui, body, tr!("views-diff-none"), tr!("views-diff-none-sub"), &p);
         return;
     }
-    let (font, row_h) = crate::ui::gfx::preview_code_font(ui.ctx());
+    let (font, row_h) = crate::ui::gfx::preview_code_font();
     let char_w = ui.ctx().fonts_mut(|f| f.glyph_width(&font, '0'));
     let mut c = ui.new_child(UiBuilder::new().max_rect(body));
     c.set_clip_rect(body.intersect(ui.clip_rect()));
@@ -123,7 +128,7 @@ pub fn show(ui: &mut Ui, rect: Rect, view: &mut DiffView, a: &EntryInfo, b: &Ent
                         pos2(r.left() + 12.0, r.center().y),
                         Align2::LEFT_CENTER,
                         tr!("views-diff-truncated"),
-                        FontId::proportional(11.0),
+                        crate::theme::font::ui(11.0),
                         p.text_tertiary,
                     );
                     continue;
@@ -167,15 +172,21 @@ fn message(ui: &Ui, r: Rect, title: &str, body: &str, p: &Palette) {
         c + vec2(0.0, 8.0),
         Align2::CENTER_CENTER,
         title,
-        crate::ui::views::flow::semibold(13.0),
+        crate::theme::font::semibold(13.0),
         p.text_primary,
     );
-    ui.painter().text(c + vec2(0.0, 28.0), Align2::CENTER_CENTER, body, FontId::proportional(11.5), p.text_tertiary);
+    ui.painter().text(c + vec2(0.0, 28.0), Align2::CENTER_CENTER, body, crate::theme::font::ui(11.5), p.text_tertiary);
 }
 
 fn hunk(ui: &Ui, r: Rect, h: &str, p: &Palette) {
     ui.painter().rect_filled(r, 0.0, p.accent_subtle.gamma_multiply(0.7));
-    ui.painter().text(pos2(r.left() + 10.0, r.center().y), Align2::LEFT_CENTER, h, FontId::monospace(11.0), p.accent);
+    ui.painter().text(
+        pos2(r.left() + 10.0, r.center().y),
+        Align2::LEFT_CENTER,
+        h,
+        crate::theme::font::mono(11.0),
+        p.accent,
+    );
 }
 
 fn colors(tag: Tag, p: &Palette) -> (Color32, Color32) {
@@ -206,7 +217,7 @@ fn unified_line(ui: &Ui, r: Rect, l: &Line, gutter: f32, font: &FontId, p: &Pale
         ui.painter().rect_filled(r, 0.0, bg);
     }
     let num = |n: Option<usize>| n.map(|n| n.to_string()).unwrap_or_default();
-    let small = FontId::monospace(11.0);
+    let small = crate::theme::font::mono(11.0);
     let dim = p.text_tertiary.gamma_multiply(0.8);
     ui.painter().text(
         pos2(r.left() + gutter - 6.0, r.center().y),
@@ -246,7 +257,7 @@ fn side_cell(ui: &Ui, r: Rect, l: Option<&Line>, old: bool, gutter: f32, font: &
         pos2(r.left() + gutter - 6.0, r.center().y),
         Align2::RIGHT_CENTER,
         n.map(|n| n.to_string()).unwrap_or_default(),
-        FontId::monospace(11.0),
+        crate::theme::font::mono(11.0),
         p.text_tertiary.gamma_multiply(0.8),
     );
     let g = ui.painter().layout_job(line_job(l, font, p));

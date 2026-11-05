@@ -10,9 +10,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use egui::{
-    Align2, Color32, CornerRadius, FontId, Id, Key, Modifiers, Order, Rect, Sense, Stroke, UiBuilder, pos2, vec2,
-};
+use egui::{Align2, Color32, Id, Key, Modifiers, Order, Rect, Sense, Stroke, UiBuilder, pos2, vec2};
 use soyuz_core::{Location, format_size};
 
 use crate::app::SoyuzApp;
@@ -20,12 +18,12 @@ use crate::cmd::Cmd;
 use crate::models::quicklook::Step;
 use crate::services::preview::Content;
 use crate::state::workspace_windows::WindowId;
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::theme::tokens::radius;
 use crate::ui::preview::render::{self, PreviewAction, PreviewState};
 use crate::ui::preview::video;
-use crate::ui::views::flow::semibold;
 use crate::ui::views::icons as file_icons;
 use crate::ui::widgets::{icon_toggle, kbd, trunc_galley};
 
@@ -231,18 +229,13 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View, player: bool
         let painter = &painter;
         painter.rect_filled(screen, 0.0, dim);
         painter.add(
-            egui::epaint::Shadow {
-                offset: [0, 16],
-                blur: 48,
-                spread: 0,
-                color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-            }
-            .as_shape(card, CornerRadius::same(radius::MODAL + 2)),
+            p.shadow(crate::theme::tokens::shadow::WINDOW)
+                .as_shape(card, crate::theme::tokens::radius::same(radius::MODAL + 2)),
         );
-        painter.rect_filled(card, CornerRadius::same(radius::MODAL + 2), p.bg_surface1);
+        painter.rect_filled(card, crate::theme::tokens::radius::same(radius::MODAL + 2), p.bg_surface1);
         painter.rect_stroke(
             card,
-            CornerRadius::same(radius::MODAL + 2),
+            crate::theme::tokens::radius::same(radius::MODAL + 2),
             Stroke::new(1.0, p.border_strong),
             egui::StrokeKind::Inside,
         );
@@ -285,7 +278,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View, player: bool
             pos2(hex_r.left() - 12.0, header.center().y),
             Align2::RIGHT_CENTER,
             tr!("views-quicklook-position", pos = pos, count = count),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_tertiary,
         );
         painter.line_segment(
@@ -314,7 +307,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View, player: bool
         let sg = trunc_galley(
             painter,
             &summary.join("  ·  "),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             p.text_secondary,
             footer.width() * 0.6,
         );
@@ -346,7 +339,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View, player: bool
         }
         keys.push(("Enter".to_owned(), tr!("views-quicklook-hint-open")));
         for (k, label) in keys {
-            hints.label(egui::RichText::new(label).size(11.0).color(p.text_tertiary));
+            hints.label(egui::RichText::new(label).size(crate::theme::font::px(11.0)).color(p.text_tertiary));
             kbd(&mut hints, &k);
             hints.add_space(8.0);
         }

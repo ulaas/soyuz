@@ -6,9 +6,7 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 use crossbeam_channel::Receiver;
-use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui, vec2,
-};
+use egui::{Align, Align2, Color32, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui, vec2};
 use soyuz_core::DateFormat;
 
 use super::sync_sched::{self, ReportOp, RunReport, RunStatus, Schedule, ScheduleKind, SyncProfile, short_path};
@@ -78,7 +76,7 @@ impl SyncProfilesWindow {
                     } else {
                         (tr!("tools-profiles-scheduler-off"), p.warning)
                     };
-                    ui.label(RichText::new(t).font(FontId::proportional(11.5)).color(c));
+                    ui.label(RichText::new(t).font(crate::theme::font::ui(11.5)).color(c));
                 });
                 ui.add_space(6.0);
                 if profiles.is_empty() {
@@ -132,15 +130,13 @@ impl SyncProfilesWindow {
         Frame::new()
             .fill(p.bg_window)
             .stroke(Stroke::new(1.0, p.border_subtle))
-            .corner_radius(CornerRadius::same(radius::CARD))
+            .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
             .inner_margin(Margin::symmetric(14, 10))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     ui.label(icons::icon(ph::FOLDER_SIMPLE_STAR, 18.0).color(p.accent));
-                    ui.label(
-                        RichText::new(&pr.name).font(crate::ui::views::flow::semibold(13.5)).color(p.text_primary),
-                    );
+                    ui.label(RichText::new(&pr.name).font(crate::theme::font::semibold(13.5)).color(p.text_primary));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let glyph = if expanded { ph::CARET_UP } else { ph::CARET_DOWN };
                         if crate::ui::widgets::icon_button(ui, glyph, tr!("tools-profiles-expand"), true).clicked() {
@@ -181,7 +177,7 @@ impl SyncProfilesWindow {
                 let g = trunc_galley(
                     ui.painter(),
                     &paths,
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     p.text_secondary,
                     ui.available_width(),
                 );
@@ -198,7 +194,7 @@ impl SyncProfilesWindow {
                     match (running, &last) {
                         (Some(what), _) => {
                             ui.add(egui::Spinner::new().size(12.0).color(p.accent));
-                            ui.label(RichText::new(what).font(FontId::proportional(12.0)).color(p.accent));
+                            ui.label(RichText::new(what).font(crate::theme::font::ui(12.0)).color(p.accent));
                         }
                         (None, Some(r)) => {
                             status_pill(ui, r.status, &p);
@@ -216,7 +212,7 @@ impl SyncProfilesWindow {
                             let g = trunc_galley(
                                 ui.painter(),
                                 &text,
-                                FontId::proportional(12.0),
+                                crate::theme::font::ui(12.0),
                                 p.text_secondary,
                                 ui.available_width() - 260.0,
                             );
@@ -226,7 +222,7 @@ impl SyncProfilesWindow {
                         (None, None) => {
                             ui.label(
                                 RichText::new(tr!("tools-profiles-never-run"))
-                                    .font(FontId::proportional(12.0))
+                                    .font(crate::theme::font::ui(12.0))
                                     .color(p.text_tertiary),
                             );
                         }
@@ -234,12 +230,12 @@ impl SyncProfilesWindow {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(
                             RichText::new(sync_sched::next_label(pr, enabled))
-                                .font(FontId::proportional(12.0))
+                                .font(crate::theme::font::ui(12.0))
                                 .color(p.text_secondary),
                         );
                         ui.label(icons::icon(ph::CLOCK, 13.0).color(p.text_tertiary));
                         ui.label(
-                            RichText::new(pr.schedule.label()).font(FontId::proportional(12.0)).color(p.text_primary),
+                            RichText::new(pr.schedule.label()).font(crate::theme::font::ui(12.0)).color(p.text_primary),
                         );
                     });
                 });
@@ -256,12 +252,10 @@ impl SyncProfilesWindow {
     fn reports_view(&mut self, ui: &mut Ui, name: &str, date: &DateFormat) {
         let p = palette(ui.ctx());
         ui.label(
-            RichText::new(tr!("tools-profiles-reports"))
-                .font(crate::ui::views::flow::semibold(12.5))
-                .color(p.text_primary),
+            RichText::new(tr!("tools-profiles-reports")).font(crate::theme::font::semibold(12.5)).color(p.text_primary),
         );
         let Some(list) = self.reports.get(name).cloned() else {
-            ui.label(RichText::new(tr!("common-loading")).font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(RichText::new(tr!("common-loading")).font(crate::theme::font::ui(12.0)).color(p.text_tertiary));
             return;
         };
         // Refresh when a newer run finished meanwhile.
@@ -273,7 +267,7 @@ impl SyncProfilesWindow {
         }
         if list.is_empty() {
             ui.label(
-                RichText::new(tr!("tools-profiles-no-runs")).font(FontId::proportional(12.0)).color(p.text_tertiary),
+                RichText::new(tr!("tools-profiles-no-runs")).font(crate::theme::font::ui(12.0)).color(p.text_tertiary),
             );
             return;
         }
@@ -286,9 +280,13 @@ impl SyncProfilesWindow {
                         let sel = self.detail.as_ref().is_some_and(|(n, k)| n == name && *k == i);
                         let (rect, resp) = ui.allocate_exact_size(vec2(lw, 34.0), Sense::click());
                         if sel {
-                            ui.painter().rect_filled(rect, CornerRadius::same(6), p.accent.gamma_multiply(0.16));
+                            ui.painter().rect_filled(
+                                rect,
+                                crate::theme::tokens::radius::same(6),
+                                p.accent.gamma_multiply(0.16),
+                            );
                         } else if resp.hovered() {
-                            ui.painter().rect_filled(rect, CornerRadius::same(6), p.bg_surface2);
+                            ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(6), p.bg_surface2);
                         }
                         let c = status_color(r.status, &p);
                         ui.painter().circle_filled(rect.left_center() + vec2(10.0, 0.0), 4.0, c);
@@ -297,7 +295,7 @@ impl SyncProfilesWindow {
                             rect.min + vec2(22.0, 4.0),
                             Align2::LEFT_TOP,
                             &t,
-                            FontId::proportional(12.0),
+                            crate::theme::font::ui(12.0),
                             p.text_primary,
                         );
                         let s =
@@ -306,7 +304,7 @@ impl SyncProfilesWindow {
                             rect.min + vec2(22.0, 19.0),
                             Align2::LEFT_TOP,
                             s,
-                            FontId::proportional(10.5),
+                            crate::theme::font::ui(10.5),
                             p.text_tertiary,
                         );
                         if resp.clicked() {
@@ -328,10 +326,10 @@ impl SyncProfilesWindow {
 
 fn status_pill(ui: &mut Ui, s: RunStatus, p: &Palette) {
     let c = status_color(s, p);
-    let font = FontId::proportional(11.0);
+    let font = crate::theme::font::ui(11.0);
     let g = ui.painter().layout_no_wrap(s.label().to_string(), font, c);
     let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 16.0, 18.0), Sense::hover());
-    ui.painter().rect_filled(r, CornerRadius::same(9), c.gamma_multiply(0.16));
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(9), c.gamma_multiply(0.16));
     ui.painter().galley(r.center() - g.size() / 2.0, g, c);
 }
 
@@ -340,7 +338,7 @@ fn schedule_editor(ui: &mut Ui, s: &mut Schedule) -> bool {
     let p = palette(ui.ctx());
     let before = s.clone();
     ui.horizontal(|ui| {
-        ui.label(RichText::new(tr!("tools-sched-label")).font(FontId::proportional(12.0)).color(p.text_tertiary));
+        ui.label(RichText::new(tr!("tools-sched-label")).font(crate::theme::font::ui(12.0)).color(p.text_tertiary));
         let mut k = s.kind();
         let options = ScheduleKind::ALL.map(|k| (k, k.label()));
         if segmented(ui, &mut k, &options) {
@@ -351,24 +349,26 @@ fn schedule_editor(ui: &mut Ui, s: &mut Schedule) -> bool {
         Schedule::Interval { minutes } => {
             ui.horizontal(|ui| {
                 ui.label(
-                    RichText::new(tr!("tools-sched-every")).font(FontId::proportional(12.0)).color(p.text_secondary),
+                    RichText::new(tr!("tools-sched-every")).font(crate::theme::font::ui(12.0)).color(p.text_secondary),
                 );
                 number(ui, minutes, sync_sched::INTERVAL_MINUTES, &format!(" {}", tr!("tools-unit-min")));
             });
         }
         Schedule::Daily { hour, minute } => {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(tr!("tools-sched-at")).font(FontId::proportional(12.0)).color(p.text_secondary));
+                ui.label(
+                    RichText::new(tr!("tools-sched-at")).font(crate::theme::font::ui(12.0)).color(p.text_secondary),
+                );
                 number(ui, hour, sync_sched::DAILY_HOURS, &format!(" {}", tr!("tools-unit-hour")));
                 number(ui, minute, sync_sched::DAILY_MINUTES, &format!(" {}", tr!("tools-unit-min")));
             });
             if let Some(note) = ScheduleKind::Daily.note() {
-                ui.label(RichText::new(note).font(FontId::proportional(11.0)).color(p.text_tertiary));
+                ui.label(RichText::new(note).font(crate::theme::font::ui(11.0)).color(p.text_tertiary));
             }
         }
         Schedule::OnChange => {
             if let Some(note) = ScheduleKind::OnChange.note() {
-                ui.label(RichText::new(note).font(FontId::proportional(11.0)).color(p.text_tertiary));
+                ui.label(RichText::new(note).font(crate::theme::font::ui(11.0)).color(p.text_tertiary));
             }
         }
         _ => {}
@@ -385,10 +385,10 @@ fn report_detail(ui: &mut Ui, r: &RunReport) {
         } else {
             tr!("tools-report-changed", summary = r.summary())
         };
-        ui.label(RichText::new(head).font(FontId::proportional(12.0)).color(p.text_secondary));
+        ui.label(RichText::new(head).font(crate::theme::font::ui(12.0)).color(p.text_secondary));
     });
     if !r.message.is_empty() {
-        ui.label(RichText::new(&r.message).font(FontId::proportional(11.5)).color(p.warning));
+        ui.label(RichText::new(&r.message).font(crate::theme::font::ui(11.5)).color(p.warning));
     }
     let rows: Vec<(&str, Color32, String, &str)> = r
         .conflicts
@@ -407,7 +407,7 @@ fn report_detail(ui: &mut Ui, r: &RunReport) {
     if rows.is_empty() {
         ui.label(
             RichText::new(tr!("tools-report-nothing-to-change"))
-                .font(FontId::proportional(12.0))
+                .font(crate::theme::font::ui(12.0))
                 .color(p.text_tertiary),
         );
         return;
@@ -430,7 +430,7 @@ fn report_detail(ui: &mut Ui, r: &RunReport) {
                     rect.left_center() + vec2(22.0, 0.0),
                     Align2::LEFT_CENTER,
                     *what,
-                    FontId::proportional(11.0),
+                    crate::theme::font::ui(11.0),
                     p.text_tertiary,
                 );
                 // Paths line up at 140 px unless a (translated) label is wider.
@@ -438,7 +438,7 @@ fn report_detail(ui: &mut Ui, r: &RunReport) {
                 let gal = trunc_galley(
                     ui.painter(),
                     path,
-                    FontId::proportional(12.0),
+                    crate::theme::font::ui(12.0),
                     p.text_primary,
                     rect.right() - x - 10.0,
                 );
@@ -449,7 +449,7 @@ fn report_detail(ui: &mut Ui, r: &RunReport) {
     if r.total_actions > r.actions.len() {
         ui.label(
             RichText::new(tr!("tools-report-more", count = r.total_actions - r.actions.len()))
-                .font(FontId::proportional(11.0))
+                .font(crate::theme::font::ui(11.0))
                 .color(p.text_tertiary),
         );
     }

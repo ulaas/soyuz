@@ -262,17 +262,28 @@ pub(crate) fn expand_args(rest: &str, file: &Path) -> String {
             out.push('%');
             break;
         };
-        let verbatim = in_quotes || out.to_ascii_lowercase().contains(SINGLE_ARGUMENT);
-        let quoted = |s: &str| if verbatim { s.to_string() } else { format!("\"{s}\"") };
+        let single_argument = out.to_ascii_lowercase().contains(SINGLE_ARGUMENT);
+        let was_quoted = in_quotes;
+        let quoted = |s: &str, next: Option<&char>| {
+            if single_argument {
+                s.to_string()
+            } else if !was_quoted {
+                format!("\"{}\"", super::windows_before_quote(s))
+            } else if next == Some(&'"') {
+                super::windows_before_quote(s)
+            } else {
+                s.to_string()
+            }
+        };
         match n {
             '1' | 'L' | 'l' | '0' | 'V' | 'v' => {
                 it.next();
-                out.push_str(&quoted(&f));
+                out.push_str(&quoted(&f, it.peek()));
                 used_file = true;
             }
             'W' | 'w' => {
                 it.next();
-                out.push_str(&quoted(&dir));
+                out.push_str(&quoted(&dir, it.peek()));
             }
             '*' | 'I' | 'i' | 'D' | 'd' | 'H' | 'h' | '2'..='9' => {
                 it.next();
@@ -289,7 +300,7 @@ pub(crate) fn expand_args(rest: &str, file: &Path) -> String {
         if !s.is_empty() {
             s.push(' ');
         }
-        s.push_str(&format!("\"{f}\""));
+        s.push_str(&format!("\"{}\"", super::windows_before_quote(&f)));
     }
     s
 }
@@ -602,13 +613,14 @@ mod imp {
         let p = plain(path);
         let dir = p.parent().map(Path::to_path_buf);
         if e.is_dir_like() {
-            return spawn_raw(Path::new("explorer.exe"), &format!("\"{}\"", p.display()), None, "open", path);
+            let arg = super::super::explorer_path_arg(&p.to_string_lossy());
+            return spawn_raw(Path::new("explorer.exe"), &arg, None, "open", path);
         }
         match ext_of(&p).as_str() {
             "exe" | "com" | "scr" => spawn_program(&p, "", dir.as_deref(), opts, path),
             "bat" | "cmd" => {
                 let mut c = Command::new("cmd.exe");
-                c.raw_arg(format!("/c \"\"{}\"\"", p.display()));
+                c.raw_arg(super::super::batch_command_line(&p.to_string_lossy()));
                 if let Some(d) = &dir {
                     c.current_dir(d);
                 }
@@ -695,7 +707,7 @@ mod imp {
             }
         }
         if !used {
-            parts.push(format!("\"{}\"", p.display()));
+            parts.push(format!("\"{}\"", super::super::windows_before_quote(&p.to_string_lossy())));
         }
         let exe = PathBuf::from(crate::path::expand_env(&app.exec.to_string_lossy()));
         spawn_raw(&exe, &parts.join(" "), p.parent(), "open_with", path)
@@ -935,6 +947,12 @@ mod tests {
         assert_eq!(expand_args("-x", f), r#"-x "C:\My Docs\a b.txt""#);
         assert_eq!(expand_args("", f), r#""C:\My Docs\a b.txt""#);
         assert_eq!(expand_args("100%% %1", f), r#"100% "C:\My Docs\a b.txt""#);
+        // A volume root: the backslash must not escape the closing quote.
+        let root = Path::new(r"D:\");
+        assert_eq!(expand_args("%1 -x", root), r#""D:\\" -x"#);
+        assert_eq!(expand_args(r#""%1" -x"#, root), r#""D:\\" -x"#);
+        assert_eq!(expand_args("", root), r#""D:\\""#);
+        assert_eq!(expand_args("--single-argument %1", root), r"--single-argument D:\");
         // Chrome / Edge: `--single-argument %1` takes the rest verbatim, so no quotes.
         assert_eq!(expand_args("--single-argument %1", f), r"--single-argument C:\My Docs\a b.txt");
         assert_eq!(expand_args("--Single-Argument %1", f), r"--Single-Argument C:\My Docs\a b.txt");

@@ -66,6 +66,7 @@ panels-history-empty-hint = Tamamlanan işlemler burada görünür ve geri alın
 panels-history-undone = Geri alındı
 panels-history-verified-tip = Kopyalanan her dosyanın sağlama toplamı kaynağıyla karşılaştırıldı (BLAKE3)
 panels-history-not-undoable = geri alınamaz
+panels-history-partial = yarıda kaldı
 panels-history-not-undoable-tip = Bu işlem geri alınamaz (ör. kalıcı silme).
 
 ## Terminal paneli

@@ -59,6 +59,14 @@ impl Bin {
     /// Move `path` (absolute) into this bin.
     pub(crate) fn trash(&self, path: &Path) -> FsResult<TrashItem> {
         let e = crate::list::stat(path, false).map_err(|e| FsError { op: "trash".into(), ..e })?;
+        if path.starts_with(&self.root) {
+            return Err(FsError::with_message(
+                FsErrorKind::InvalidName,
+                "trash",
+                Some(path),
+                "the item is already in the trash",
+            ));
+        }
         self.ensure()?;
         // Ids are strings: a non-UTF-8 name is stored under its lossy form (U+FFFD); the
         // exact original bytes stay in `Path=`, so restoring brings back the real name.
@@ -99,9 +107,12 @@ impl Bin {
 
     /// Reserve a unique name by creating its `.trashinfo` exclusively.
     fn reserve(&self, name: &str, content: &[u8]) -> FsResult<(String, PathBuf)> {
-        let (stem, ext) = split_ext(name);
+        // The id names both `files/<id>` and `info/<id>.trashinfo`, which must fit `NAME_MAX`.
+        // Only the id is shortened: `Path=` keeps the real name for restoring.
+        let short = shorten_id(name);
+        let (stem, ext) = split_ext(&short);
         for n in 0..10_000u32 {
-            let id = if n == 0 { name.to_string() } else { format!("{stem}.{n}{ext}") };
+            let id = if n == 0 { short.clone() } else { format!("{stem}.{n}{ext}") };
             let info = self.info_path(&id);
             if crate::list::exists_nofollow(&self.files().join(&id)) {
                 continue;
@@ -241,6 +252,23 @@ fn info_mtime_secs(p: &Path) -> u64 {
         .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Longest trash id: `<id>.trashinfo` and a `.<n>` collision suffix still fit `NAME_MAX`.
+const MAX_ID_BYTES: usize = 240;
+
+/// `name` cut to [`MAX_ID_BYTES`] on a character boundary, keeping a short extension.
+fn shorten_id(name: &str) -> String {
+    if name.len() <= MAX_ID_BYTES {
+        return name.to_string();
+    }
+    let (stem, ext) = split_ext(name);
+    let ext = if ext.len() <= 32 { ext } else { "" };
+    let mut cut = (MAX_ID_BYTES - ext.len()).min(stem.len());
+    while !stem.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    format!("{}{ext}", &stem[..cut])
 }
 
 fn split_ext(name: &str) -> (&str, &str) {
@@ -645,6 +673,45 @@ mod tests {
         assert_eq!(d.unwrap().format("%Y-%m-%d %H:%M:%S").to_string(), "2024-03-05 14:07:09");
         assert!(parse_trashinfo("[Other]\nPath=/x\n").is_none());
         assert!(parse_trashinfo("[Trash Info]\r\nPath=x\r\n").is_some());
+    }
+
+    #[test]
+    fn a_long_name_is_trashed_under_a_short_id() {
+        let d = tempfile::tempdir().unwrap();
+        let bin = Bin { root: d.path().join("Trash"), topdir: None };
+        let work = d.path().join("work");
+        std::fs::create_dir(&work).unwrap();
+        // 250 bytes: legal here, but `<name>.trashinfo` would not be.
+        let f = work.join(format!("{}.txt", "\u{e9}".repeat(123)));
+        std::fs::write(&f, b"long").unwrap();
+        let item = bin.trash(&f).unwrap();
+        assert!(item.id.len() <= MAX_ID_BYTES && item.id.ends_with(".txt"), "{}", item.id);
+        assert!(!f.exists());
+        let listed = bin.list();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].original, f, "the real name is kept for restoring");
+    }
+
+    #[test]
+    fn an_item_already_in_the_bin_is_refused() {
+        let d = tempfile::tempdir().unwrap();
+        let bin = Bin { root: d.path().join("Trash"), topdir: None };
+        let f = d.path().join("note.txt");
+        std::fs::write(&f, b"x").unwrap();
+        let item = bin.trash(&f).unwrap();
+        let inside = bin.files().join(&item.id);
+        assert_eq!(bin.trash(&inside).unwrap_err().kind, FsErrorKind::InvalidName);
+        assert!(inside.exists());
+        assert!(bin.info().join(format!("{}.trashinfo", item.id)).exists(), "the record stays");
+    }
+
+    #[test]
+    fn ids_keep_their_character_boundaries() {
+        let id = shorten_id(&format!("{}.tar", "\u{20ac}".repeat(100)));
+        assert!(id.len() <= MAX_ID_BYTES && id.ends_with(".tar"), "{id}");
+        assert_eq!(shorten_id("short.txt"), "short.txt");
+        let huge_ext = format!("a.{}", "b".repeat(250));
+        assert!(shorten_id(&huge_ext).len() <= MAX_ID_BYTES);
     }
 
     #[test]

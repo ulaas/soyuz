@@ -47,6 +47,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[behaviour]`](#behaviour)
 - [`[open]`](#open)
 - [`[[open.default_apps]]`](#opendefault_apps)
+- [`[[open.programs]]`](#openprograms)
 - [`[jobs]`](#jobs)
 - [`[terminal]`](#terminal)
 - [`[archive]`](#archive)
@@ -149,6 +150,9 @@ written as a list of quoted values is an enumeration: use one of them.
 | `write_os_thumbnails` | boolean | `true` | Linux / BSD: write the thumbnails Soyuz makes itself into the shared freedesktop cache (`~/.cache/thumbnails`), so file managers and file choosers reuse them. Ignored on Windows and macOS. |
 | `icon_pack` | string | `""` | File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`. |
 | `thumb_disk_cache_mib` | integer | `256` | On-disk thumbnail cache in `thumbs/` (MiB; 0 = off). Thumbnails survive restarts. |
+| `name_truncation` | `"keep_extension"` \| `"middle"` \| `"end"` | `"keep_extension"` | How names and paths too long for their space are cut: `keep_extension`, `middle` or `end`. (`keep_extension`: File names keep their start and extension (`report-fin….pdf`); folders and paths are cut in the middle; `middle`: Everything is cut in the middle (`report-…al-v3.pdf`); `end`: Everything is cut at the end (`report-final…`)) |
+| `name_tooltips` | boolean | `true` | Hovering a file whose name was cut shows the whole name. |
+| `welcome_tips` | boolean | `true` | New profiles start with the card of first steps (the palette's Welcome tips brings it back either way). |
 
 ## `[fonts]`
 
@@ -166,7 +170,7 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `"Inter"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `family` | string | `"Inter"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses Inter Tabular while the `ui` font is Inter and the `ui` font otherwise, other roles their default. |
 | `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
@@ -176,7 +180,7 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `""` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `family` | string | `""` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses Inter Tabular while the `ui` font is Inter and the `ui` font otherwise, other roles their default. |
 | `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
@@ -186,7 +190,7 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses Inter Tabular while the `ui` font is Inter and the `ui` font otherwise, other roles their default. |
 | `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
@@ -196,7 +200,7 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `"Hack"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `family` | string | `"Hack"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses Inter Tabular while the `ui` font is Inter and the `ui` font otherwise, other roles their default. |
 | `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
@@ -206,7 +210,7 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses Inter Tabular while the `ui` font is Inter and the `ui` font otherwise, other roles their default. |
 | `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
@@ -216,7 +220,7 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `""` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `family` | string | `""` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses Inter Tabular while the `ui` font is Inter and the `ui` font otherwise, other roles their default. |
 | `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
@@ -355,12 +359,27 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 |---|---|---|---|
 | `remember_choice` | boolean | `true` | Open with… preselects the application last chosen for the same file type. |
 | `choose_when_unknown` | boolean | `true` | A file no application is registered for (an unknown type, or one without an extension) opens Open with… on Enter / double-click instead of an error; off = the error notification. |
+| `always_for_unknown` | boolean | `true` | Open with… for a type no application is registered for starts with "Always use this app" ticked, so the program you pick opens that type from then on; off = it starts unticked and every file of the type asks again. |
 | `run_binaries` | boolean | `true` | Enter / double-click on a native program (Linux: an executable ELF binary or AppImage) runs it, in its own folder, ahead of `default_apps`; off = it opens like any other file. Executable scripts and shared libraries are never run. |
 | `store_apps_via_explorer` | boolean | `true` | Windows: a file whose default app is a Store app Soyuz cannot start itself (Photos, …) is handed to Explorer, which opens it in that app; off = it opens with the first registered program Soyuz can start (or Open with… when there is none). |
 | `elevate_when_required` | boolean | `true` | Windows: Enter / double-click on a program that needs administrator rights (its manifest asks for them, e.g. most installers) starts it through the UAC prompt; off = it fails with an error and only "Run as administrator" starts it. |
 | `last_used` | table: name → string | `{}` | The application last chosen in Open with…, by extension (its `id`, else its program path; `"."` for files without an extension). Written by Soyuz. |
 
 ## `[[open.default_apps]]`
+
+One `[[open.default_apps]]` rule.
+
+A list of tables; empty by default. Defaults below are for a new entry's omitted keys.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `extensions` | array of strings | — | Extensions without the dot, any case (`["mp4", "mkv"]`); `"tar.gz"` matches the end of the name; `"."` matches files without an extension (`README`, `.bashrc`). |
+| `name` | string | — | The application's name (shown in Settings and Open with…). |
+| `program` | string | — | The program: an absolute path (macOS: the `.app` bundle). |
+| `args` | array of strings | — | Arguments; `%1` is replaced by the file (appended when no argument has a placeholder). On Windows, command-line fragments as the registry has them. |
+| `id` | string | — | The registered application it came from (ProgId / desktop entry / bundle id); empty for a program chosen by path. |
+
+## `[[open.programs]]`
 
 One `[[open.default_apps]]` rule.
 
@@ -388,7 +407,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `reflink` | `"auto"` \| `"never"` \| `"always"` | `"auto"` | Copy-on-write clones (ReFS block cloning, btrfs / APFS reflinks): `auto`, `never` or `always`. |
 | `copy_duplicates` | `"copy"` \| `"clone"` \| `"link"` | `"clone"` | Files a copy job copies more than once (same content): `clone` them from the first copy where the destination can (ReFS / Dev Drive, btrfs, XFS, APFS), hard-`link` them to it (the copies then change together), or `copy` each. |
 | `history_limit` | integer | `500` | Finished jobs kept in the history (for undo / redo). |
-| `trash_unsupported` | `"ask"` \| `"permanent"` \| `"skip"` | `"ask"` | When a volume has no trash: `ask`, delete `permanent`ly or `skip`. |
+| `trash_unsupported` | `"ask"` \| `"permanent"` \| `"skip"` | `"ask"` | When a volume has no trash: `ask`, delete `permanent`ly (still asking while `general.confirm_permanent_delete` is on) or `skip`. |
 | `auto_open_activity` | boolean | `true` | Open the activity panel when a job runs for more than a second. |
 | `io_stats` | boolean | `true` | A job's details start with "Why is this slow?": its speeds, where the time went (moving, stalled, counting, queued, paused, waiting for an answer) and what holds it back. |
 
@@ -538,7 +557,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `status_column` | boolean | `true` | Show the git status column and badges inside repositories. |
-| `refresh_secs` | integer | `5` | Re-read git status at most this often (seconds). |
+| `refresh_secs` | integer | `15` | Re-read git status this often while the repository is on screen (seconds). A fallback: changes in an open folder or in the repository's git directory refresh it at once. |
 
 ## `[sync]`
 

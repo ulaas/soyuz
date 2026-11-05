@@ -22,8 +22,8 @@ use std::time::Duration;
 
 use egui::emath::TSTransform;
 use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Frame, Id, Key, LayerId, Layout, Margin, Modal, Modifiers, Order,
-    Rect, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, UiBuilder, pos2, vec2,
+    Align, Align2, Color32, CornerRadius, Frame, Id, Key, LayerId, Layout, Margin, Modal, Modifiers, Order, Rect,
+    RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, UiBuilder, pos2, vec2,
 };
 use soyuz_core::config::{self, Config, Keymap};
 
@@ -41,10 +41,14 @@ enum PickPurpose {
     ThemeImport,
     /// `[media] ffmpeg_dir`: the folder of the picked library file.
     FfmpegDir,
+    /// The program of the default-app rule at this index.
+    DefaultAppProgram(usize),
 }
 
 /// Delay between the last edit and writing `config.toml`.
-const NAV_W: f32 = 236.0;
+fn nav_w() -> f32 {
+    crate::theme::font::grow(236.0)
+}
 
 pub use crate::models::settings::Section;
 
@@ -166,7 +170,7 @@ pub fn close(app: &mut SoyuzApp) {
 }
 
 fn flush_save(app: &mut SoyuzApp) {
-    crate::models::settings::flush(&mut app.core);
+    crate::models::settings::save_in_background(&mut app.core);
 }
 
 fn key_cache(s: &mut SettingsState) -> &KeyCache {
@@ -327,12 +331,12 @@ fn apply_and_save(ctx: &egui::Context, app: &mut SoyuzApp) {
 /// Returns `true` to close.
 fn body(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, rect: Rect, id: Id, own_close: bool) -> bool {
     let mut close_now = false;
-    let nav = Rect::from_min_size(rect.min, vec2(NAV_W, rect.height()));
+    let nav = Rect::from_min_size(rect.min, vec2(nav_w(), rect.height()));
     let content = Rect::from_min_max(pos2(nav.right(), rect.top()), rect.max);
-    let r = if own_close { 14 } else { 0 };
+    let r = if own_close { crate::theme::tokens::radius::scaled(14) } else { 0 };
     ui.painter().rect_filled(
         nav,
-        CornerRadius { nw: r, sw: if own_close { 14 } else { 8 }, ne: 0, se: 0 },
+        CornerRadius { nw: r, sw: crate::theme::tokens::radius::scaled(if own_close { 14 } else { 8 }), ne: 0, se: 0 },
         p.bg_window,
     );
     ui.painter().line_segment(
@@ -355,7 +359,7 @@ fn body(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, rect: Rect, id: Id, own_cl
             crate::ui::widgets::focus_ring(ui, cr);
         }
         if cresp.hovered() {
-            ui.painter().rect_filled(cr, CornerRadius::same(6), p.bg_surface3);
+            ui.painter().rect_filled(cr, crate::theme::tokens::radius::same(6), p.bg_surface3);
         }
         ui.painter().text(cr.center(), Align2::CENTER_CENTER, ph::X, icons::font(14.0), p.text_secondary);
         if cresp.clicked() {
@@ -373,14 +377,9 @@ fn in_window(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette, ease: f32) {
     let frame = Frame::new()
         .fill(p.bg_surface1)
         .stroke(Stroke::new(1.0, p.border_strong))
-        .corner_radius(CornerRadius::same(14))
+        .corner_radius(crate::theme::tokens::radius::same(14))
         .inner_margin(Margin::ZERO)
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 20],
-            blur: 60,
-            spread: 0,
-            color: Color32::from_black_alpha((p.shadow_alpha * 255.0 * 1.2).min(255.0) as u8),
-        });
+        .shadow(p.shadow(crate::theme::tokens::shadow::OVERLAY));
     let mut close_now = false;
     let resp = Modal::new(id)
         .frame(frame)
@@ -438,7 +437,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
     ui.horizontal(|ui| {
         ui.add_space(6.0);
         crate::ui::widgets::icon_label(ui, icons::icon(ph::GEAR_SIX, 18.0).color(p.accent));
-        ui.label(RichText::new(tr!("settings-title")).font(crate::theme::fonts::heading(17.0)).color(p.text_primary));
+        ui.label(RichText::new(tr!("settings-title")).font(crate::theme::font::heading(17.0)).color(p.text_primary));
     });
     ui.add_space(12.0);
     let s = &mut app.gui.settings;
@@ -484,14 +483,18 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
                     crate::theme::anim(ui.ctx(), 0.1),
                 );
                 if active {
-                    ui.painter().rect_filled(r, CornerRadius::same(7), p.accent_subtle);
+                    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(7), p.accent_subtle);
                     ui.painter().rect_filled(
                         Rect::from_min_size(pos2(r.left(), r.center().y - 8.0), vec2(3.0, 16.0)),
-                        CornerRadius::same(2),
+                        crate::theme::tokens::radius::same(2),
                         p.accent,
                     );
                 } else if hover > 0.0 {
-                    ui.painter().rect_filled(r, CornerRadius::same(7), p.bg_surface3.gamma_multiply(hover));
+                    ui.painter().rect_filled(
+                        r,
+                        crate::theme::tokens::radius::same(7),
+                        p.bg_surface3.gamma_multiply(hover),
+                    );
                 }
                 let fg = if active { p.text_primary } else { p.text_secondary };
                 let glyph_font = if active { icons::font_fill(15.0) } else { icons::font(15.0) };
@@ -506,7 +509,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
                     pos2(r.left() + 38.0, r.center().y),
                     Align2::LEFT_CENTER,
                     sec.title(),
-                    FontId::proportional(13.0),
+                    crate::theme::font::ui(13.0),
                     fg,
                 );
                 if sec == Section::Keyboard {
@@ -517,12 +520,16 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
                         .count();
                     if n > 0 {
                         let badge = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), vec2(20.0, 16.0));
-                        ui.painter().rect_filled(badge, CornerRadius::same(8), p.danger.gamma_multiply(0.85));
+                        ui.painter().rect_filled(
+                            badge,
+                            crate::theme::tokens::radius::same(8),
+                            p.danger.gamma_multiply(0.85),
+                        );
                         ui.painter().text(
                             badge.center(),
                             Align2::CENTER_CENTER,
                             n.to_string(),
-                            FontId::proportional(10.0),
+                            crate::theme::font::ui(10.0),
                             Color32::WHITE,
                         );
                     }
@@ -548,7 +555,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             crate::ui::widgets::icon_label(ui, icons::icon(status.0, 12.0).color(status.2));
-            ui.label(RichText::new(status.1).size(11.0).color(status.2));
+            ui.label(RichText::new(status.1).size(crate::theme::font::px(11.0)).color(status.2));
         });
         ui.add_space(6.0);
         if nav_link(ui, p, ph::FILE_CODE, tr!("settings-edit-config")) {
@@ -563,14 +570,20 @@ fn nav_link(ui: &mut Ui, p: &Palette, glyph: &str, label: &str) -> bool {
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
     crate::ui::a11y::button(&resp, label);
     if resp.hovered() {
-        ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface3);
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface3);
     }
     if resp.has_focus() {
         crate::ui::widgets::focus_ring(ui, r);
     }
     let fg = if resp.hovered() { p.accent } else { p.text_secondary };
     ui.painter().text(pos2(r.left() + 14.0, r.center().y), Align2::LEFT_CENTER, glyph, icons::font(13.0), fg);
-    ui.painter().text(pos2(r.left() + 36.0, r.center().y), Align2::LEFT_CENTER, label, FontId::proportional(12.0), fg);
+    ui.painter().text(
+        pos2(r.left() + 36.0, r.center().y),
+        Align2::LEFT_CENTER,
+        label,
+        crate::theme::font::ui(12.0),
+        fg,
+    );
     resp.clicked()
 }
 
@@ -582,12 +595,12 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
         if searching {
             ui.label(
                 RichText::new(tr!("settings-search-results", query = app.gui.settings.query.trim()))
-                    .font(crate::theme::fonts::heading(19.0))
+                    .font(crate::theme::font::heading(19.0))
                     .color(p.text_primary),
             );
         } else {
             crate::ui::widgets::icon_label(ui, icons::icon(section_icon(sec), 20.0).color(p.accent));
-            ui.label(RichText::new(sec.title()).font(crate::theme::fonts::heading(19.0)).color(p.text_primary));
+            ui.label(RichText::new(sec.title()).font(crate::theme::font::heading(19.0)).color(p.text_primary));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(30.0);
                 if sec != Section::Advanced
@@ -602,7 +615,7 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
         }
     });
     if !searching {
-        ui.label(RichText::new(sec.description()).size(12.0).color(p.text_tertiary));
+        ui.label(RichText::new(sec.description()).size(crate::theme::font::px(12.0)).color(p.text_tertiary));
     }
     ui.add_space(4.0);
     let scroll_top = std::mem::take(&mut app.gui.settings.scroll_top);
@@ -712,6 +725,15 @@ fn start_theme_export(app: &mut SoyuzApp) {
     app.gui.settings.picker = Some((PickPurpose::ThemeExport, picker));
 }
 
+/// Open the program browser for the default-app rule `rule`.
+pub(super) fn start_default_app_pick(app: &mut SoyuzApp, rule: usize) {
+    let picker = crate::ui::path_picker::PathPicker::programs(
+        tr!("dialogs-openwith-browse-title"),
+        crate::models::requests::open_with::browse_start(&app.gui.settings.draft.open),
+    );
+    app.gui.settings.picker = Some((PickPurpose::DefaultAppProgram(rule), picker));
+}
+
 /// Write the draft's resolved palettes (theme + accent + overrides) as a theme file.
 fn export_theme(app: &mut SoyuzApp, path: &std::path::Path) {
     let d = &app.gui.settings.draft;
@@ -769,6 +791,7 @@ fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
             app.gui.settings.picker = None
         }
         PickResult::Picked(path) => {
+            let picked_name = picker.picked_name();
             app.gui.settings.picker = None;
             match purpose {
                 PickPurpose::Export => {
@@ -778,6 +801,18 @@ fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
                 PickPurpose::ThemeExport => export_theme(app, &path),
                 PickPurpose::ThemeImport => import_theme(app, &path),
                 PickPurpose::FfmpegDir => media::picked(app, &path),
+                PickPurpose::DefaultAppProgram(i) => {
+                    if let Some(rule) = app.gui.settings.draft.open.default_apps.get_mut(i) {
+                        if rule.name.trim().is_empty() {
+                            rule.name = picked_name.unwrap_or_else(|| {
+                                path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+                            });
+                        }
+                        rule.id.clear();
+                        rule.args.clear();
+                        rule.program = path;
+                    }
+                }
             }
         }
     }
@@ -834,11 +869,11 @@ fn binding_chip(ui: &mut Ui, p: &Palette, binding: &str, conflict: bool, removab
     } else {
         Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, CornerRadius::same(7), fill);
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(7), fill);
     if conflict {
         ui.painter().rect_stroke(
             rect,
-            CornerRadius::same(7),
+            crate::theme::tokens::radius::same(7),
             Stroke::new(1.0, p.danger.gamma_multiply(0.7)),
             StrokeKind::Inside,
         );

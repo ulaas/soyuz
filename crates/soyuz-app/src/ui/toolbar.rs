@@ -3,8 +3,8 @@
 //! focused pane.
 
 use egui::{
-    Align2, CornerRadius, FontId, Frame, Id, Key, Margin, Panel, Popup, Rect, RectAlign, Sense, Stroke, StrokeKind,
-    TextEdit, Ui, UiBuilder, pos2, vec2,
+    Align2, Frame, Id, Key, Margin, Panel, Popup, Rect, RectAlign, Sense, Stroke, StrokeKind, TextEdit, Ui, UiBuilder,
+    pos2, vec2,
 };
 use soyuz_core::config::Action;
 use soyuz_core::{Location, ViewMode};
@@ -19,7 +19,9 @@ use crate::ui::context_menu::{group_items, sort_items, view_mode_items};
 use crate::ui::views::computer::volume_label;
 use crate::ui::widgets::{menu_caption, menu_check, menu_item, menu_separator, rail_button, submenu};
 
-const FILTER_W: f32 = 210.0;
+fn filter_w() -> f32 {
+    crate::theme::font::grow(210.0)
+}
 
 fn tip(app: &SoyuzApp, label: &str, action: &Action) -> String {
     match chord_label(&app.core.keymap, action) {
@@ -31,7 +33,7 @@ fn tip(app: &SoyuzApp, label: &str, action: &Action) -> String {
 pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     let p = palette(root.ctx());
     Panel::top("soyuz.toolbar")
-        .exact_size(size::TOOLBAR)
+        .exact_size(crate::theme::font::height(size::TOOLBAR, 13.0))
         .show_separator_line(false)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 6, right: 8, top: 4, bottom: 4 }))
         .show(root, |ui| {
@@ -133,7 +135,8 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             rx -= 6.0;
 
             // Filter field.
-            let fr = Rect::from_min_size(pos2(rx - FILTER_W, full.center().y - 16.0), vec2(FILTER_W, 32.0));
+            let w = filter_w();
+            let fr = Rect::from_min_size(pos2(rx - w, full.center().y - 16.0), vec2(w, 32.0));
             filter(ui, fr, app);
             rx = fr.left() - 8.0;
 
@@ -360,7 +363,7 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
     } else {
         p.rail(Rail::Field)
     };
-    ui.painter().rect_filled(r, CornerRadius::same(radius::CARD), fill);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::CARD), fill);
     if p.high_contrast() {
         let stroke = if focused {
             Stroke::new(2.0, p.accent)
@@ -369,7 +372,7 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
         } else {
             Stroke::new(1.0, p.border_subtle)
         };
-        ui.painter().rect_stroke(r, CornerRadius::same(radius::CARD), stroke, StrokeKind::Inside);
+        ui.painter().rect_stroke(r, crate::theme::tokens::radius::same(radius::CARD), stroke, StrokeKind::Inside);
     }
     ui.painter().text(
         pos2(r.left() + 16.0, r.center().y),
@@ -382,7 +385,18 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
     // The text edit spans the field's full height and centers its row (typed text, hint
     // and cursor alike): with a custom frame egui ignores `margin`, so a shorter child
     // would pin the row to its top.
-    let inner = Rect::from_min_max(pos2(r.left() + 30.0, r.top()), pos2(r.right() - 28.0, r.bottom()));
+    // Filtering: how many of how many, beside the clear button (when there is room).
+    let count = active.then(|| {
+        let text = format!(
+            "{} / {}",
+            crate::ui::statusbar::group_thousands(pane.visible.len()),
+            crate::ui::statusbar::group_thousands(pane.entries.len())
+        );
+        ui.painter().layout_no_wrap(text, crate::theme::font::numbers(11.0), p.text_tertiary)
+    });
+    let count = count.filter(|g| r.width() - 58.0 - g.size().x - 6.0 >= 60.0);
+    let count_w = count.as_ref().map_or(0.0, |g| g.size().x + 6.0);
+    let inner = Rect::from_min_max(pos2(r.left() + 30.0, r.top()), pos2(r.right() - 28.0 - count_w, r.bottom()));
     let mut child = ui.new_child(UiBuilder::new().max_rect(inner));
     let esc = focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
     let resp = child.add(
@@ -390,7 +404,7 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
             .id(id)
             .hint_text(tr!("app-toolbar-filter"))
             .frame(Frame::NONE)
-            .font(FontId::proportional(13.0))
+            .font(crate::theme::font::ui(13.0))
             .align(egui::Align2::LEFT_CENTER)
             .min_size(vec2(0.0, inner.height()))
             .desired_width(inner.width()),
@@ -419,11 +433,15 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
         let cr = Rect::from_center_size(pos2(r.right() - 15.0, r.center().y), vec2(20.0, 20.0));
         let cresp = ui.interact(cr, id.with("clear"), Sense::click());
         if cresp.hovered() {
-            ui.painter().rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+            ui.painter().rect_filled(cr, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface2);
         }
         ui.painter().text(cr.center(), Align2::CENTER_CENTER, ph::X, icons::font(12.0), p.text_tertiary);
         if cresp.clicked() {
             pane.set_filter("");
+        }
+        if let Some(g) = count {
+            let at = pos2(cr.left() - 2.0 - g.size().x, r.center().y - g.size().y / 2.0);
+            ui.painter().galley(at, g, p.text_tertiary);
         }
     } else if !focused {
         let hint = chord_label(&app.core.keymap, &Action::Filter).unwrap_or_default();
@@ -431,7 +449,7 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
             pos2(r.right() - 10.0, r.center().y),
             Align2::RIGHT_CENTER,
             hint,
-            FontId::proportional(11.0),
+            crate::theme::font::ui(11.0),
             p.text_tertiary,
         );
     }

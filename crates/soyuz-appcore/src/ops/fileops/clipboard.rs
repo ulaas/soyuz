@@ -53,10 +53,28 @@ pub struct Clipboard {
     mode: Option<ClipMode>,
     paths: Vec<PathBuf>,
     cut_set: HashSet<PathBuf>,
+    /// Changes with every [`Clipboard::set`] / [`Clipboard::clear`], so a finishing move
+    /// clears only the set it was pasted from.
+    generation: u64,
 }
 
 impl Clipboard {
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// A cut was pasted and its move finished: forget that set, unless something newer
+    /// was copied or cut meanwhile. Returns whether the set was still there.
+    pub fn clear_if_generation(&mut self, generation: u64) -> bool {
+        let same = self.generation == generation;
+        if same {
+            self.clear();
+        }
+        same
+    }
+
     pub fn set(&mut self, mode: ClipMode, paths: Vec<PathBuf>) {
+        self.generation += 1;
         let mut seen = HashSet::new();
         let paths: Vec<PathBuf> = paths.into_iter().filter(|p| seen.insert(p.clone())).collect();
         self.cut_set = if mode == ClipMode::Cut { paths.iter().cloned().collect() } else { HashSet::new() };
@@ -65,7 +83,7 @@ impl Clipboard {
     }
 
     pub fn clear(&mut self) {
-        *self = Clipboard::default();
+        *self = Clipboard { generation: self.generation + 1, ..Clipboard::default() };
     }
 
     pub fn is_empty(&self) -> bool {

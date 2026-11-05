@@ -34,22 +34,24 @@ pub mod recovery_crash;
 pub mod unlock_volume;
 
 use crate::models::requests::{columns, pattern};
-use egui::{Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};
+use egui::{Align, Color32, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};
 use soyuz_core::config::{ActionCategory, Keymap};
 
 use crate::cmd::Cmd;
 use crate::models::dialogs::{DialogModel, DialogStack, next_seq};
 use crate::state::pane::PaneId;
 use crate::state::workspace::Workspace;
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{kbd, pill_button};
+use crate::ui::widgets::{Btn, kbd, pill_button};
 
 /// What dialogs may touch while drawing.
 pub struct DialogCtx<'a> {
     pub cmds: &'a mut Vec<Cmd>,
     pub ws: &'a mut Workspace,
+    /// Program icons of the Open with list.
+    pub thumbs: &'a crate::services::thumbs::Thumbs,
 }
 
 pub trait Dialog {
@@ -71,6 +73,8 @@ pub trait Dialog {
     }
     /// Draw the body. Return `false` to close.
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool;
+    /// Draw what stacks on top of the dialog (a file picker), outside its modal or window.
+    fn overlay(&mut self, _ctx: &egui::Context) {}
 }
 
 #[derive(Default)]
@@ -181,6 +185,12 @@ impl Top<'_> {
             Top::Model(m) => show_model(ui, m, ctx),
         }
     }
+
+    fn overlay(&mut self, ctx: &egui::Context) {
+        if let Top::Gui(d) = self {
+            d.overlay(ctx);
+        }
+    }
 }
 
 impl Dialogs {
@@ -216,6 +226,8 @@ impl Dialogs {
             } else {
                 self.stack.pop();
             }
+        } else {
+            top.overlay(ctx);
         }
     }
 
@@ -247,14 +259,9 @@ impl Dialogs {
         let frame = Frame::new()
             .fill(p.bg_surface3)
             .stroke(Stroke::new(1.0, p.border_strong))
-            .corner_radius(CornerRadius::same(radius::MODAL))
+            .corner_radius(crate::theme::tokens::radius::same(radius::MODAL))
             .inner_margin(Margin::same(20))
-            .shadow(egui::epaint::Shadow {
-                offset: [0, 12],
-                blur: 40,
-                spread: 0,
-                color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-            });
+            .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
         let width = top.width();
         let mut keep = true;
         let resp = egui::Modal::new(id)
@@ -278,14 +285,66 @@ impl Dialogs {
     }
 }
 
+/// Enter means the dialog's default answer only when no control of this dialog has the
+/// keyboard. egui clicks a focused button on Enter by itself, so Tab to Cancel, then Enter,
+/// must cancel, and Enter on a focused checkbox must only tick it. (A single-line text
+/// field gives up the keyboard on Enter, so it still submits.)
+pub(crate) fn enter_default(ui: &Ui) -> bool {
+    let focused = ui.memory(|m| m.focused()).and_then(|id| ui.ctx().read_response(id));
+    let in_dialog = focused.is_some_and(|r| r.layer_id == ui.layer_id());
+    !in_dialog && ui.input(|i| i.key_pressed(Key::Enter))
+}
+
+#[cfg(test)]
+mod enter_tests {
+    use egui::{Event, Key, Modifiers, RawInput};
+
+    use super::enter_default;
+
+    fn enter() -> Event {
+        Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }
+    }
+
+    /// One frame with a Cancel button; returns the default answer.
+    fn frame(ctx: &egui::Context, focus: bool, events: Vec<Event>) -> bool {
+        let mut out = false;
+        let input = RawInput { events, ..RawInput::default() };
+        let mut output = ctx.run_ui(input, |ui| {
+            let r = ui.button("Cancel");
+            if focus {
+                r.request_focus();
+            }
+            out = enter_default(ui);
+        });
+        output.textures_delta.clear();
+        out
+    }
+
+    #[test]
+    fn enter_on_a_focused_cancel_does_not_confirm() {
+        let ctx = egui::Context::default();
+        frame(&ctx, true, Vec::new());
+        frame(&ctx, false, Vec::new());
+        assert!(!frame(&ctx, false, vec![enter()]), "the focused button takes Enter");
+    }
+
+    #[test]
+    fn enter_with_nothing_focused_confirms() {
+        let ctx = egui::Context::default();
+        frame(&ctx, false, Vec::new());
+        assert!(frame(&ctx, false, vec![enter()]));
+        assert!(!frame(&ctx, false, Vec::new()), "only when pressed");
+    }
+}
+
 /// Footer row with right-aligned buttons; returns `(primary clicked, cancel clicked)`.
 pub fn footer(ui: &mut Ui, primary: &str, cancel: &str) -> (bool, bool) {
     ui.add_space(16.0);
     let mut out = (false, false);
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        out.0 = pill_button(ui, None, primary, true).clicked();
+        out.0 = pill_button(ui, None, primary, Btn::Primary).clicked();
         ui.add_space(6.0);
-        out.1 = pill_button(ui, None, cancel, false).clicked();
+        out.1 = pill_button(ui, None, cancel, Btn::Secondary).clicked();
     });
     out
 }
@@ -293,7 +352,8 @@ pub fn footer(ui: &mut Ui, primary: &str, cancel: &str) -> (bool, bool) {
 /// Footer with a single right-aligned primary button; returns whether it was clicked.
 pub fn close_footer(ui: &mut Ui, label: &str) -> bool {
     ui.add_space(16.0);
-    ui.with_layout(Layout::right_to_left(Align::Center), |ui| pill_button(ui, None, label, true).clicked()).inner
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| pill_button(ui, None, label, Btn::Primary).clicked())
+        .inner
 }
 
 /// Generic confirmation: on confirm the stored [`Cmd`] is queued.
@@ -323,7 +383,7 @@ impl Dialog for ConfirmDialog {
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
         ui.label(RichText::new(&self.m.message).color(p.text_secondary));
-        let enter = ui.input(|i| i.key_pressed(Key::Enter));
+        let enter = enter_default(ui);
         let (ok, cancel) = footer(ui, &self.m.confirm, tr!("common-cancel"));
         if ok || enter {
             if let Some(c) = self.m.confirm() {
@@ -420,7 +480,7 @@ impl Dialog for ColumnsDialog {
         if changed {
             ctx.cmds.push(Cmd::ViewChanged(self.pane));
         }
-        !close_footer(ui, tr!("dialogs-done")) && !ui.input(|i| i.key_pressed(Key::Enter))
+        !close_footer(ui, tr!("dialogs-done")) && !enter_default(ui)
     }
 }
 
@@ -487,7 +547,11 @@ impl Dialog for AboutDialog {
                     RichText::new(tr!("dialogs-about-version-line", version = env!("CARGO_PKG_VERSION")))
                         .color(p.text_secondary),
                 );
-                ui.label(RichText::new(tr!("dialogs-about-tagline")).color(p.text_tertiary).size(12.0));
+                ui.label(
+                    RichText::new(tr!("dialogs-about-tagline"))
+                        .color(p.text_tertiary)
+                        .size(crate::theme::font::px(12.0)),
+                );
             });
         });
         ui.add_space(12.0);
@@ -503,13 +567,17 @@ impl Dialog for AboutDialog {
             }
         });
         ui.add_space(10.0);
-        ui.label(RichText::new(tr!("dialogs-about-license")).color(p.text_tertiary).size(11.5));
-        ui.label(RichText::new(crate::models::about::ffmpeg_notice()).color(p.text_tertiary).size(11.5));
+        ui.label(RichText::new(tr!("dialogs-about-license")).color(p.text_tertiary).size(crate::theme::font::px(11.5)));
+        ui.label(
+            RichText::new(crate::models::about::ffmpeg_notice())
+                .color(p.text_tertiary)
+                .size(crate::theme::font::px(11.5)),
+        );
         let (close, copy) = footer(ui, tr!("common-close"), tr!("dialogs-about-copy-info"));
         if copy {
             ctx.cmds.push(Cmd::CopyText(crate::models::about::copy_text(&facts)));
         }
-        !close && !ui.input(|i| i.key_pressed(Key::Enter))
+        !close && !enter_default(ui)
     }
 }
 
@@ -568,7 +636,7 @@ impl Dialog for KeybindingsDialog {
                     ui.add_space(6.0);
                     ui.label(
                         RichText::new(caption_upper(crate::i18n::labels::action_category(*cat)))
-                            .font(FontId::proportional(10.5))
+                            .font(crate::theme::font::ui(10.5))
                             .color(p.text_tertiary),
                     );
                     last = Some(*cat);

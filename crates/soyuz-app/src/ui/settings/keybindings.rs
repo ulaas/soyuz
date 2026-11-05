@@ -1,7 +1,7 @@
 //! Keyboard page: preset picker, options, and the keybinding editor (search actions,
 //! record / remove / reset shortcuts, conflicts highlighted).
 
-use egui::{Align, Align2, CornerRadius, FontId, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, Align2, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use soyuz_core::config::{Action, ActionCategory, KeyPreset};
 
 use super::widgets::{choice, dd, group, matches, small_button, switch, upper};
@@ -106,7 +106,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     any = true;
     ui.add_space(14.0);
     ui.label(
-        RichText::new(upper(tr!("settings-keys-shortcuts"))).font(FontId::proportional(10.5)).color(p.text_tertiary),
+        RichText::new(upper(tr!("settings-keys-shortcuts"))).font(crate::theme::font::ui(10.5)).color(p.text_tertiary),
     );
     ui.add_space(6.0);
     if !searching_outside {
@@ -146,20 +146,22 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             egui::Frame::new()
                 .fill(p.danger.gamma_multiply(0.10))
                 .stroke(egui::Stroke::new(1.0, p.danger.gamma_multiply(0.5)))
-                .corner_radius(CornerRadius::same(8))
+                .corner_radius(crate::theme::tokens::radius::same(8))
                 .inner_margin(Margin::symmetric(12, 8))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     for c in &hard {
                         ui.horizontal_wrapped(|ui| {
                             ui.label(icons::icon(ph::WARNING, 13.0).color(p.danger));
-                            ui.label(RichText::new(c.message()).size(12.0).color(p.text_primary));
+                            ui.label(
+                                RichText::new(c.message()).size(crate::theme::font::px(12.0)).color(p.text_primary),
+                            );
                         });
                     }
                     for w in &warnings {
                         ui.horizontal_wrapped(|ui| {
                             ui.label(icons::icon(ph::WARNING_CIRCLE, 13.0).color(p.warning));
-                            ui.label(RichText::new(w).size(12.0).color(p.text_primary));
+                            ui.label(RichText::new(w).size(crate::theme::font::px(12.0)).color(p.text_primary));
                         });
                     }
                 });
@@ -169,7 +171,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     egui::Frame::new()
         .fill(p.bg_surface2.gamma_multiply(if p.dark { 0.7 } else { 1.0 }))
         .stroke(egui::Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(10))
+        .corner_radius(crate::theme::tokens::radius::same(10))
         .inner_margin(Margin::symmetric(10, 6))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -185,7 +187,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     ui.add_space(if last.is_none() { 4.0 } else { 10.0 });
                     ui.label(
                         RichText::new(upper(crate::i18n::labels::action_category(e.category)))
-                            .font(FontId::proportional(10.0))
+                            .font(crate::theme::font::ui(10.0))
                             .color(p.text_tertiary),
                     );
                     ui.add_space(2.0);
@@ -212,7 +214,7 @@ fn action_row(
     let row_rect = egui::Rect::from_min_size(row_rect.min, vec2(row_rect.width(), 34.0));
     let hovered = ui.rect_contains_pointer(row_rect);
     if hovered {
-        ui.painter().rect_filled(row_rect, CornerRadius::same(6), p.bg_surface3.gamma_multiply(0.7));
+        ui.painter().rect_filled(row_rect, crate::theme::tokens::radius::same(6), p.bg_surface3.gamma_multiply(0.7));
     }
     let mut remove: Option<usize> = None;
     let mut add = false;
@@ -229,7 +231,7 @@ fn action_row(
             p.text_secondary,
         );
         ui.add_space(6.0);
-        let title = ui.label(RichText::new(&e.title).size(13.0).color(p.text_primary));
+        let title = ui.label(RichText::new(&e.title).size(crate::theme::font::px(13.0)).color(p.text_primary));
         title.on_hover_text(format!("{}\n{}", e.description, a));
         if overridden {
             let (dr, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());

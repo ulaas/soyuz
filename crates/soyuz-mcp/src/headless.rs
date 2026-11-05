@@ -198,7 +198,12 @@ pub fn execute_on_engine(
 
 /// Append a pending `[[ai.mcp_clients]]` entry to `config.toml`, keeping its formatting.
 pub fn register_in_file(path: &std::path::Path, entry: AiMcpClient) -> Result<(), String> {
-    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    // A file that exists but cannot be read (not UTF-8, no permission) must not be replaced.
+    let existing = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
+    };
     let mut config = if existing.trim().is_empty() {
         soyuz_core::config::Config::default()
     } else {
@@ -214,4 +219,39 @@ pub fn register_in_file(path: &std::path::Path, entry: AiMcpClient) -> Result<()
         soyuz_fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     soyuz_fs::write_atomic(path, text.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod register_tests {
+    use super::*;
+
+    fn client(name: &str) -> AiMcpClient {
+        AiMcpClient { name: name.into(), pending: true, ..Default::default() }
+    }
+
+    #[test]
+    fn a_config_that_cannot_be_read_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let bytes = b"[general]\n# caf\xE9 in Latin-1\n";
+        std::fs::write(&path, bytes).unwrap();
+        let err = register_in_file(&path, client("a")).unwrap_err();
+        assert!(err.contains("cannot read"), "{err}");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn a_missing_config_is_created_and_comments_survive() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sub").join("config.toml");
+        register_in_file(&path, client("a")).unwrap();
+        let first = std::fs::read_to_string(&path).unwrap();
+        assert!(first.contains("mcp_clients"), "{first}");
+        std::fs::write(&path, format!("# mine\n{first}")).unwrap();
+        register_in_file(&path, client("b")).unwrap();
+        let second = std::fs::read_to_string(&path).unwrap();
+        assert!(second.starts_with("# mine"), "{second}");
+        let config = soyuz_core::config::load_or_default(&path).unwrap().config;
+        assert_eq!(config.ai.mcp_clients.len(), 2);
+    }
 }

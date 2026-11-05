@@ -13,12 +13,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use egui::{Align, Align2, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, Align2, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use parking_lot::Mutex;
 use soyuz_core::{EntryInfo, EntryKind, OpControl, SizeStyle, format_size};
 use soyuz_fs::TimesSet;
 
-use super::conflict::{Btn, button};
 use super::properties_attrs::{AttrEdit, AttrEditUi as _, ModeEdit, ModeEditUi as _, info_attrs, plan_jobs};
 use super::properties_checksum::Checksums;
 use super::properties_security::OwnerEdit;
@@ -29,8 +28,9 @@ use super::{Dialog, DialogCtx};
 use crate::cmd::Cmd;
 use crate::ops::fileops::FileOpCmd;
 use crate::state::pane::PaneId;
+use crate::theme::font::semibold;
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::views::flow::semibold;
+use crate::ui::widgets::{Btn, pill_button};
 
 pub use crate::models::properties::{
     Bg, FlagPlan, MetaCmd, Start, Tab, apply, apply_reason, execute, handles, open, pump, targets,
@@ -239,7 +239,11 @@ impl PropertiesDialog {
         let p = palette(ui.ctx());
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(56.0, 56.0), Sense::hover());
-            ui.painter().rect_filled(r, CornerRadius::same(crate::theme::tokens::radius::CARD), p.bg_surface2);
+            ui.painter().rect_filled(
+                r,
+                crate::theme::tokens::radius::same(crate::theme::tokens::radius::CARD),
+                p.bg_surface2,
+            );
             let e = &self.entries[0];
             let thumb = self.entries.len() == 1
                 && e.kind == EntryKind::File
@@ -259,7 +263,7 @@ impl PropertiesDialog {
                 let size = tex.size_vec2();
                 let scale = (52.0 / size.x).min(52.0 / size.y);
                 let rect = egui::Rect::from_center_size(r.center(), size * scale);
-                egui::Image::new(tex).corner_radius(CornerRadius::same(4)).paint_at(ui, rect);
+                egui::Image::new(tex).corner_radius(crate::theme::tokens::radius::same(4)).paint_at(ui, rect);
             } else {
                 let (glyph, color) = if self.entries.len() > 1 {
                     (ph::STACK, p.accent)
@@ -288,7 +292,7 @@ impl PropertiesDialog {
                     if e.kind == EntryKind::File {
                         line = tr!("dialogs-props-kind-size", kind = line, size = self.size(e.size));
                     }
-                    ui.label(RichText::new(line).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                    ui.label(RichText::new(line).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
                 } else {
                     let files = self.entries.iter().filter(|e| !e.is_dir_like()).count();
                     let dirs = self.entries.len() - files;
@@ -313,7 +317,7 @@ impl PropertiesDialog {
                     };
                     ui.label(
                         RichText::new(tr!("dialogs-props-summary", counts = parts.join(", "), kinds = kinds))
-                            .font(FontId::proportional(11.5))
+                            .font(crate::theme::font::ui(11.5))
                             .color(p.text_tertiary),
                     );
                 }
@@ -430,7 +434,7 @@ impl PropertiesDialog {
         if cfg!(not(any(windows, target_os = "macos"))) {
             ui.label(
                 RichText::new(tr!("dialogs-props-no-created-linux"))
-                    .font(FontId::proportional(11.0))
+                    .font(crate::theme::font::ui(11.0))
                     .color(p.text_tertiary),
             );
         }
@@ -514,7 +518,11 @@ impl PropertiesDialog {
                     if let Some(e) = self.entries.first() {
                         ui.add_space(6.0);
                         let s = soyuz_fs::strip_verbatim(&e.path).display().to_string();
-                        if ui.add(egui::Button::new(RichText::new(tr!("dialogs-props-copy-path")).size(12.0))).clicked()
+                        if ui
+                            .add(egui::Button::new(
+                                RichText::new(tr!("dialogs-props-copy-path")).size(crate::theme::font::px(12.0)),
+                            ))
+                            .clicked()
                         {
                             cmds.push(Cmd::CopyText(s));
                         }
@@ -695,7 +703,7 @@ impl Dialog for PropertiesDialog {
 
         ui.add_space(12.0);
         if let Some(e) = &self.error {
-            ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));
+            ui.label(RichText::new(e).font(crate::theme::font::ui(11.5)).color(p.danger));
             ui.add_space(4.0);
         }
         let dirty = self.dirty();
@@ -708,10 +716,10 @@ impl Dialog for PropertiesDialog {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                ok = button(ui, tr!("common-ok"), Btn::Primary).clicked();
-                cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+                ok = pill_button(ui, None, tr!("common-ok"), Btn::Primary).clicked();
+                cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
                 ui.add_enabled_ui(dirty, |ui| {
-                    apply = button(ui, tr!("common-apply"), Btn::Ghost).clicked() && dirty;
+                    apply = pill_button(ui, None, tr!("common-apply"), Btn::Ghost).clicked() && dirty;
                 });
             });
         });

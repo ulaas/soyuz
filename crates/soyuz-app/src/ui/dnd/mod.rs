@@ -12,10 +12,7 @@ pub mod linux_dnd;
 
 use std::path::{Path, PathBuf};
 
-use egui::{
-    Align2, Color32, CornerRadius, CursorIcon, DragAndDrop, FontId, Id, Order, Rect, Response, Stroke, StrokeKind, Ui,
-    pos2, vec2,
-};
+use egui::{Align2, Color32, CursorIcon, DragAndDrop, Id, Order, Rect, Response, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::config::DragDefault;
 
 use crate::app::SoyuzApp;
@@ -86,8 +83,13 @@ pub fn highlight(ui: &Ui, rect: Rect, rounding: u8) {
     }
     let p = palette(ui.ctx());
     let painter = ui.ctx().layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("soyuz.dnd.hl")));
-    painter.rect_filled(rect, CornerRadius::same(rounding), p.accent.gamma_multiply(0.08));
-    painter.rect_stroke(rect, CornerRadius::same(rounding), Stroke::new(2.0, p.accent), StrokeKind::Inside);
+    painter.rect_filled(rect, crate::theme::tokens::radius::same(rounding), p.accent.gamma_multiply(0.08));
+    painter.rect_stroke(
+        rect,
+        crate::theme::tokens::radius::same(rounding),
+        Stroke::new(2.0, p.accent),
+        StrokeKind::Inside,
+    );
 }
 
 /// Handle hover + release of an internal drag over `rect` targeting `dest`. Returns
@@ -126,7 +128,7 @@ fn spring(ui: &Ui, rect: Rect, dest: &Path, rounding: u8, open: Cmd, cmds: &mut 
             let w = r.width() * crate::ui::motion::ease_out((progress - 0.15) / 0.85);
             let fill = Rect::from_min_size(r.min, vec2(w, r.height()));
             let painter = ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("soyuz.dnd.hl")));
-            painter.rect_filled(fill, CornerRadius::same(rounding), p.accent.gamma_multiply(0.10));
+            painter.rect_filled(fill, crate::theme::tokens::radius::same(rounding), p.accent.gamma_multiply(0.10));
         }
     }
 }
@@ -292,35 +294,35 @@ pub fn paint_badge(ctx: &egui::Context) {
         _ => CursorIcon::Grabbing,
     });
     let painter = ctx.layer_painter(egui::LayerId::new(Order::Tooltip, Id::unique("soyuz.dnd.badge")));
-    let title = crate::ui::widgets::trunc_galley(
-        &painter,
-        &what,
-        crate::ui::views::flow::semibold(12.5),
-        p.text_primary,
-        220.0,
-    );
+    let title =
+        crate::ui::widgets::trunc_galley(&painter, &what, crate::theme::font::semibold(12.5), p.text_primary, 220.0);
     let sub = (!line2.is_empty())
-        .then(|| crate::ui::widgets::trunc_galley(&painter, &line2, FontId::proportional(11.5), accent, 220.0));
+        .then(|| crate::ui::widgets::trunc_galley(&painter, &line2, crate::theme::font::ui(11.5), accent, 220.0));
     let w = 46.0 + title.size().x.max(sub.as_ref().map_or(0.0, |g| g.size().x)) + 14.0;
     let h = if sub.is_some() { 44.0 } else { 32.0 };
     let r = Rect::from_min_size(pos + vec2(16.0, 14.0), vec2(w, h));
-    let shadow = egui::epaint::Shadow {
-        offset: [0, 6],
-        blur: 18,
-        spread: 0,
-        color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-    };
-    painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));
-    painter.rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface3);
-    painter.rect_stroke(r, CornerRadius::same(radius::CARD), Stroke::new(1.0, p.border_strong), StrokeKind::Inside);
+    let shadow = p.shadow(crate::theme::tokens::shadow::POPUP);
+    painter.add(shadow.as_shape(r, crate::theme::tokens::radius::same(radius::CARD)));
+    painter.rect_filled(r, crate::theme::tokens::radius::same(radius::CARD), p.bg_surface3);
+    painter.rect_stroke(
+        r,
+        crate::theme::tokens::radius::same(radius::CARD),
+        Stroke::new(1.0, p.border_strong),
+        StrokeKind::Inside,
+    );
     // Stacked-documents glyph with a count bubble.
     let gc = pos2(r.left() + 22.0, r.center().y);
     if n > 1 {
         // Two cards peeking out behind the glyph: "many items".
         for k in [2.0f32, 1.0] {
             let card = Rect::from_center_size(gc + vec2(k * 2.5, -k * 2.5), vec2(16.0, 19.0));
-            painter.rect_filled(card, CornerRadius::same(3), p.bg_surface2);
-            painter.rect_stroke(card, CornerRadius::same(3), Stroke::new(1.0, p.border_strong), StrokeKind::Inside);
+            painter.rect_filled(card, crate::theme::tokens::radius::same(3), p.bg_surface2);
+            painter.rect_stroke(
+                card,
+                crate::theme::tokens::radius::same(3),
+                Stroke::new(1.0, p.border_strong),
+                StrokeKind::Inside,
+            );
         }
     }
     painter.text(gc, Align2::CENTER_CENTER, glyph, icons::font_fill(18.0), accent);
@@ -339,9 +341,9 @@ pub fn paint_badge(ctx: &egui::Context) {
     if n > 1 {
         let b = pos2(r.left() + 32.0, r.top() + 9.0);
         let label = if n > 99 { "99+".to_string() } else { n.to_string() };
-        let g = painter.layout_no_wrap(label, FontId::proportional(9.5), Color32::WHITE);
+        let g = painter.layout_no_wrap(label, crate::theme::font::ui(9.5), Color32::WHITE);
         let br = Rect::from_center_size(b, vec2((g.size().x + 8.0).max(15.0), 15.0));
-        painter.rect_filled(br, CornerRadius::same(8), p.accent);
+        painter.rect_filled(br, crate::theme::tokens::radius::same(8), p.accent);
         painter.galley(br.center() - g.size() / 2.0, g, Color32::WHITE);
     }
     let tx = r.left() + 44.0;

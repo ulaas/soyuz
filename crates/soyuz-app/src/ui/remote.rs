@@ -118,7 +118,7 @@ pub fn sidebar_section(
 fn field_label(ui: &mut Ui, text: &str) {
     let p = palette(ui.ctx());
     ui.add_space(6.0);
-    ui.label(RichText::new(text).size(11.5).color(p.text_tertiary));
+    ui.label(RichText::new(text).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
     ui.add_space(2.0);
 }
 
@@ -147,8 +147,8 @@ fn lan_servers(ui: &mut Ui, lan: &mut Discovery, wake: &crate::host::Wake, form:
     lan.poll();
     if lan.servers.is_empty() && !lan.searching() {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(tr!("remote-lan-none")).size(11.5).color(p.text_tertiary));
-            if ui.link(RichText::new(tr!("remote-lan-again")).size(11.5)).clicked() {
+            ui.label(RichText::new(tr!("remote-lan-none")).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
+            if ui.link(RichText::new(tr!("remote-lan-again")).size(crate::theme::font::px(11.5))).clicked() {
                 lan.again(wake);
             }
         });
@@ -159,8 +159,10 @@ fn lan_servers(ui: &mut Ui, lan: &mut Discovery, wake: &crate::host::Wake, form:
         field_label(ui, tr!("remote-lan-title"));
         if lan.searching() {
             ui.add(egui::Spinner::new().size(11.0));
-            ui.label(RichText::new(tr!("remote-lan-looking")).size(11.5).color(p.text_tertiary));
-        } else if ui.link(RichText::new(tr!("remote-lan-again")).size(11.5)).clicked() {
+            ui.label(
+                RichText::new(tr!("remote-lan-looking")).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+            );
+        } else if ui.link(RichText::new(tr!("remote-lan-again")).size(crate::theme::font::px(11.5))).clicked() {
             lan.again(wake);
         }
     });
@@ -273,7 +275,7 @@ impl Dialog for ConnectDialog {
             if f.auth == AuthKind::Agent {
                 ui.add_space(4.0);
                 let note = if cfg!(windows) { tr!("remote-agent-note") } else { tr!("remote-agent-note-unix") };
-                ui.label(RichText::new(note).size(11.5).color(p.text_tertiary));
+                ui.label(RichText::new(note).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
             }
         }
         let (label, hint) = match f.proto {
@@ -369,19 +371,25 @@ impl Dialog for HostKeyDialog {
         ui.add_space(10.0);
         let card = egui::Frame::new()
             .fill(p.bg_surface2)
-            .corner_radius(egui::CornerRadius::same(crate::theme::tokens::radius::CARD))
+            .corner_radius(crate::theme::tokens::radius::same(crate::theme::tokens::radius::CARD))
             .inner_margin(Margin::symmetric(12, 10));
         card.show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new(&self.ask.prompt.algorithm).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(&self.ask.prompt.algorithm).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+            );
             ui.add_space(2.0);
             ui.label(
-                RichText::new(&self.ask.prompt.fingerprint).font(egui::FontId::monospace(12.5)).color(p.text_primary),
+                RichText::new(&self.ask.prompt.fingerprint).font(crate::theme::font::mono(12.5)).color(p.text_primary),
             );
             if let HostKeyStatus::Changed { previous } = &self.ask.prompt.status {
                 ui.add_space(8.0);
-                ui.label(RichText::new(tr!("remote-hostkey-previous")).size(11.5).color(p.text_tertiary));
-                ui.label(RichText::new(previous).font(egui::FontId::monospace(12.0)).color(p.text_secondary));
+                ui.label(
+                    RichText::new(tr!("remote-hostkey-previous"))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_tertiary),
+                );
+                ui.label(RichText::new(previous).font(crate::theme::font::mono(12.0)).color(p.text_secondary));
             }
         });
         let (ok, cancel) = footer(

@@ -5,15 +5,15 @@
 //! under the touched folders are scanned on a worker thread and can be moved to the trash
 //! with the same click. Esc / "Decide later" keeps everything for the next start.
 
-use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, ScrollArea, Sense, Ui, vec2};
+use egui::{Align, Layout, Margin, RichText, ScrollArea, Sense, Ui, vec2};
 use soyuz_jobs::journal::Recovered;
 use soyuz_jobs::{JobKindBrief, JournalJob};
 
-use super::conflict::{Btn, button};
 use super::{Dialog, DialogCtx};
 use crate::models::requests::recovery::{RecoveryModel, job_line};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons::ph, palette};
+use crate::ui::widgets::{Btn, pill_button};
 
 pub struct RecoveryDialog {
     m: RecoveryModel,
@@ -44,26 +44,26 @@ fn job_card(ui: &mut Ui, job: &JournalJob, p: &Palette) {
     egui::Frame::new()
         .fill(p.bg_surface2)
         .stroke(egui::Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(radius::CARD))
+        .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
         .inner_margin(Margin::symmetric(12, 10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(RichText::new(kind_icon(job.kind.brief())).size(18.0).color(p.accent));
+                ui.label(RichText::new(kind_icon(job.kind.brief())).size(crate::theme::font::px(18.0)).color(p.accent));
                 ui.add_space(4.0);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(&job.label).color(p.text_primary).font(FontId::proportional(13.0)));
+                    ui.label(RichText::new(&job.label).color(p.text_primary).font(crate::theme::font::ui(13.0)));
                     let line = job_line(job);
-                    ui.label(RichText::new(line).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                    ui.label(RichText::new(line).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
                 });
             });
             if let Some(f) = job.fraction() {
                 ui.add_space(6.0);
                 let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 4.0), Sense::hover());
-                ui.painter().rect_filled(r, CornerRadius::same(2), p.bg_sunken);
+                ui.painter().rect_filled(r, crate::theme::tokens::radius::same(2), p.bg_sunken);
                 let mut fr = r;
                 fr.set_width((r.width() * f).max(2.0));
-                ui.painter().rect_filled(fr, CornerRadius::same(2), p.warning);
+                ui.painter().rect_filled(fr, crate::theme::tokens::radius::same(2), p.warning);
             }
         });
 }
@@ -99,7 +99,7 @@ impl Dialog for RecoveryDialog {
                     ui.add(egui::Spinner::new().size(12.0).color(p.text_tertiary));
                     ui.label(
                         RichText::new(tr!("dialogs-recovery-scanning"))
-                            .font(FontId::proportional(12.0))
+                            .font(crate::theme::font::ui(12.0))
                             .color(p.text_tertiary),
                     );
                 });
@@ -107,7 +107,7 @@ impl Dialog for RecoveryDialog {
             Some(v) if v.is_empty() => {
                 ui.label(
                     RichText::new(format!("{}  {}", ph::CHECK_CIRCLE, tr!("dialogs-recovery-no-leftovers")))
-                        .font(FontId::proportional(12.0))
+                        .font(crate::theme::font::ui(12.0))
                         .color(p.success),
                 );
             }
@@ -115,14 +115,14 @@ impl Dialog for RecoveryDialog {
                 ui.horizontal(|ui| {
                     ui.checkbox(&mut self.m.clean, tr!("dialogs-recovery-clean", count = v.len()));
                     let t = if self.m.show_leftovers { tr!("dialogs-hide") } else { tr!("dialogs-show") };
-                    if ui.link(RichText::new(t).font(FontId::proportional(12.0)).color(p.accent)).clicked() {
+                    if ui.link(RichText::new(t).font(crate::theme::font::ui(12.0)).color(p.accent)).clicked() {
                         self.m.show_leftovers = !self.m.show_leftovers;
                     }
                 });
                 if self.m.show_leftovers {
                     egui::Frame::new()
                         .fill(p.bg_sunken)
-                        .corner_radius(CornerRadius::same(6))
+                        .corner_radius(crate::theme::tokens::radius::same(6))
                         .inner_margin(Margin::symmetric(10, 7))
                         .show(ui, |ui| {
                             ScrollArea::vertical().id_salt("leftovers").max_height(110.0).show(ui, |ui| {
@@ -130,7 +130,7 @@ impl Dialog for RecoveryDialog {
                                 for path in v {
                                     ui.label(
                                         RichText::new(soyuz_fs::strip_verbatim(path).display().to_string())
-                                            .font(FontId::monospace(11.0))
+                                            .font(crate::theme::font::mono(11.0))
                                             .color(p.text_secondary),
                                     );
                                 }
@@ -143,21 +143,21 @@ impl Dialog for RecoveryDialog {
         let can_roll_back = self.m.can_roll_back();
         let (mut resume, mut rollback, mut discard, mut later) = (false, false, false, false);
         ui.horizontal(|ui| {
-            later = button(ui, tr!("dialogs-recovery-later"), Btn::Ghost)
+            later = pill_button(ui, None, tr!("dialogs-recovery-later"), Btn::Ghost)
                 .on_hover_text(tr!("dialogs-recovery-later-tip"))
                 .clicked();
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                resume = button(ui, tr!("dialogs-recovery-resume"), Btn::Primary)
+                resume = pill_button(ui, None, tr!("dialogs-recovery-resume"), Btn::Primary)
                     .on_hover_text(tr!("dialogs-recovery-resume-tip"))
                     .clicked();
                 ui.add_enabled_ui(can_roll_back, |ui| {
-                    rollback = button(ui, tr!("dialogs-recovery-rollback"), Btn::Secondary)
+                    rollback = pill_button(ui, None, tr!("dialogs-recovery-rollback"), Btn::Secondary)
                         .on_hover_text(tr!("dialogs-recovery-rollback-tip"))
                         .on_disabled_hover_text(tr!("dialogs-recovery-rollback-none"))
                         .clicked();
                 });
-                discard = button(ui, tr!("dialogs-recovery-discard"), Btn::Secondary)
+                discard = pill_button(ui, None, tr!("dialogs-recovery-discard"), Btn::Secondary)
                     .on_hover_text(tr!("dialogs-recovery-discard-tip"))
                     .clicked();
             });

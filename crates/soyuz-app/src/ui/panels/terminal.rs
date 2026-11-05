@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use std::time::Duration;
 
-use egui::{Align2, Color32, CornerRadius, FontId, Id, Key, Rect, Sense, Stroke, TextEdit, Ui, UiBuilder, pos2, vec2};
+use egui::{Align2, Color32, Id, Key, Rect, Sense, Stroke, TextEdit, Ui, UiBuilder, pos2, vec2};
 use soyuz_core::config::{Action, KeyChord, KeyContext, Keymap};
 use soyuz_term::{TermTheme, TerminalView};
 
@@ -21,7 +21,9 @@ use crate::ui::widgets::{menu_item, menu_separator};
 
 pub use crate::models::terminal::*;
 
-const STRIP_H: f32 = 30.0;
+fn strip_h() -> f32 {
+    crate::theme::font::grow(30.0)
+}
 
 /// Key handling while the terminal owns the keyboard: only app-level chords that a
 /// shell never needs reach the keymap (Ctrl+`, Ctrl+Tab, Ctrl+Shift+…, Alt+P, F-keys
@@ -111,7 +113,7 @@ thread_local! {
 /// centre, every frame while a request waits): Allow once / Always for this session /
 /// Deny.
 pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
-    use crate::ui::dialogs::conflict::{Btn, button};
+    use crate::ui::widgets::{Btn, pill_button};
     let Some(text) = app.core.ui.terminal.clip_request.clone() else { return };
     let p = palette(ctx);
     let screen = ctx.content_rect();
@@ -126,28 +128,23 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
             egui::Frame::new()
                 .fill(p.bg_surface2)
                 .stroke(Stroke::new(1.0, p.border_strong))
-                .corner_radius(CornerRadius::same(10))
+                .corner_radius(crate::theme::tokens::radius::same(10))
                 .inner_margin(egui::Margin::same(14))
-                .shadow(egui::epaint::Shadow {
-                    offset: [0, 6],
-                    blur: 18,
-                    spread: 0,
-                    color: Color32::from_black_alpha(60),
-                })
+                .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW))
                 .show(ui, |ui| {
                     ui.set_width(width);
                     ui.horizontal(|ui| {
                         ui.label(icons::icon(ph::CLIPBOARD_TEXT, 16.0).color(p.warning));
                         ui.label(
                             egui::RichText::new(tr!("panels-terminal-clip-title"))
-                                .font(FontId::proportional(13.0))
+                                .font(crate::theme::font::ui(13.0))
                                 .color(p.text_primary),
                         );
                     });
                     ui.add_space(6.0);
                     egui::Frame::new()
                         .fill(p.bg_sunken)
-                        .corner_radius(CornerRadius::same(6))
+                        .corner_radius(crate::theme::tokens::radius::same(6))
                         .inner_margin(egui::Margin::symmetric(10, 7))
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
@@ -159,7 +156,9 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
                             };
                             ui.add(
                                 egui::Label::new(
-                                    egui::RichText::new(shown).font(FontId::monospace(11.5)).color(p.text_secondary),
+                                    egui::RichText::new(shown)
+                                        .font(crate::theme::font::mono(11.5))
+                                        .color(p.text_secondary),
                                 )
                                 .truncate(),
                             );
@@ -167,20 +166,20 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
                     ui.add_space(4.0);
                     ui.label(
                         egui::RichText::new(tr!("panels-terminal-clip-warning"))
-                            .font(FontId::proportional(11.0))
+                            .font(crate::theme::font::ui(11.0))
                             .color(p.text_tertiary),
                     );
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        if button(ui, tr!("panels-terminal-clip-deny"), Btn::Ghost).clicked() {
+                        if pill_button(ui, None, tr!("panels-terminal-clip-deny"), Btn::Ghost).clicked() {
                             answer = Some(ClipDecision::Drop);
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
-                            if button(ui, tr!("panels-terminal-clip-allow-once"), Btn::Primary).clicked() {
+                            if pill_button(ui, None, tr!("panels-terminal-clip-allow-once"), Btn::Primary).clicked() {
                                 answer = Some(ClipDecision::Copy);
                             }
-                            if button(ui, tr!("panels-terminal-clip-always"), Btn::Secondary)
+                            if pill_button(ui, None, tr!("panels-terminal-clip-always"), Btn::Secondary)
                                 .on_hover_text(tr!("panels-terminal-clip-always-tip"))
                                 .clicked()
                             {
@@ -206,7 +205,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let Some(active) = app.core.ui.terminal.active_id(owner) else { return };
 
     // ---- session strip ----
-    let strip = Rect::from_min_size(rect.min + vec2(8.0, 0.0), vec2(rect.width() - 16.0, STRIP_H));
+    let strip = Rect::from_min_size(rect.min + vec2(8.0, 0.0), vec2(rect.width() - 16.0, strip_h()));
     let mut x = strip.left();
     let mut to_close = None;
     let mut to_activate = None;
@@ -219,10 +218,10 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         };
         let is_active = *id == active;
         let renaming = app.core.ui.terminal.renaming.as_ref().filter(|(rid, _)| rid == id).map(|(_, t)| t.clone());
-        let font = FontId::proportional(12.0);
+        let font = crate::theme::font::ui(12.0);
         let text_w = ui.painter().layout_no_wrap(label.clone(), font.clone(), p.text_primary).size().x.min(180.0);
         let w = if renaming.is_some() { 160.0 } else { text_w + 52.0 };
-        let r = Rect::from_min_size(pos2(x, strip.top() + 3.0), vec2(w, STRIP_H - 6.0));
+        let r = Rect::from_min_size(pos2(x, strip.top() + 3.0), vec2(w, strip_h() - 6.0));
         x += w + 4.0;
         let resp = ui.interact(r, Id::unique(("soyuz.term.tab", *id)), Sense::click());
         let hovered = resp.hovered();
@@ -233,11 +232,11 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         } else {
             Color32::TRANSPARENT
         };
-        ui.painter().rect_filled(r, CornerRadius::same(6), fill);
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(6), fill);
         if is_active {
             ui.painter().rect_filled(
                 Rect::from_min_max(pos2(r.left() + 8.0, r.bottom() - 2.0), pos2(r.right() - 8.0, r.bottom())),
-                CornerRadius::same(1),
+                crate::theme::tokens::radius::same(1),
                 p.accent,
             );
         }
@@ -271,7 +270,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         let close = ui.interact(close_r, Id::unique(("soyuz.term.close", *id)), Sense::click());
         if hovered || close.hovered() || is_active {
             if close.hovered() {
-                ui.painter().rect_filled(close_r, CornerRadius::same(4), p.bg_surface3);
+                ui.painter().rect_filled(close_r, crate::theme::tokens::radius::same(4), p.bg_surface3);
             }
             ui.painter().text(close_r.center(), Align2::CENTER_CENTER, ph::X, icons::font(11.0), p.text_tertiary);
         }
@@ -311,7 +310,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let presp =
         ui.interact(plus, Id::unique("soyuz.term.new"), Sense::click()).on_hover_text(tr!("panels-terminal-new"));
     if presp.hovered() {
-        ui.painter().rect_filled(plus, CornerRadius::same(5), p.bg_surface2);
+        ui.painter().rect_filled(plus, crate::theme::tokens::radius::same(5), p.bg_surface2);
     }
     ui.painter().text(plus.center(), Align2::CENTER_CENTER, ph::PLUS, icons::font(13.0), p.text_secondary);
     add_session |= presp.clicked();
@@ -321,7 +320,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         .interact(ext, Id::unique("soyuz.term.external"), Sense::click())
         .on_hover_text(tr!("panels-terminal-open-external"));
     if eresp.hovered() {
-        ui.painter().rect_filled(ext, CornerRadius::same(5), p.bg_surface2);
+        ui.painter().rect_filled(ext, crate::theme::tokens::radius::same(5), p.bg_surface2);
     }
     ui.painter().text(ext.center(), Align2::CENTER_CENTER, ph::ARROW_SQUARE_OUT, icons::font(13.0), p.text_secondary);
     external |= eresp.clicked();
@@ -332,7 +331,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             pos2(ext.left() - 10.0, strip.center().y),
             Align2::RIGHT_CENTER,
             tr!("panels-terminal-busy"),
-            FontId::proportional(11.0),
+            crate::theme::font::ui(11.0),
             p.warning,
         );
         ctx.request_repaint_after(Duration::from_millis(500));
@@ -348,7 +347,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         }
         cache.as_ref().map(|(_, _, t)| t.clone()).unwrap_or_default()
     });
-    ui.painter().rect_filled(term_rect, CornerRadius::same(6), theme.bg);
+    ui.painter().rect_filled(term_rect, crate::theme::tokens::radius::same(6), theme.bg);
     let inner = term_rect.shrink2(vec2(8.0, 6.0));
     // Clicking anywhere else gives the keyboard back to the file view.
     let (pressed, ptr) = ui.input(|i| (i.pointer.any_pressed(), i.pointer.interact_pos()));
@@ -410,7 +409,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                         "panels-terminal-shell-failed",
                         error = s.error.clone().unwrap_or_else(|| tr!("panels-terminal-unknown-error").to_string())
                     ),
-                    FontId::proportional(12.0),
+                    crate::theme::font::ui(12.0),
                     p.text_secondary,
                 );
             }
@@ -419,7 +418,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     if focused {
         ui.painter().rect_stroke(
             term_rect,
-            CornerRadius::same(6),
+            crate::theme::tokens::radius::same(6),
             Stroke::new(1.0, p.accent.gamma_multiply(0.45)),
             egui::StrokeKind::Inside,
         );

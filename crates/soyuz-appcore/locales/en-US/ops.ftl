@@ -22,6 +22,7 @@ ops-terminal-failed = Couldn't open a terminal
 # $name: folder name.
 ops-favorite-added = Added “{ $name }” to Favorites
 ops-view-applied = View applied to all folders
+ops-view-restored = Folder views restored
 
 ## Job titles (cards, toasts, history). $state: "active" (in progress) | "done".
 ## $what: “name” for one item, otherwise "1,204 items". $dest: folder path.
@@ -188,6 +189,8 @@ ops-still-undoing = That operation is still being undone
 ops-nothing-to-redo = Nothing to redo
 ops-history-empty = The history is already empty
 ops-not-available = Not available right now
+ops-relist-failed = Couldn't refresh this folder; showing what was there before
+ops-listing-incomplete = This folder could only be listed partly
 
 ## Drag and drop. $target: the drop target's name (quoted folder name).
 

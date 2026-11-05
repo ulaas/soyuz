@@ -245,6 +245,28 @@ pub struct Appearance {
     pub icon_pack: String,
     /// On-disk thumbnail cache in `thumbs/` (MiB; 0 = off). Thumbnails survive restarts.
     pub thumb_disk_cache_mib: u64,
+    /// How names and paths too long for their space are cut: `keep_extension`,
+    /// `middle` or `end`.
+    pub name_truncation: NameTruncation,
+    /// Hovering a file whose name was cut shows the whole name.
+    pub name_tooltips: bool,
+    /// New profiles start with the card of first steps (the palette's Welcome tips
+    /// brings it back either way).
+    pub welcome_tips: bool,
+}
+
+/// `[appearance] name_truncation`: where a name too long for its space loses characters.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NameTruncation {
+    /// File names keep their start and extension (`report-fin….pdf`); folders and paths
+    /// are cut in the middle.
+    #[default]
+    KeepExtension,
+    /// Everything is cut in the middle (`report-…al-v3.pdf`).
+    Middle,
+    /// Everything is cut at the end (`report-final…`).
+    End,
 }
 
 /// `[appearance] backdrop`: the system material drawn behind the window (Windows 11).
@@ -607,6 +629,10 @@ pub struct OpenSection {
     /// extension) opens Open with… on Enter / double-click instead of an error; off = the
     /// error notification.
     pub choose_when_unknown: bool,
+    /// Open with… for a type no application is registered for starts with "Always use this
+    /// app" ticked, so the program you pick opens that type from then on; off = it starts
+    /// unticked and every file of the type asks again.
+    pub always_for_unknown: bool,
     /// Enter / double-click on a native program (Linux: an executable ELF binary or
     /// AppImage) runs it, in its own folder, ahead of `default_apps`; off = it opens like
     /// any other file. Executable scripts and shared libraries are never run.
@@ -622,6 +648,10 @@ pub struct OpenSection {
     /// Default applications by file type: the first rule naming the file's extension wins;
     /// files without a rule open with the system's default application.
     pub default_apps: Vec<DefaultApp>,
+    /// Programs picked by path in Open with… (Browse, or typed), newest first, at most
+    /// [`OpenSection::MAX_PROGRAMS`]: listed there for every file. Written by Soyuz when
+    /// `remember_choice` is on; Settings removes them.
+    pub programs: Vec<DefaultApp>,
     /// The application last chosen in Open with…, by extension (its `id`, else its program
     /// path; `"."` for files without an extension). Written by Soyuz.
     pub last_used: BTreeMap<String, String>,
@@ -672,6 +702,16 @@ impl OpenSection {
     /// The key (in `extensions` and `last_used`) of files without an extension.
     pub const NO_EXTENSION: &'static str = ".";
 
+    /// How many programs [`OpenSection::programs`] keeps.
+    pub const MAX_PROGRAMS: usize = 16;
+
+    /// Keep `app` first in [`OpenSection::programs`] (once, the oldest beyond the limit go).
+    pub fn remember_program(&mut self, app: DefaultApp) {
+        self.programs.retain(|p| p.program != app.program);
+        self.programs.insert(0, DefaultApp { extensions: Vec::new(), ..app });
+        self.programs.truncate(Self::MAX_PROGRAMS);
+    }
+
     /// The extension of `name`: the last one, lowercase (`None` for `README` or
     /// `.bashrc`).
     pub fn ext_of(name: &str) -> Option<String> {
@@ -700,6 +740,23 @@ impl OpenSection {
     pub fn rule_for(&self, key: &str) -> Option<&DefaultApp> {
         let key = Self::norm_key(key);
         self.default_apps.iter().find(|r| r.extensions.iter().any(|e| Self::norm_key(e) == key))
+    }
+
+    /// [`Self::set_default`] for the key of the file `name`, so that the choice also
+    /// reaches this file: a rule naming a longer extension of it (`tar.gz` for `x.tar.gz`,
+    /// choosing for `gz`) would otherwise keep answering [`Self::app_for`], so that
+    /// extension leaves its rule too.
+    pub fn set_default_for(&mut self, name: &str, app: Option<DefaultApp>) {
+        let key = Self::key_of(name);
+        let lower = name.to_lowercase();
+        for r in &mut self.default_apps {
+            r.extensions.retain(|e| {
+                let e = Self::norm_key(e);
+                e == key || e == Self::NO_EXTENSION || !lower.ends_with(&format!(".{e}"))
+            });
+        }
+        self.default_apps.retain(|r| !r.extensions.is_empty());
+        self.set_default(&key, app);
     }
 
     /// Make `app` the default for `ext` (an extension or [`Self::NO_EXTENSION`]; `None`:
@@ -828,7 +885,8 @@ pub struct Jobs {
     pub copy_duplicates: DuplicatesPref,
     /// Finished jobs kept in the history (for undo / redo).
     pub history_limit: usize,
-    /// When a volume has no trash: `ask`, delete `permanent`ly or `skip`.
+    /// When a volume has no trash: `ask`, delete `permanent`ly (still asking while
+    /// `general.confirm_permanent_delete` is on) or `skip`.
     pub trash_unsupported: TrashUnsupportedPolicy,
     /// Open the activity panel when a job runs for more than a second.
     pub auto_open_activity: bool,
@@ -1180,7 +1238,8 @@ pub enum EditorDock {
 pub struct Git {
     /// Show the git status column and badges inside repositories.
     pub status_column: bool,
-    /// Re-read git status at most this often (seconds).
+    /// Re-read git status this often while the repository is on screen (seconds). A fallback: changes in an open
+    /// folder or in the repository's git directory refresh it at once.
     pub refresh_secs: u64,
 }
 

@@ -6,15 +6,15 @@
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use egui::{Align, FontId, Key, Layout, Margin, RichText, TextEdit, Ui};
+use egui::{Align, Key, Layout, Margin, RichText, TextEdit, Ui};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::models::devices::{is_bitlocker, submit_unlock};
 
-use super::conflict::{Btn, button};
 use super::{Dialog, DialogCtx};
 use crate::state::pane::PaneId;
 use crate::theme::{icons::ph, palette};
+use crate::ui::widgets::{Btn, pill_button};
 
 pub struct UnlockVolumeDialog {
     object: String,
@@ -140,21 +140,21 @@ impl Dialog for UnlockVolumeDialog {
         });
         ui.add_space(6.0);
         if let Some(e) = &self.error {
-            ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));
+            ui.label(RichText::new(e).font(crate::theme::font::ui(11.5)).color(p.danger));
         } else if working {
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
                 crate::ui::widgets::spinner(ui, r.center(), 5.0, p.accent);
                 ui.label(
                     RichText::new(tr!("dialogs-unlock-working"))
-                        .font(FontId::proportional(11.5))
+                        .font(crate::theme::font::ui(11.5))
                         .color(p.text_secondary),
                 );
             });
         } else if self.bitlocker() {
             ui.label(
                 RichText::new(tr!("dialogs-unlock-recovery-note"))
-                    .font(FontId::proportional(11.5))
+                    .font(crate::theme::font::ui(11.5))
                     .color(p.text_tertiary),
             );
         }
@@ -163,10 +163,10 @@ impl Dialog for UnlockVolumeDialog {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let ok = ui.add_enabled_ui(!working && !self.pass.is_empty(), |ui| {
-                button(ui, tr!("dialogs-unlock-button"), Btn::Primary)
+                pill_button(ui, None, tr!("dialogs-unlock-button"), Btn::Primary)
             });
             submit |= ok.inner.clicked();
-            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+            cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if submit && !working && !self.pass.is_empty() {
             // Move the buffer out (no copy); a recovery key is normalized to its dashed form.

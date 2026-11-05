@@ -9,9 +9,8 @@
 //! `crate::models::batch_rename::BatchRenameModel`; the engine lives in `crate::rename`;
 //! the result is one undoable `Rename` job.
 
-use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, vec2};
+use egui::{Align, Layout, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, vec2};
 
-use super::conflict::{Btn, button};
 use super::properties_widgets::{badge, caption, check, small_icon_button};
 use super::{Dialog, DialogCtx};
 use crate::app::SoyuzApp;
@@ -22,6 +21,7 @@ use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons, icons::ph, palette};
 use crate::ui::toasts::Toast;
 use crate::ui::widgets::menu_item;
+use crate::ui::widgets::{Btn, pill_button};
 
 pub fn open(app: &mut SoyuzApp) {
     match BatchRenameModel::open(&app.core) {
@@ -55,7 +55,7 @@ impl BatchRenameDialog {
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let presets_btn = button(ui, tr!("dialogs-rename-presets"), Btn::Secondary);
+                let presets_btn = pill_button(ui, None, tr!("dialogs-rename-presets"), Btn::Secondary);
                 crate::ui::native::popup::Menu::menu(&presets_btn).show(|ui| {
                     ui.set_min_width(260.0);
                     crate::ui::widgets::menu_caption(ui, tr!("dialogs-rename-builtin"));
@@ -117,7 +117,7 @@ impl BatchRenameDialog {
             egui::Frame::new()
                 .fill(egui::Color32::TRANSPARENT)
                 .stroke(Stroke::new(1.0, p.border_subtle))
-                .corner_radius(CornerRadius::same(radius::CARD))
+                .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
                 .inner_margin(Margin::symmetric(10, 8))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -125,7 +125,7 @@ impl BatchRenameDialog {
                         check(ui, &mut entry.enabled, "");
                         ui.label(
                             RichText::new(format!("{}. {}", i + 1, entry.rule.title()))
-                                .font(crate::ui::views::flow::semibold(12.5))
+                                .font(crate::theme::font::semibold(12.5))
                                 .color(if entry.enabled { p.text_primary } else { p.text_tertiary }),
                         );
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -152,7 +152,7 @@ impl BatchRenameDialog {
         if let Some((a, b)) = swap {
             self.m.spec.rules.swap(a, b);
         }
-        let add = button(ui, tr!("dialogs-rename-add-rule"), Btn::Secondary);
+        let add = pill_button(ui, None, tr!("dialogs-rename-add-rule"), Btn::Secondary);
         crate::ui::native::popup::Menu::menu(&add).show(|ui| {
             ui.set_min_width(220.0);
             for r in Rule::templates() {
@@ -176,7 +176,7 @@ impl BatchRenameDialog {
                 group = "$1",
                 named = "${name}"
             ))
-            .font(FontId::proportional(11.0))
+            .font(crate::theme::font::ui(11.0))
             .color(p.text_tertiary),
         );
     }
@@ -185,13 +185,13 @@ impl BatchRenameDialog {
         let p = palette(ui.ctx());
         caption(ui, tr!("dialogs-rename-one-per-line"));
         ui.label(
-            RichText::new(tr!("dialogs-rename-editor-hint")).font(FontId::proportional(11.0)).color(p.text_tertiary),
+            RichText::new(tr!("dialogs-rename-editor-hint")).font(crate::theme::font::ui(11.0)).color(p.text_tertiary),
         );
         ui.add_space(4.0);
         egui::ScrollArea::vertical().id_salt("br_editor").max_height(420.0).show(ui, |ui| {
             ui.add(
                 TextEdit::multiline(&mut self.m.editor)
-                    .font(FontId::monospace(12.0))
+                    .font(crate::theme::font::mono(12.0))
                     .desired_width(f32::INFINITY)
                     .desired_rows(20)
                     .code_editor(),
@@ -213,19 +213,19 @@ impl BatchRenameDialog {
             egui::pos2(h.left() + 26.0, h.center().y),
             egui::Align2::LEFT_CENTER,
             tr!("dialogs-rename-current-name"),
-            FontId::proportional(11.0),
+            crate::theme::font::ui(11.0),
             p.text_tertiary,
         );
         ui.painter().text(
             egui::pos2(h.left() + 26.0 + col + 4.0, h.center().y),
             egui::Align2::LEFT_CENTER,
             tr!("dialogs-conflict-new-name"),
-            FontId::proportional(11.0),
+            crate::theme::font::ui(11.0),
             p.text_tertiary,
         );
         egui::Frame::new()
             .fill(p.bg_sunken)
-            .corner_radius(CornerRadius::same(radius::CARD))
+            .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
             .stroke(Stroke::new(1.0, p.border_subtle))
             .inner_margin(Margin::same(2))
             .show(ui, |ui| {
@@ -243,7 +243,11 @@ impl BatchRenameDialog {
                             }
                             let (glyph, color, tip) = status_style(&row.status, &p);
                             if row.status.is_problem() {
-                                ui.painter().rect_filled(r, CornerRadius::same(4), color.gamma_multiply(0.10));
+                                ui.painter().rect_filled(
+                                    r,
+                                    crate::theme::tokens::radius::same(4),
+                                    color.gamma_multiply(0.10),
+                                );
                             }
                             ui.painter().text(
                                 egui::pos2(r.left() + 12.0, r.center().y),
@@ -265,7 +269,7 @@ impl BatchRenameDialog {
                             let g = crate::ui::widgets::trunc_galley(
                                 ui.painter(),
                                 &old,
-                                FontId::proportional(12.5),
+                                crate::theme::font::ui(12.5),
                                 old_c,
                                 left.width(),
                             );
@@ -280,7 +284,7 @@ impl BatchRenameDialog {
                             let g = crate::ui::widgets::trunc_galley(
                                 ui.painter(),
                                 &shown,
-                                FontId::proportional(12.5),
+                                crate::theme::font::ui(12.5),
                                 new_c,
                                 right.width(),
                             );
@@ -314,7 +318,7 @@ fn status_style(s: &Status, p: &Palette) -> (&'static str, egui::Color32, String
 }
 
 fn chip(ui: &mut Ui, glyph: &str, label: &str, on: bool, p: &Palette) -> egui::Response {
-    let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.5), p.text_primary);
+    let g = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(12.5), p.text_primary);
     let (r, resp) = ui.allocate_exact_size(vec2(g.size().x + 40.0, 28.0), Sense::click());
     let (bg, fg) = if on {
         (p.accent_subtle, p.accent)
@@ -323,11 +327,11 @@ fn chip(ui: &mut Ui, glyph: &str, label: &str, on: bool, p: &Palette) -> egui::R
     } else {
         (egui::Color32::TRANSPARENT, p.text_secondary)
     };
-    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), bg);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), bg);
     if !on {
         ui.painter().rect_stroke(
             r,
-            CornerRadius::same(radius::ROW),
+            crate::theme::tokens::radius::same(radius::ROW),
             Stroke::new(1.0, p.border_subtle),
             StrokeKind::Inside,
         );
@@ -339,7 +343,7 @@ fn chip(ui: &mut Ui, glyph: &str, label: &str, on: bool, p: &Palette) -> egui::R
         icons::font(14.0),
         fg,
     );
-    let tg = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.5), fg);
+    let tg = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(12.5), fg);
     ui.painter().galley(egui::pos2(r.left() + 30.0, r.center().y - tg.size().y / 2.0), tg, fg);
     resp
 }
@@ -360,7 +364,7 @@ fn rule_icon(r: &Rule) -> &'static str {
 /// Width of the label column of the rule editors: fits the longest label of the
 /// current language (Turkish labels are longer than the English ones).
 fn label_w(ui: &Ui) -> f32 {
-    let font = FontId::proportional(11.5);
+    let font = crate::theme::font::ui(11.5);
     let labels = [
         tr!("dialogs-rename-find"),
         tr!("dialogs-rename-replace"),
@@ -385,13 +389,13 @@ fn field(ui: &mut Ui, label: &str, text: &mut String, hint: &str, mono: bool) {
             egui::pos2(r.left(), r.center().y),
             egui::Align2::LEFT_CENTER,
             label,
-            FontId::proportional(11.5),
+            crate::theme::font::ui(11.5),
             p.text_tertiary,
         );
         let mut te =
             TextEdit::singleline(text).hint_text(hint).desired_width(f32::INFINITY).margin(Margin::symmetric(8, 4));
         if mono {
-            te = te.font(FontId::monospace(12.0));
+            te = te.font(crate::theme::font::mono(12.0));
         }
         ui.add(te);
     });
@@ -406,7 +410,7 @@ fn position_editor(ui: &mut Ui, at: &mut Position) {
             egui::pos2(r.left(), r.center().y),
             egui::Align2::LEFT_CENTER,
             tr!("dialogs-rename-position"),
-            FontId::proportional(11.5),
+            crate::theme::font::ui(11.5),
             p.text_tertiary,
         );
         let is_idx = matches!(at, Position::Index(_));
@@ -550,9 +554,9 @@ impl Dialog for BatchRenameDialog {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 let enabled = self.m.can_apply();
                 let label = tr!("dialogs-rename-go", count = ok);
-                let r = ui.add_enabled_ui(enabled, |ui| button(ui, &label, Btn::Primary)).inner;
+                let r = ui.add_enabled_ui(enabled, |ui| pill_button(ui, None, &label, Btn::Primary)).inner;
                 go = r.clicked() && enabled;
-                cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+                cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
             });
         });
         if go {

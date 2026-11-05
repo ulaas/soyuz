@@ -3,7 +3,7 @@
 //! the owner and group can be changed (`chown`, applied by the dialog's Apply) when the
 //! user is permitted; names are resolved through `/etc/passwd` and `/etc/group`.
 
-use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, TextEdit, Ui};
+use egui::{Align, Layout, Margin, RichText, TextEdit, Ui};
 use soyuz_fs::{AccessRights, SecurityInfo};
 
 use super::properties_widgets::{badge, caption, kv_row, kv_row_with};
@@ -108,12 +108,16 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
             [(tr!("dialogs-mode-owner"), &mut edit.owner), (tr!("dialogs-mode-group"), &mut edit.group)]
         {
             kv_row_with(ui, label, |ui| {
-                ui.add(TextEdit::singleline(text).desired_width(200.0).margin(Margin::symmetric(8, 4)));
+                ui.add(
+                    TextEdit::singleline(text)
+                        .desired_width(crate::theme::font::grow(200.0))
+                        .margin(Margin::symmetric(8, 4)),
+                );
             });
         }
         match edit.changes() {
             Err(e) => {
-                ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));
+                ui.label(RichText::new(e).font(crate::theme::font::ui(11.5)).color(p.danger));
             }
             Ok(Some(_)) => {
                 ui.label(
@@ -122,7 +126,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
                     } else {
                         tr!("dialogs-sec-owner-root")
                     })
-                    .font(FontId::proportional(11.5))
+                    .font(crate::theme::font::ui(11.5))
                     .color(p.text_tertiary),
                 );
             }
@@ -139,7 +143,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
     match loaded {
         Err(e) => {
             badge(ui, Some(ph::WARNING), tr!("dialogs-sec-unavailable"), p.warning);
-            ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.text_tertiary));
+            ui.label(RichText::new(e).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
         }
         Ok((info, eff)) => {
             caption(ui, tr!("dialogs-mode-owner"));
@@ -159,7 +163,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
             caption(ui, tr!("dialogs-sec-entries"));
             egui::Frame::new()
                 .fill(p.bg_surface2)
-                .corner_radius(CornerRadius::same(crate::theme::tokens::radius::CARD))
+                .corner_radius(crate::theme::tokens::radius::same(crate::theme::tokens::radius::CARD))
                 .inner_margin(Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -178,7 +182,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
                                     .iter()
                                     .map(|l| {
                                         ui.painter()
-                                            .layout_no_wrap(l.to_string(), FontId::proportional(11.0), p.text_primary)
+                                            .layout_no_wrap(l.to_string(), crate::theme::font::ui(11.0), p.text_primary)
                                             .size()
                                             .x
                                             + 22.0
@@ -188,7 +192,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
                                         ui.painter()
                                             .layout_no_wrap(
                                                 tr!("dialogs-sec-inherited").to_string(),
-                                                FontId::proportional(10.5),
+                                                crate::theme::font::ui(10.5),
                                                 p.text_tertiary,
                                             )
                                             .size()
@@ -209,7 +213,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
                                     if ace.inherited {
                                         ui.label(
                                             RichText::new(tr!("dialogs-sec-inherited"))
-                                                .font(FontId::proportional(10.5))
+                                                .font(crate::theme::font::ui(10.5))
                                                 .color(p.text_tertiary),
                                         );
                                     }
@@ -225,7 +229,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
             let note =
                 if cfg!(windows) { tr!("dialogs-sec-read-only-view") } else { tr!("dialogs-sec-read-only-view-unix") };
             ui.add(
-                egui::Label::new(RichText::new(note).font(FontId::proportional(11.0)).color(p.text_tertiary)).wrap(),
+                egui::Label::new(RichText::new(note).font(crate::theme::font::ui(11.0)).color(p.text_tertiary)).wrap(),
             );
         }
     }

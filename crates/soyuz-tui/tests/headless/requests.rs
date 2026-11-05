@@ -153,14 +153,19 @@ fn open_with_default(data: PathBuf) {
     let mut app = common::new_app(c, &data);
     app.core.cmds.push(Cmd::ChooseOpenWith(data.join("a.txt")));
     // Kept without opening anything: `.rs` gets the tool as its default and last used.
-    app.core.cmds.push(Cmd::RememberOpenWith { ext: "rs".into(), app: model::custom_app(&tool), always: true });
-    let tool_text = tool.display().to_string();
+    app.core.cmds.push(Cmd::RememberOpenWith {
+        name: "main.rs".into(),
+        ext: "rs".into(),
+        app: Box::new(model::custom_app(&tool)),
+        always: true,
+    });
     let steps = vec![
         Step::new(
-            "the default in the program field, Always ticked",
+            "the default listed, the field empty, Always ticked",
             move |a| {
                 let Some(d) = a.view().and_then(|v| v.dialog.as_ref()) else { return false };
-                let text = matches!(&d.fields.first().map(|f| &f.kind), Some(FieldVmKind::Text { text, .. }) if *text == tool_text);
+                let text = matches!(&d.fields.first().map(|f| &f.kind), Some(FieldVmKind::Text { text, .. }) if text.is_empty())
+                    && d.list.iter().any(|r| r.text.contains("tool"));
                 let always =
                     d.fields.get(1).is_some_and(|f| f.kind == FieldVmKind::Check(true) && f.label.contains(".txt"));
                 text && always

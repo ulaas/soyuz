@@ -7,7 +7,7 @@ pub mod activity;
 pub mod activity_history;
 pub mod terminal;
 
-use egui::{Align2, CornerRadius, FontId, Frame, Margin, Panel, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Frame, Margin, Panel, Sense, Stroke, Ui, pos2, vec2};
 
 use soyuz_core::config::ActivityPlacement;
 
@@ -46,7 +46,7 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                     .inner_margin(Margin::same(8))
                     .fill(p.bg_surface1)
                     .stroke(Stroke::new(1.0, p.border_strong))
-                    .corner_radius(CornerRadius::same(radius::MODAL)),
+                    .corner_radius(crate::theme::tokens::radius::same(radius::MODAL)),
             )
             .show(root.ctx(), |ui| {
                 let body = ui.available_rect_before_wrap();
@@ -67,10 +67,10 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 6 }))
         .show(root, |ui| {
             let card = ui.available_rect_before_wrap();
-            ui.painter().rect_filled(card, CornerRadius::same(radius::MODAL), p.bg_surface1);
+            ui.painter().rect_filled(card, crate::theme::tokens::radius::same(radius::MODAL), p.bg_surface1);
             ui.painter().rect_stroke(
                 card,
-                CornerRadius::same(radius::MODAL),
+                crate::theme::tokens::radius::same(radius::MODAL),
                 Stroke::new(1.0, p.border_subtle),
                 egui::StrokeKind::Inside,
             );
@@ -85,14 +85,14 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                 pos2(card.left() + 36.0, card.top() + 19.0),
                 Align2::LEFT_CENTER,
                 tr!("panels-tab-activity"),
-                FontId::proportional(12.5),
+                crate::theme::font::ui(12.5),
                 p.text_primary,
             );
             let x = egui::Rect::from_center_size(pos2(card.right() - 20.0, card.top() + 19.0), vec2(24.0, 24.0));
             let xr = ui.interact(x, ui.scope_id().with("activity.close"), Sense::click());
             crate::ui::a11y::button(&xr, tr!("panels-close-activity"));
             if xr.hovered() {
-                ui.painter().rect_filled(x, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+                ui.painter().rect_filled(x, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface2);
             }
             ui.painter().text(x.center(), Align2::CENTER_CENTER, ph::X, icons::font(13.0), p.text_tertiary);
             close = xr.clicked();
@@ -130,10 +130,10 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 8, right: 8, top: 0, bottom: 6 }))
         .show(root, |ui| {
             let card = ui.available_rect_before_wrap();
-            ui.painter().rect_filled(card, CornerRadius::same(radius::MODAL), p.bg_surface1);
+            ui.painter().rect_filled(card, crate::theme::tokens::radius::same(radius::MODAL), p.bg_surface1);
             ui.painter().rect_stroke(
                 card,
-                CornerRadius::same(radius::MODAL),
+                crate::theme::tokens::radius::same(radius::MODAL),
                 Stroke::new(1.0, p.border_subtle),
                 egui::StrokeKind::Inside,
             );
@@ -142,7 +142,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
             for &tab in &tabs {
                 let label_w = ui
                     .painter()
-                    .layout_no_wrap(tab.label().to_string(), FontId::proportional(12.5), p.text_primary)
+                    .layout_no_wrap(tab.label().to_string(), crate::theme::font::ui(12.5), p.text_primary)
                     .size()
                     .x;
                 let tab_w = (label_w + 44.0).max(108.0);
@@ -151,9 +151,13 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                 let active = app.core.ui.bottom.tab == tab;
                 crate::ui::a11y::tab(&resp, tab.label(), active);
                 if active {
-                    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
+                    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
                 } else if resp.hovered() {
-                    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2.gamma_multiply(0.6));
+                    ui.painter().rect_filled(
+                        r,
+                        crate::theme::tokens::radius::same(radius::ROW),
+                        p.bg_surface2.gamma_multiply(0.6),
+                    );
                 }
                 let c = if active { p.text_primary } else { p.text_secondary };
                 ui.painter().text(
@@ -167,7 +171,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                     pos2(r.left() + 30.0, r.center().y),
                     Align2::LEFT_CENTER,
                     tab.label(),
-                    FontId::proportional(12.5),
+                    crate::theme::font::ui(12.5),
                     c,
                 );
                 if resp.clicked() {
@@ -179,7 +183,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
             let cresp = ui.interact(close, ui.scope_id().with("bottom.close"), Sense::click());
             crate::ui::a11y::button(&cresp, tr!("panels-close-panel"));
             if cresp.hovered() {
-                ui.painter().rect_filled(close, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+                ui.painter().rect_filled(close, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface2);
             }
             ui.painter().text(close.center(), Align2::CENTER_CENTER, ph::X, icons::font(13.0), p.text_tertiary);
             if cresp.clicked() {

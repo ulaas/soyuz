@@ -242,6 +242,18 @@ impl ViewMemory {
         self.dirty = true;
     }
 
+    /// What [`ViewMemory::restore`] needs to undo [`ViewMemory::apply_to_all`].
+    pub fn snapshot(&self) -> ViewMemory {
+        ViewMemory { default: self.default.clone(), folders: self.folders.clone(), dirty: false }
+    }
+
+    /// Back to a [`ViewMemory::snapshot`].
+    pub fn restore(&mut self, snapshot: ViewMemory) {
+        self.default = snapshot.default;
+        self.folders = snapshot.folders;
+        self.dirty = true;
+    }
+
     pub fn load(path: &Path) -> ViewMemory {
         match std::fs::read_to_string(path) {
             Ok(text) => {
@@ -274,6 +286,23 @@ impl ViewMemory {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apply_to_all_can_be_undone() {
+        let mut m = ViewMemory::default();
+        let loc = Location::Dir("/home/u/src".into());
+        let custom = ViewState { zoom: 200, ..ViewState::default() };
+        m.remember(&loc, &custom);
+        let before = m.snapshot();
+        m.dirty = false;
+        m.apply_to_all(&ViewState::default());
+        assert!(m.folders.is_empty());
+        m.dirty = false;
+        m.restore(before);
+        assert!(m.dirty, "the restored views get saved");
+        assert_eq!(m.default, None);
+        assert_eq!(m.lookup(&loc, &ViewState::default()).zoom, 200);
+    }
 
     #[test]
     fn keys_normalize() {

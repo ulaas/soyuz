@@ -1,19 +1,23 @@
 //! Stacked, animated toast notifications (bottom-right). Toasts auto-dismiss (paused
-//! while hovered) and may carry one action button whose [`Action`] is dispatched through
-//! the normal action pipeline — e.g. `Action::Undo` for "Moved 3 items · Undo".
+//! while hovered) and may carry one button whose command ([`Toast::command`]) runs through
+//! the normal pipeline — e.g. undoing the entry a "Moved 3 items · Undo" names.
 
-use egui::{Align2, Area, Color32, CornerRadius, FontId, Id, Order, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
-use soyuz_core::config::Action;
+use egui::{Align2, Area, Id, Order, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 
+use crate::cmd::Cmd;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::widgets::trunc_galley;
+use crate::ui::widgets::{Btn, pill_at, pill_width, trunc_galley};
 
 pub use crate::models::toasts::*;
 
 /// Every toast has the same footprint: one title line and an optional body line.
-const WIDTH: f32 = 360.0;
-const HEIGHT: f32 = 56.0;
+fn width() -> f32 {
+    crate::theme::font::grow(360.0)
+}
+fn height() -> f32 {
+    crate::theme::font::grow(56.0)
+}
 const GAP: f32 = 8.0;
 const MARGIN: f32 = 12.0;
 const ANIM: f64 = 0.2;
@@ -24,17 +28,16 @@ fn one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn semibold(size: f32) -> FontId {
-    FontId::new(size, egui::FontFamily::Name(crate::theme::fonts::SEMIBOLD.into()))
-}
+use crate::theme::font::semibold;
 
-/// Draw the stack anchored to the bottom-right of `area`. Returns actions clicked.
+/// Draw the stack anchored to the bottom-right of `area`. Returns the commands of the
+/// buttons clicked.
 ///
 /// Every toast has one fixed size: text that does not fit is cut with an ellipsis
 /// and shown whole in a tooltip. Hovering a toast pauses its timer (the progress line
 /// at the bottom stops) and reveals the close button. Older toasts glide up when a
 /// new one arrives and settle when one below them closes (reduced motion: jumps).
-pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion: bool) -> Vec<Action> {
+pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion: bool) -> Vec<Cmd> {
     let mut clicked = Vec::new();
     if toasts.live.is_empty() {
         return clicked;
@@ -42,7 +45,7 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
     let now = ctx.input(|i| i.time);
     let dt = ctx.input(|i| i.stable_dt).min(0.1);
     let p = palette(ctx);
-    let width = WIDTH.min(area.width() - 2.0 * MARGIN).max(220.0);
+    let width = width().min(area.width() - 2.0 * MARGIN).max(220.0);
     let mut bottom = area.bottom() - MARGIN;
     let start = toasts.live.len().saturating_sub(MAX_VISIBLE);
     let mut any_animating = false;
@@ -67,13 +70,13 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
 
         let id = Id::unique("soyuz.toast").with(l.id);
         // Stack slot: a closing toast hands its slot back as it fades.
-        let target_top = bottom - HEIGHT;
-        bottom -= (HEIGHT + GAP) * vanish;
+        let target_top = bottom - height();
+        bottom -= (height() + GAP) * vanish;
         let top = if reduced_motion { target_top } else { crate::ui::motion::spring_to(ctx, id.with("y"), target_top) };
         // Enter: rise and fade in. Exit: drift right and fade out.
         let dy = (1.0 - appear) * 14.0;
         let dx = (1.0 - vanish) * 28.0;
-        let rect = Rect::from_min_size(pos2(area.right() - width - MARGIN + dx, top + dy), vec2(width, HEIGHT));
+        let rect = Rect::from_min_size(pos2(area.right() - width - MARGIN + dx, top + dy), vec2(width, height()));
 
         let mut close = false;
         Area::new(id).order(Order::Tooltip).fixed_pos(rect.min).interactable(true).show(ctx, |ui| {
@@ -98,20 +101,15 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
                 ToastKind::Warning => (ph::WARNING, p.warning),
                 ToastKind::Error => (ph::WARNING_CIRCLE, p.danger),
             };
-            let card = CornerRadius::same(radius::CARD);
+            let card = crate::theme::tokens::radius::same(radius::CARD);
             let painter = ui.painter().clone();
-            let shadow = egui::epaint::Shadow {
-                offset: [0, 4],
-                blur: 18,
-                spread: 0,
-                color: Color32::from_black_alpha((p.shadow_alpha * 200.0) as u8),
-            };
+            let shadow = p.shadow(crate::theme::tokens::shadow::POPUP);
             painter.add(shadow.as_shape(r, card));
             painter.rect_filled(r, card, p.bg_surface3);
             // Accent stripe along the leading edge.
             let stripe =
                 Rect::from_min_max(pos2(r.left() + 1.0, r.top() + 12.0), pos2(r.left() + 4.0, r.bottom() - 12.0));
-            painter.rect_filled(stripe, CornerRadius::same(2), color);
+            painter.rect_filled(stripe, crate::theme::tokens::radius::same(2), color);
             painter.rect_stroke(r, card, Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
 
             // Kind icon in a tinted chip.
@@ -124,25 +122,12 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
             // the action button sits left of it.
             let close_r = Rect::from_center_size(pos2(r.right() - 20.0, cy), vec2(24.0, 24.0));
             let mut text_right = close_r.left() - 4.0;
-            if let Some((label, action)) = &l.toast.action {
-                let g = painter.layout_no_wrap(label.clone(), semibold(12.5), p.accent);
-                let w = (g.size().x + 22.0).max(56.0);
+            let label = l.toast.cmd.as_ref().map(|b| &b.0).or(l.toast.action.as_ref().map(|a| &a.0));
+            if let (Some(label), Some(cmd)) = (label, l.toast.command()) {
+                let w = pill_width(ui, label);
                 let ar = Rect::from_center_size(pos2(close_r.left() - 4.0 - w / 2.0, cy), vec2(w, 26.0));
-                let aresp = ui.interact(ar, id.with("a"), Sense::click());
-                crate::ui::a11y::button(&aresp, label);
-                let fill = p.accent.gamma_multiply(if aresp.hovered() { 0.24 } else { 0.13 });
-                painter.rect_filled(ar, CornerRadius::same(radius::ROW), fill);
-                if aresp.has_focus() {
-                    painter.rect_stroke(
-                        ar,
-                        CornerRadius::same(radius::ROW),
-                        Stroke::new(1.0, p.accent),
-                        StrokeKind::Outside,
-                    );
-                }
-                painter.galley(ar.center() - g.size() / 2.0, g, p.accent);
-                if aresp.clicked() {
-                    clicked.push(action.clone());
+                if pill_at(ui, ar, id.with("a"), label, Btn::AccentSoft).clicked() {
+                    clicked.push(cmd);
                     close = true;
                 }
                 text_right = ar.left() - 10.0;
@@ -152,7 +137,7 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
             let show_x = if cresp.has_focus() { 1.0 } else { hover_t };
             if show_x > 0.0 {
                 if cresp.hovered() {
-                    painter.rect_filled(close_r, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+                    painter.rect_filled(close_r, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface2);
                 }
                 let c = if cresp.hovered() { p.text_primary } else { p.text_tertiary };
                 painter.text(
@@ -174,7 +159,7 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
             let body = l.toast.body.as_deref().map(|b| {
                 let line = one_line(b);
                 let reflowed = line != b.trim();
-                (trunc_galley(&painter, &line, FontId::proportional(12.0), p.text_secondary, max_w), reflowed)
+                (trunc_galley(&painter, &line, crate::theme::font::ui(12.0), p.text_secondary, max_w), reflowed)
             });
             let clipped = title.elided || body.as_ref().is_some_and(|(g, reflowed)| g.elided || *reflowed);
             let title_y = if body.is_some() { cy - 9.0 } else { cy };
@@ -191,7 +176,7 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
                     ui.set_max_width(420.0);
                     ui.label(egui::RichText::new(t).font(semibold(13.0)).color(p.text_primary));
                     if let Some(b) = b {
-                        ui.label(egui::RichText::new(b).size(12.0).color(p.text_secondary));
+                        ui.label(egui::RichText::new(b).size(crate::theme::font::px(12.0)).color(p.text_secondary));
                     }
                 });
             }
@@ -215,7 +200,7 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
                 let mut bar = track;
                 bar.set_width(track.width() * frac);
                 let alpha = if hovered { 0.30 } else { 0.60 };
-                painter.rect_filled(bar, CornerRadius::same(1), color.gamma_multiply(alpha));
+                painter.rect_filled(bar, crate::theme::tokens::radius::same(1), color.gamma_multiply(alpha));
             }
         });
         if close && l.closing.is_none() {

@@ -15,10 +15,7 @@
 use std::cell::{Cell, RefCell};
 use std::time::Duration;
 
-use egui::{
-    Align2, Color32, CornerRadius, EventFilter, FontId, Id, Rect, Sense, Stroke, StrokeKind, Ui, UiBuilder, WidgetInfo,
-    pos2, vec2,
-};
+use egui::{Align2, Color32, EventFilter, Id, Rect, Sense, Stroke, StrokeKind, Ui, UiBuilder, WidgetInfo, pos2, vec2};
 use soyuz_appcore::models::player::{self as player, MediaSource, Picture};
 use soyuz_core::EntryInfo;
 use soyuz_core::config::{Config, KeyContext};
@@ -29,11 +26,11 @@ use crate::services::media::MediaInfo;
 use crate::services::preview::{Content, Loaded};
 use crate::services::preview_media::format_duration;
 use crate::services::preview_rich::{Rich, Tex};
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::{motion, radius};
 use crate::theme::{Palette, palette};
 use crate::ui::gfx::TexExt;
-use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{focus_ring, icon_toggle, spinner, trunc_galley};
 
 /// The preview's identity for a file: what the player is opened under.
@@ -280,7 +277,7 @@ pub fn show(ui: &mut Ui, rect: Rect, core: &mut AppCore, m: Media<'_>, big: bool
         (None, None) => {
             let c = video_r.center() - vec2(0.0, if big { 40.0 } else { 24.0 });
             let disc = Rect::from_center_size(c, vec2(96.0, 96.0));
-            painter.rect_filled(disc, CornerRadius::same(22), p.glyph_video.gamma_multiply(0.14));
+            painter.rect_filled(disc, crate::theme::tokens::radius::same(22), p.glyph_video.gamma_multiply(0.14));
             painter.text(c, Align2::CENTER_CENTER, ph::FILM_SLATE, icons::font_fill(46.0), p.glyph_video);
             let tg =
                 trunc_galley(&painter, &m.entry.name, semibold(14.0), Color32::from_gray(225), video_r.width() - 32.0);
@@ -292,7 +289,7 @@ pub fn show(ui: &mut Ui, rect: Rect, core: &mut AppCore, m: Media<'_>, big: bool
             if let Some(n) = m.note.filter(|_| !opened && !pending) {
                 let g = painter.layout(
                     n.to_string(),
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     Color32::from_gray(170),
                     (video_r.width() - 40.0).clamp(80.0, 380.0),
                 );
@@ -313,7 +310,7 @@ pub fn show(ui: &mut Ui, rect: Rect, core: &mut AppCore, m: Media<'_>, big: bool
         painter.text(c - vec2(0.0, 22.0), Align2::CENTER_CENTER, ph::WARNING_CIRCLE, icons::font_fill(30.0), p.danger);
         let g = painter.layout(
             e.clone(),
-            FontId::proportional(12.0),
+            crate::theme::font::ui(12.0),
             Color32::from_gray(230),
             (video_r.width() - 40.0).clamp(80.0, 420.0),
         );
@@ -324,7 +321,7 @@ pub fn show(ui: &mut Ui, rect: Rect, core: &mut AppCore, m: Media<'_>, big: bool
             video_r.center() + vec2(0.0, 30.0),
             Align2::CENTER_CENTER,
             tr!("views-player-opening"),
-            FontId::proportional(11.5),
+            crate::theme::font::ui(11.5),
             Color32::from_gray(200),
         );
         ctx.request_repaint_after(Duration::from_millis(60));
@@ -392,7 +389,7 @@ pub fn show(ui: &mut Ui, rect: Rect, core: &mut AppCore, m: Media<'_>, big: bool
             want_open = Some(true);
         }
     }
-    let mono = FontId::monospace(if big { 12.0 } else { 11.0 });
+    let mono = crate::theme::font::mono(if big { 12.0 } else { 11.0 });
     let time_w = bar.painter().layout_no_wrap("00:00:00".into(), mono.clone(), p.text_secondary).size().x;
     let total = dur.map_or_else(|| "—".to_string(), format_duration);
     let elapsed_w = if dur.is_some_and(|d| d >= 3600.0) { time_w } else { time_w * 0.66 };
@@ -485,18 +482,18 @@ fn scrubber(ui: &mut Ui, width: f32, pos: f64, dur: Option<f64>, buffered: f64, 
         n.set_value(format!("{} / {}", format_duration(pos), dur.map_or_else(|| "—".into(), format_duration)));
     });
     let track = Rect::from_center_size(rect.center(), vec2(rect.width() - 8.0, 4.0));
-    ui.painter().rect_filled(track, CornerRadius::same(2), p.border_strong);
+    ui.painter().rect_filled(track, crate::theme::tokens::radius::same(2), p.border_strong);
     if d > 0.0 {
         let buf_to = ((pos + buffered) / d).clamp(0.0, 1.0) as f32;
         if buf_to > frac {
             let mut b = track;
             b.min.x = track.left() + track.width() * frac;
             b.max.x = track.left() + track.width() * buf_to;
-            ui.painter().rect_filled(b, CornerRadius::same(2), p.text_tertiary.gamma_multiply(0.55));
+            ui.painter().rect_filled(b, crate::theme::tokens::radius::same(2), p.text_tertiary.gamma_multiply(0.55));
         }
         let mut played = track;
         played.set_width(track.width() * frac);
-        ui.painter().rect_filled(played, CornerRadius::same(2), p.accent);
+        ui.painter().rect_filled(played, crate::theme::tokens::radius::same(2), p.accent);
     }
     let hot = resp.hovered() || resp.dragged() || resp.has_focus();
     if hot && d > 0.0 {
@@ -510,17 +507,17 @@ fn scrubber(ui: &mut Ui, width: f32, pos: f64, dur: Option<f64>, buffered: f64, 
         if let Some(ptr) = resp.hover_pos().filter(|_| resp.hovered() || resp.dragged()) {
             let t = at(ptr.x);
             let text = format_duration(t);
-            let g = ui.painter().layout_no_wrap(text, FontId::monospace(11.0), p.text_primary);
+            let g = ui.painter().layout_no_wrap(text, crate::theme::font::mono(11.0), p.text_primary);
             let pill = Rect::from_center_size(
                 pos2(ptr.x.clamp(rect.left() + 24.0, rect.right() - 24.0), rect.top() - 12.0),
                 g.size() + vec2(12.0, 6.0),
             );
             let painter =
                 ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("soyuz.player.hover")));
-            painter.rect_filled(pill, CornerRadius::same(radius::CONTROL), p.bg_surface3);
+            painter.rect_filled(pill, crate::theme::tokens::radius::same(radius::CONTROL), p.bg_surface3);
             painter.rect_stroke(
                 pill,
-                CornerRadius::same(radius::CONTROL),
+                crate::theme::tokens::radius::same(radius::CONTROL),
                 Stroke::new(1.0, p.border_subtle),
                 StrokeKind::Inside,
             );
@@ -607,10 +604,14 @@ pub(super) fn volume_cluster(
     crate::ui::a11y::with(ui.ctx(), resp.id, |n| n.set_value(format!("{shown}%")));
     let t = f32::from(shown) / 100.0;
     let track = Rect::from_center_size(rect.center(), vec2(rect.width() - 12.0, 3.0));
-    ui.painter().rect_filled(track, CornerRadius::same(2), p.border_strong);
+    ui.painter().rect_filled(track, crate::theme::tokens::radius::same(2), p.border_strong);
     let mut filled = track;
     filled.set_width(track.width() * t);
-    ui.painter().rect_filled(filled, CornerRadius::same(2), if muted { p.text_tertiary } else { p.accent });
+    ui.painter().rect_filled(
+        filled,
+        crate::theme::tokens::radius::same(2),
+        if muted { p.text_tertiary } else { p.accent },
+    );
     let knob = pos2(track.left() + track.width() * t, rect.center().y);
     let hot = resp.hovered() || resp.dragged();
     ui.painter().circle_filled(knob, if hot { 6.0 } else { 5.0 }, p.text_primary);

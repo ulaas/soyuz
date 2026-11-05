@@ -1,9 +1,7 @@
 //! Bottom status bar: item / selection counts, free space, view-mode switcher, zoom
 //! slider and theme switcher. Describes the focused pane.
 
-use egui::{
-    Align, Align2, CornerRadius, FontId, Frame, Layout, Margin, Panel, Rect, RichText, Sense, ThemePreference, Ui, vec2,
-};
+use egui::{Align, Align2, Frame, Layout, Margin, Panel, Rect, RichText, Sense, ThemePreference, Ui, vec2};
 use soyuz_core::config::Action;
 use soyuz_core::{SizeStyle, ViewMode, format_size};
 
@@ -46,16 +44,26 @@ const MODES: [(ViewMode, &str, Action); 4] = [
     (ViewMode::Miller, ph::COLUMNS, Action::ViewMiller),
 ];
 
+/// Height of the bar: grows with the controls of the density.
+pub fn height(ctx: &egui::Context) -> f32 {
+    (ctx.global_style().spacing.interact_size.y + 4.0).max(crate::theme::font::height(size::STATUS_BAR + 4.0, 11.5))
+}
+
+/// Edge of a control in the bar: fills it, whatever the density.
+fn control(ui: &Ui) -> f32 {
+    ui.spacing().interact_size.y.max(22.0)
+}
+
 pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mut Option<u16>) {
     let p = palette(root.ctx());
     Panel::bottom("soyuz.statusbar")
-        .exact_size(size::STATUS_BAR + 4.0)
+        .exact_size(height(root.ctx()))
         .show_separator_line(false)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 14, right: 10, top: 0, bottom: 2 }))
         .show(root, |ui| {
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                let small = |s: &str| RichText::new(s).font(FontId::proportional(11.5)).color(p.text_secondary);
+                let small = |s: &str| RichText::new(s).font(crate::theme::font::numbers(11.5)).color(p.text_secondary);
                 if info.loading {
                     let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
                     spinner(ui, r.center(), 5.0, p.accent);
@@ -69,7 +77,7 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                 if info.hidden > 0 {
                     ui.label(
                         RichText::new(tr!("app-status-hidden", count = info.hidden))
-                            .font(FontId::proportional(11.5))
+                            .font(crate::theme::font::numbers(11.5))
                             .color(p.text_tertiary),
                     );
                 }
@@ -84,7 +92,7 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                     } else {
                         tr!("app-status-selected", count = info.selected)
                     };
-                    ui.label(RichText::new(s).font(FontId::proportional(11.5)).color(p.accent));
+                    ui.label(RichText::new(s).font(crate::theme::font::numbers(11.5)).color(p.accent));
                 }
                 crate::ui::tools::git_chip(ui, info.git_dir.as_deref(), info.pane, cmds);
 
@@ -104,7 +112,9 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                     });
                     let items: Vec<(&str, &str)> =
                         MODES.iter().map(|m| (m.1, crate::ui::context_menu::mode_label(m.0))).collect();
-                    if let Some(i) = segmented(ui, &items, current, vec2(26.0, 18.0)) {
+                    // `segmented` frames its cells with 2 points all around.
+                    let cell = control(ui) - 4.0;
+                    if let Some(i) = segmented(ui, &items, current, vec2(cell + 8.0, cell)) {
                         cmds.push(Cmd::PaneAction(info.pane, MODES[i].2.clone()));
                     }
                     if matches!(info.mode, ViewMode::Grid | ViewMode::Gallery) {
@@ -126,11 +136,11 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                         let (r, _) = ui.allocate_exact_size(vec2(56.0, 14.0), Sense::hover());
                         let bar = Rect::from_center_size(r.center(), vec2(56.0, 4.0));
                         usage_bar(ui, &p, bar, used);
-                        ui.label(small(&tr!("app-status-free", free = format_size(free, SizeStyle::Decimal))))
+                        ui.label(small(&tr!("app-status-free", free = format_size(free, info.size_style))))
                             .on_hover_text(tr!(
                                 "app-status-free-of",
-                                free = format_size(free, SizeStyle::Decimal),
-                                total = format_size(total, SizeStyle::Decimal)
+                                free = format_size(free, info.size_style),
+                                total = format_size(total, info.size_style)
                             ));
                     }
                 });
@@ -149,13 +159,14 @@ fn theme_switch(ui: &mut Ui, current: crate::host::ThemePref, cmds: &mut Vec<Cmd
     ];
     // Right-to-left layout: allocate in reverse so the visual order is system, light, dark.
     for (pref, glyph, tip) in items.iter().rev() {
-        let (r, resp) = ui.allocate_exact_size(vec2(20.0, 18.0), Sense::click());
+        let side = control(ui);
+        let (r, resp) = ui.allocate_exact_size(vec2(side + 2.0, side), Sense::click());
         let active = current == *pref;
         crate::ui::a11y::toggle(&resp, tip, active);
         if active {
-            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2);
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_surface2);
         } else if resp.hovered() {
-            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2.gamma_multiply(0.6));
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(4), p.bg_surface2.gamma_multiply(0.6));
         }
         let color = if active { p.accent } else { p.text_tertiary };
         ui.painter().text(r.center(), Align2::CENTER_CENTER, *glyph, icons::font(12.0), color);

@@ -85,9 +85,13 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     check = small_button(ui, Some(ph::ARROW_CLOCKWISE), tr!("settings-updates-check"), false).clicked();
                 });
                 if d.updates.repo.trim().is_empty() {
-                    ui.label(RichText::new(tr!("settings-updates-no-repo")).size(11.5).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("settings-updates-no-repo"))
+                            .size(crate::theme::font::px(11.5))
+                            .color(p.text_tertiary),
+                    );
                 } else if let Err(e) = updates::parse_repo(&d.updates.repo) {
-                    ui.label(RichText::new(e).size(11.5).color(p.warning));
+                    ui.label(RichText::new(e).size(crate::theme::font::px(11.5)).color(p.warning));
                 }
             });
         });
@@ -148,10 +152,18 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
                             updates::download(rel, integration::downloads_dir(), wake);
                         });
                     }
-                    ui.label(RichText::new(format!("{} · {}", a.name, mib(a.size))).size(11.5).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(format!("{} · {}", a.name, mib(a.size)))
+                            .size(crate::theme::font::px(11.5))
+                            .color(p.text_tertiary),
+                    );
                 }
                 None => {
-                    ui.label(RichText::new(tr!("settings-updates-no-asset")).size(11.5).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("settings-updates-no-asset"))
+                            .size(crate::theme::font::px(11.5))
+                            .color(p.text_tertiary),
+                    );
                 }
             });
             ui.horizontal(|ui| {
@@ -184,7 +196,7 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             ui.label(
                 RichText::new(tr!("settings-updates-sha-ok", hash = sha256.to_string()))
                     .monospace()
-                    .size(11.0)
+                    .size(crate::theme::font::px(11.0))
                     .color(p.success),
             );
             let (sig_text, sig_color) = match signature {
@@ -196,9 +208,13 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
                 }
                 Signature::Unknown => (tr!("settings-updates-sig-unknown").to_string(), p.text_tertiary),
             };
-            ui.label(RichText::new(sig_text).size(11.5).color(sig_color));
+            ui.label(RichText::new(sig_text).size(crate::theme::font::px(11.5)).color(sig_color));
             if *detached_sig {
-                ui.label(RichText::new(tr!("settings-updates-detached-sig")).size(11.5).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("settings-updates-detached-sig"))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_tertiary),
+                );
             }
             ui.add_space(6.0);
             if cfg!(target_os = "linux") && linux_install(ui, path, sha256) {
@@ -224,7 +240,11 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             });
             if confirming {
                 ui.add_space(4.0);
-                ui.label(RichText::new(tr!("settings-updates-run-note")).size(11.5).color(p.text_secondary));
+                ui.label(
+                    RichText::new(tr!("settings-updates-run-note"))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_secondary),
+                );
                 ui.horizontal(|ui| {
                     if small_button(ui, Some(ph::ROCKET_LAUNCH), tr!("settings-updates-run-now"), false).clicked() {
                         confirming = false;
@@ -256,7 +276,7 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
 fn linux_install(ui: &mut Ui, path: &std::path::Path, sha256: &str) -> bool {
     let p = palette(ui.ctx());
     if let Some(note) = updates::self_update_note() {
-        ui.label(RichText::new(note).size(11.5).color(p.text_secondary));
+        ui.label(RichText::new(note).size(crate::theme::font::px(11.5)).color(p.text_secondary));
         ui.add_space(4.0);
         return false;
     }
@@ -280,7 +300,11 @@ fn linux_install(ui: &mut Ui, path: &std::path::Path, sha256: &str) -> bool {
         });
         if installing {
             ui.spinner();
-            ui.label(RichText::new(tr!("settings-updates-installing")).size(11.5).color(p.text_secondary));
+            ui.label(
+                RichText::new(tr!("settings-updates-installing"))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_secondary),
+            );
         }
     });
     let mut restart = false;
@@ -292,7 +316,7 @@ fn linux_install(ui: &mut Ui, path: &std::path::Path, sha256: &str) -> bool {
                 restart = true;
             }
             Some(Err(e)) => {
-                ui.label(RichText::new(e).size(11.5).color(p.danger));
+                ui.label(RichText::new(e).size(crate::theme::font::px(11.5)).color(p.danger));
             }
             None => {}
         }
@@ -311,7 +335,7 @@ fn release_header(ui: &mut Ui, rel: &updates::Release) {
                 version = rel.version.to_string(),
                 current = updates::CURRENT.to_string()
             ))
-            .size(13.5)
+            .size(crate::theme::font::px(13.5))
             .color(p.text_primary),
         );
     });
@@ -322,12 +346,12 @@ fn release_header(ui: &mut Ui, rel: &updates::Release) {
     if rel.prerelease || rel.version.is_prerelease() {
         meta.push_str(&format!(" · {}", tr!("settings-updates-prerelease")));
     }
-    ui.label(RichText::new(meta).size(11.5).color(p.text_tertiary));
+    ui.label(RichText::new(meta).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
     if !rel.notes.trim().is_empty() {
         ui.add_space(6.0);
         egui::Frame::new()
             .fill(p.bg_sunken)
-            .corner_radius(egui::CornerRadius::same(6))
+            .corner_radius(crate::theme::tokens::radius::same(6))
             .inner_margin(egui::Margin::same(8))
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().id_salt("soyuz.settings.update.notes").max_height(200.0).show(ui, |ui| {
@@ -335,8 +359,12 @@ fn release_header(ui: &mut Ui, rel: &updates::Release) {
                     // Release notes are untrusted text: shown verbatim, never interpreted.
                     let notes: String = rel.notes.chars().take(20_000).collect();
                     ui.add(
-                        egui::Label::new(RichText::new(notes.replace('\r', "")).size(12.0).color(p.text_secondary))
-                            .wrap(),
+                        egui::Label::new(
+                            RichText::new(notes.replace('\r', ""))
+                                .size(crate::theme::font::px(12.0))
+                                .color(p.text_secondary),
+                        )
+                        .wrap(),
                     );
                 });
             });
@@ -487,7 +515,7 @@ pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     (tr!("settings-fm-status-unsupported").to_string(), p.text_tertiary)
                 }
             };
-            ui.add(egui::Label::new(RichText::new(label).size(12.0).color(color)).wrap());
+            ui.add(egui::Label::new(RichText::new(label).size(crate::theme::font::px(12.0)).color(color)).wrap());
             if let Some(exe) = exe_path()
                 && temp_copy(&exe)
             {
@@ -496,7 +524,7 @@ pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 } else {
                     tr!("settings-fm-temp-copy", path = exe.display().to_string())
                 };
-                ui.label(RichText::new(note).size(11.5).color(p.warning));
+                ui.label(RichText::new(note).size(crate::theme::font::px(11.5)).color(p.warning));
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -530,7 +558,7 @@ pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     (_, true) => (tr!("settings-fm1-status-on"), p.success),
                     (_, false) => (tr!("settings-fm1-status-off"), p.text_secondary),
                 };
-                ui.add(egui::Label::new(RichText::new(label).size(12.0).color(color)).wrap());
+                ui.add(egui::Label::new(RichText::new(label).size(crate::theme::font::px(12.0)).color(color)).wrap());
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.add_enabled_ui(status.is_some() && !busy, |ui| {

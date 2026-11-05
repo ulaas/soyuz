@@ -219,6 +219,10 @@ pub struct PromptModel {
     pub focus_password: bool,
     /// Validate rename-on-conflict names with the Windows rules.
     pub windows_rules: bool,
+    /// `[general] size_style`: how the prompt shows sizes.
+    pub size_style: soyuz_core::SizeStyle,
+    /// `[general] date_format`: how the prompt shows dates.
+    pub date_format: soyuz_core::DateFormat,
 }
 
 impl PromptModel {
@@ -252,7 +256,16 @@ impl PromptModel {
             password: String::new(),
             focus_password: true,
             windows_rules: cfg!(windows),
+            size_style: soyuz_core::SizeStyle::Binary,
+            date_format: soyuz_core::DateFormat::default(),
         }
+    }
+
+    /// Show sizes and dates the way `[general]` says.
+    pub fn display(mut self, size_style: soyuz_core::SizeStyle, date_format: soyuz_core::DateFormat) -> Self {
+        self.size_style = size_style;
+        self.date_format = date_format;
+        self
     }
 
     /// Validate rename-on-conflict names with the Windows rules (target on a
@@ -662,15 +675,44 @@ impl TransferModel {
         }
     }
 
-    /// Confirmed: the transfer command (`None` without a destination).
+    /// What is wrong with the typed destination: a relative path would land under the
+    /// program's working folder, which nobody means. (An empty field just waits.)
+    pub fn error(&self) -> Option<&'static str> {
+        let dest = self.dest.trim();
+        if dest.is_empty() {
+            return None;
+        }
+        let dest = PathBuf::from(soyuz_fs::expand_env(dest));
+        (!dest.is_absolute() && !crate::services::remote::is_remote_path(&dest))
+            .then(|| tr!("dialogs-transfer-relative"))
+    }
+
+    /// Confirmed: the transfer command (`None` without a usable destination).
     pub fn confirm(&self) -> Option<Cmd> {
-        if self.dest.trim().is_empty() {
+        if self.dest.trim().is_empty() || self.error().is_some() {
             return None;
         }
         let dest = PathBuf::from(soyuz_fs::expand_env(self.dest.trim()));
         let effect = if self.mv { DropEffect::Move } else { DropEffect::Copy };
         Some(Cmd::FileOp(FileOpCmd::Transfer { paths: self.paths.clone(), dest, effect }))
     }
+}
+
+#[cfg(test)]
+#[test]
+fn a_transfer_needs_a_full_destination() {
+    let mut m = TransferModel::new(vec![PathBuf::from("a")], PathBuf::new(), true);
+    assert!(m.confirm().is_none() && m.error().is_none(), "an empty field just waits");
+    for relative in ["Backup", "sub/dir", "..", "./x"] {
+        m.dest = relative.into();
+        assert!(m.error().is_some(), "{relative}");
+        assert!(m.confirm().is_none(), "{relative}");
+    }
+    m.dest = std::env::temp_dir().display().to_string();
+    assert!(m.error().is_none());
+    assert!(m.confirm().is_some());
+    m.dest = "sftp://host/inbox".into();
+    assert!(m.error().is_none(), "a remote location");
 }
 
 // ---------------------------------------------------------------------------------

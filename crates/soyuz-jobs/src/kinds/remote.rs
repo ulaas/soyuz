@@ -369,19 +369,27 @@ fn copy_entry(ctx: &JobCtx, src: &End, se: &RemoteEntry, dst: End, parent_new: b
     }
     ctx.begin_item(&src.display(), se.size);
     let Some((dst, replace)) = settle(ctx, src, se, dst)? else { return Ok(()) };
-    if replace && !parent_new {
-        // The old destination file is lost on a server; locally it goes to the trash.
-        match trash_local(ctx, &dst) {
-            Some(item) => ctx.record(UndoRecord::Trashed(item)),
-            None => ctx.record(UndoRecord::Irreversible(dst.display())),
+    let replacing = replace && !parent_new;
+    // A local file being replaced goes to the trash, but only once its replacement is
+    // complete: the transfer lands next to it first, so a failed or cancelled transfer
+    // leaves the old file exactly where it was.
+    let target = if replacing && !dst.is_remote() {
+        match dst.sibling(&format!(".{}{STAGED_SUFFIX}", dst.name())) {
+            Ok(staged) => staged,
+            Err(e) => {
+                ctx.item_failed(&src.display(), e, se.size);
+                return Ok(());
+            }
         }
-    }
+    } else {
+        dst.clone()
+    };
     let hooks = Hooks { ctx, last: Cell::new(0) };
     let fc = FileCopy {
         src: &*src.prov,
         src_path: &src.path,
-        dst: &*dst.prov,
-        dst_path: &dst.path,
+        dst: &*target.prov,
+        dst_path: &target.path,
         size: se.size,
         modified: se.modified,
         replace,
@@ -392,13 +400,22 @@ fn copy_entry(ctx: &JobCtx, src: &End, se: &RemoteEntry, dst: End, parent_new: b
         Err(e) => {
             // Cancelled (or aborted): never leave a partial file behind on cancel.
             if e.kind == FsErrorKind::Interrupted {
-                discard_partial(&*dst.prov, &dst.path);
+                discard_partial(&*target.prov, &target.path);
             }
             return Err(e);
         }
     };
     match r {
         Ok(stats) => {
+            if replacing {
+                if dst.is_remote() {
+                    // The server replaced it: the old file is lost there.
+                    ctx.record(UndoRecord::Irreversible(dst.display()));
+                } else if let Err(e) = replace_with_staged(ctx, &target, &dst) {
+                    ctx.item_failed(&src.display(), e, 0);
+                    return Ok(());
+                }
+            }
             if stats.resumed_from > 0 {
                 ctx.log(
                     crate::job::LogLevel::Info,
@@ -414,6 +431,43 @@ fn copy_entry(ctx: &JobCtx, src: &End, se: &RemoteEntry, dst: End, parent_new: b
         Err(e) => {
             let credit = se.size.saturating_sub(hooks.last.get());
             ctx.item_failed(&src.display(), e, credit);
+        }
+    }
+    Ok(())
+}
+
+/// Suffix of a complete transfer waiting to replace a local file.
+const STAGED_SUFFIX: &str = ".soyuznew";
+
+/// The transfer to `staged` is complete: the old `dst` goes to the trash (when its volume
+/// has one, else it is replaced for good) and `staged` takes its name. When that last step
+/// fails the old file comes back, and `staged` is removed.
+fn replace_with_staged(ctx: &JobCtx, staged: &End, dst: &End) -> FsResult<()> {
+    let old = dst.stat_opt()?;
+    let trashed = if old.is_some() { trash_local(ctx, dst) } else { None };
+    let renamed = (|| {
+        if let Some(old) =
+            old.as_ref().filter(|o| trashed.is_none() && (o.is_dir || !dst.prov.capabilities().rename_replaces))
+        {
+            dst.prov.delete(&dst.path, old.is_dir)?;
+        }
+        staged.prov.rename(&staged.path, &dst.path)
+    })();
+    match (renamed, trashed) {
+        (Ok(()), Some(item)) => ctx.record(UndoRecord::Trashed(item)),
+        (Ok(()), None) => {
+            if old.is_some() {
+                ctx.record(UndoRecord::Irreversible(dst.display()));
+            }
+        }
+        (Err(e), trashed) => {
+            let _ = staged.prov.delete(&staged.path, false);
+            if let Some(item) = trashed
+                && soyuz_fs::trash::restore(&item, None).is_err()
+            {
+                ctx.record(UndoRecord::Trashed(item));
+            }
+            return Err(e);
         }
     }
     Ok(())

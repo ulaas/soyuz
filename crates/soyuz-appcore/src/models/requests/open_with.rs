@@ -1,6 +1,7 @@
 //! "Open with…" (`FrontendCmd::OpenWith`): the applications registered for a file's type
-//! (looked up off the UI thread, [`AppsLookup`]) plus any program by path. The choice
-//! becomes `Cmd::OpenWith`; nothing is launched here.
+//! (looked up off the UI thread, [`AppsLookup`]) plus any program, found with Browse (a
+//! [`crate::models::file_browser::FileBrowser`] on programs) or by path. The choice becomes
+//! `Cmd::OpenWith`; nothing is launched here.
 //!
 //! `[open]` keeps choices: "Always use this app for .ext files" makes the application the
 //! extension's default (`default_apps`, used by Enter / double-click, [`crate::ops::launch`]),
@@ -8,7 +9,9 @@
 //! extension ([`preselect`]). Both go through `Cmd::RememberOpenWith` ([`remember`]).
 //! Files without an extension (`README`, `Makefile`, `.bashrc`) are kept together under
 //! the key `"."` ([`OpenSection::NO_EXTENSION`]), and a file no application is registered
-//! for opens this dialog on Enter (`[open] choose_when_unknown`, [`crate::ops::launch`]).
+//! for opens this dialog on Enter (`[open] choose_when_unknown`, [`crate::ops::launch`]),
+//! starting with "Always use this app" ticked (`always_for_unknown`), so the choice sticks.
+//! Programs picked by path stay listed for every file (`[open] programs`, [`listed_apps`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -38,6 +41,130 @@ pub fn custom_app(exe: &Path) -> AppInfo {
         icon: None,
         launchable: true,
     }
+}
+
+/// [`custom_app`] named `name` (a shortcut's name beats the program's file name).
+pub fn picked_app(exe: &Path, name: Option<String>) -> AppInfo {
+    let mut app = custom_app(exe);
+    if let Some(n) = name.filter(|n| !n.trim().is_empty()) {
+        app.name = n;
+    }
+    app
+}
+
+/// Whether `app` was chosen by path rather than registered with the system.
+pub fn is_by_path(app: &AppInfo) -> bool {
+    app.id == app.exec.display().to_string()
+}
+
+/// `a` and `b` are the same program file.
+fn same_program(a: &Path, b: &Path) -> bool {
+    if cfg!(windows) { a.as_os_str().eq_ignore_ascii_case(b.as_os_str()) } else { a == b }
+}
+
+/// Add `app` to the listed applications unless its program is there; its row.
+pub fn adopt(list: &mut Vec<AppInfo>, app: AppInfo) -> usize {
+    match list.iter().position(|a| a.launchable && same_program(&a.exec, &app.exec)) {
+        Some(i) => i,
+        None => {
+            list.push(app);
+            list.len() - 1
+        }
+    }
+}
+
+/// What the dialog lists for `path`: the registered applications, then the extension's
+/// default and last-used program when they are not among them, then the remembered ones.
+pub fn listed_apps(cfg: &OpenSection, path: &Path, registered: &[AppInfo]) -> Vec<AppInfo> {
+    let mut list = registered.to_vec();
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    if let Some(rule) = cfg.app_for(name) {
+        let app = rule_app(rule);
+        if !list.iter().any(|a| !a.id.is_empty() && a.id == app.id) {
+            adopt(&mut list, app);
+        }
+    }
+    let last = ext_of(path).and_then(|e| cfg.last_used.get(&e)).filter(|_| cfg.remember_choice);
+    if let Some(key) = last.map(Path::new).filter(|k| k.is_absolute()) {
+        adopt(&mut list, custom_app(key));
+    }
+    for p in &cfg.programs {
+        adopt(&mut list, rule_app(p));
+    }
+    list
+}
+
+/// How the dialog starts on `path` once the registered applications are known: the rows,
+/// and the [`Preselect`] among them. A type nothing is registered for starts with "Always"
+/// ticked (`always_for_unknown`) and, unless a choice is known, with no row selected: Enter
+/// must not make the newest remembered program the default by accident.
+pub fn start(cfg: &OpenSection, path: &Path, registered: &[AppInfo]) -> (Vec<AppInfo>, Preselect) {
+    let list = listed_apps(cfg, path, registered);
+    let mut pre = preselect(cfg, path, &list);
+    if registered.is_empty() {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let known = cfg.app_for(name).is_some()
+            || (cfg.remember_choice && ext_of(path).is_some_and(|e| cfg.last_used.contains_key(&e)));
+        if !known {
+            pre.selected = None;
+        }
+        pre.always |= cfg.always_for_unknown;
+    }
+    (list, pre)
+}
+
+/// Where Browse starts: the folder of the newest remembered program, else the usual place
+/// for programs.
+pub fn browse_start(cfg: &OpenSection) -> PathBuf {
+    cfg.programs
+        .first()
+        .and_then(|p| p.program.parent())
+        .filter(|d| d.is_absolute())
+        .map(Path::to_path_buf)
+        .or_else(|| program_places().into_iter().next().map(|(_, p)| p))
+        .unwrap_or_else(soyuz_fs::home)
+}
+
+/// The usual places for programs on this system (label, folder), existing or not: filter
+/// with [`existing_program_places`], off the UI thread.
+pub fn program_places() -> Vec<(String, PathBuf)> {
+    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    let mut out: Vec<(String, PathBuf)> = Vec::new();
+    if cfg!(windows) {
+        let menu = Path::new("Microsoft").join("Windows").join("Start Menu").join("Programs");
+        for (key, label) in [("ProgramFiles", "Program Files"), ("ProgramFiles(x86)", "Program Files (x86)")] {
+            if let Some(d) = env(key) {
+                out.push((label.to_string(), d));
+            }
+        }
+        if let Some(d) = env("LOCALAPPDATA") {
+            out.push((tr!("dialogs-openwith-place-user-programs").to_string(), d.join("Programs")));
+        }
+        if let Some(d) = env("APPDATA") {
+            out.push((tr!("dialogs-openwith-place-start-menu").to_string(), d.join(&menu)));
+        }
+        if let Some(d) = env("ProgramData") {
+            out.push((tr!("dialogs-openwith-place-start-menu-all").to_string(), d.join(&menu)));
+        }
+        out.push(("Scoop".to_string(), soyuz_fs::home().join("scoop").join("apps")));
+    } else {
+        let home = soyuz_fs::home();
+        for dir in ["/usr/bin", "/usr/local/bin"] {
+            out.push((dir.to_string(), PathBuf::from(dir)));
+        }
+        out.push(("~/.local/bin".to_string(), home.join(".local").join("bin")));
+        out.push(("~/Applications".to_string(), home.join("Applications")));
+        out.push(("/opt".to_string(), PathBuf::from("/opt")));
+        if cfg!(target_os = "macos") {
+            out.insert(0, ("/Applications".to_string(), PathBuf::from("/Applications")));
+        }
+    }
+    out
+}
+
+/// [`program_places`] that exist. Touches the disk.
+pub fn existing_program_places() -> Vec<(String, PathBuf)> {
+    program_places().into_iter().filter(|(_, d)| d.is_dir()).collect()
 }
 
 /// Parse the "another program" field: trims whitespace and surrounding quotes.
@@ -79,7 +206,8 @@ pub fn open_cmd(path: &Path, app: AppInfo) -> Cmd {
 pub fn choice_cmds(path: &Path, app: AppInfo, always: bool) -> Vec<Cmd> {
     let mut cmds = Vec::new();
     if let Some(ext) = ext_of(path) {
-        cmds.push(Cmd::RememberOpenWith { ext, app: app.clone(), always });
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        cmds.push(Cmd::RememberOpenWith { name, ext, app: Box::new(app.clone()), always });
     }
     cmds.push(open_cmd(path, app));
     cmds
@@ -168,20 +296,24 @@ pub fn preselect(cfg: &OpenSection, path: &Path, apps: &[AppInfo]) -> Preselect 
     out
 }
 
-/// Keep a choice (`Cmd::RememberOpenWith`): the last-used application for `ext` (with
-/// `remember_choice`), and `app` as its default (`always`) or no default. Saved like any
-/// settings change (nothing is written when nothing changed).
-pub fn remember(core: &mut AppCore, host: &dyn Host, ext: &str, app: &AppInfo, always: bool) {
+/// Keep a choice made for the file `name` (`Cmd::RememberOpenWith`): the last-used
+/// application for `ext` (with `remember_choice`), and `app` as its default (`always`) or
+/// no default. Saved like any settings change (nothing is written when nothing changed).
+pub fn remember(core: &mut AppCore, host: &dyn Host, name: &str, ext: &str, app: &AppInfo, always: bool) {
     let rule = rule_of(app);
     crate::models::settings::update_config(core, host, |c| {
         if c.open.remember_choice {
             c.open.last_used.insert(ext.to_string(), rule.key());
+            if is_by_path(app) {
+                c.open.remember_program(rule.clone());
+            }
         }
-        let current = c.open.rule_for(ext).cloned();
+        // The rule that answers for this file, which may name a longer extension than `ext`.
+        let current = c.open.app_for(name).or_else(|| c.open.rule_for(ext)).cloned();
         match (always && can_be_default(app), current) {
             (true, Some(r)) if r.same_app(&rule) => {}
-            (true, _) => c.open.set_default(ext, Some(rule.clone())),
-            (false, Some(_)) => c.open.set_default(ext, None),
+            (true, _) => c.open.set_default_for(name, Some(rule.clone())),
+            (false, Some(_)) => c.open.set_default_for(name, None),
             (false, None) => {}
         }
     });
@@ -284,6 +416,63 @@ mod tests {
         cfg.set_default(".", Some(rule_of(&custom_app(&tool))));
         let p = preselect(&cfg, Path::new("README"), &[]);
         assert!(p.always && p.custom == tool_key, "an unknown type with no listed apps: {p:?}");
+    }
+
+    #[test]
+    fn unknown_types_start_on_always_with_nothing_selected() {
+        let tool = std::env::temp_dir().join("soyuz-tool");
+        let mut cfg = OpenSection::default();
+        let (list, pre) = start(&cfg, Path::new("a.xyz"), &[]);
+        assert!(list.is_empty() && pre.always && pre.selected.is_none());
+        cfg.remember_program(rule_of(&custom_app(&tool)));
+        let (list, pre) = start(&cfg, Path::new("a.xyz"), &[]);
+        assert_eq!(list.len(), 1, "remembered programs are listed for every file");
+        assert!(pre.always && pre.selected.is_none(), "Enter must not choose for the user: {pre:?}");
+        cfg.last_used.insert("xyz".into(), tool.display().to_string());
+        let (list, pre) = start(&cfg, Path::new("b.XYZ"), &[]);
+        assert_eq!((list.len(), pre.selected), (1, Some(0)), "the last choice is selected again");
+        cfg.always_for_unknown = false;
+        assert!(!start(&cfg, Path::new("c.xyz"), &[]).1.always, "the setting");
+        let reg = [app("photos", "/bin/photos")];
+        let (list, pre) = start(&cfg, Path::new("a.png"), &reg);
+        assert_eq!(list.len(), 2);
+        assert!(!pre.always && pre.selected == Some(0), "a known type is not ticked for the user");
+    }
+
+    #[test]
+    fn a_default_by_path_is_listed_and_selected() {
+        let tool = std::env::temp_dir().join("soyuz-tool");
+        let mut cfg = OpenSection::default();
+        cfg.set_default("xyz", Some(rule_of(&custom_app(&tool))));
+        let (list, pre) = start(&cfg, Path::new("a.xyz"), &[]);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].exec, tool);
+        assert_eq!((pre.selected, pre.custom.as_str(), pre.always), (Some(0), "", true));
+    }
+
+    #[test]
+    fn programs_are_remembered_once_newest_first() {
+        let mut cfg = OpenSection::default();
+        for i in 0..20 {
+            cfg.remember_program(rule_of(&custom_app(Path::new(&format!("/bin/t{i}")))));
+        }
+        assert_eq!(cfg.programs.len(), OpenSection::MAX_PROGRAMS);
+        assert_eq!(cfg.programs[0].program, Path::new("/bin/t19"));
+        cfg.remember_program(rule_of(&custom_app(Path::new("/bin/t10"))));
+        assert_eq!(cfg.programs[0].program, Path::new("/bin/t10"));
+        assert_eq!(cfg.programs.iter().filter(|p| p.program == Path::new("/bin/t10")).count(), 1);
+    }
+
+    #[test]
+    fn picked_programs_keep_their_shortcut_name_and_are_not_listed_twice() {
+        let a = picked_app(Path::new("/bin/code"), Some("Visual Studio Code".into()));
+        assert_eq!(a.name, "Visual Studio Code");
+        assert!(is_by_path(&a));
+        assert_eq!(picked_app(Path::new("/bin/code"), Some("  ".into())).name, "code");
+        let mut list = vec![app("reg.desktop", "/bin/code")];
+        assert!(!is_by_path(&list[0]));
+        assert_eq!(adopt(&mut list, a.clone()), 0, "a registered app is not listed twice");
+        assert_eq!(adopt(&mut list, custom_app(Path::new("/bin/vi"))), 1);
     }
 
     #[test]

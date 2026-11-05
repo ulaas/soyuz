@@ -39,6 +39,7 @@ of the *Explorer* preset; the command palette always shows the active ones.
   `Tab` switches between them and the splitter is draggable (double-click resets it).
 - The **omnibar** shows the path as clickable segments; the small chevrons open sibling
   folders. Click the empty area or press `Ctrl+L` to type a path (with completion).
+  Shift+click a segment opens it in the other pane; Ctrl+click copies its path.
 - The **status bar** shows counts, selection size, free space, an icon-size slider, view
   and theme switches, and a ring when jobs are running.
 - **Focus mode** (`Ctrl+Shift+B`, or *Focus mode* in the palette) hides the sidebar, the
@@ -191,15 +192,22 @@ program needs them*). Any program can also be started elevated from its context 
 **Unrecognized files.** A file no app is registered for, an unknown type or a file
 without an extension, opens *Open with…* on `Enter` instead of an error
 (`[open] choose_when_unknown`, *Settings → Behaviour → Ask for unrecognized files*). The
-list is then usually empty: type or paste the program's full path, tick **Always use this
-app**, and that type opens with it from then on. Files without an extension (`README`,
+list is then usually empty, so press **Browse…**: it shows only programs (on Windows, Start
+menu shortcuts count, and pick the program they point at), filters as you type, and has
+the usual program folders one click away. **All files** lists everything else too.
+**Always use this app** starts ticked for such a type, so what you pick opens it from then
+on (`[open] always_for_unknown`, *Settings → Behaviour → Keep the choice for unrecognized
+files*). Programs you picked stay listed in *Open with…* for every file (`[open] programs`;
+*Settings → Behaviour → Remembered programs* forgets them). You can still type or paste a
+path. Files without an extension (`README`,
 `Makefile`, `.bashrc`) share one default, shown as **Always use this app for files without
 an extension** and kept as the extension `.` in `[[open.default_apps]]`.
 
 ## Background jobs, conflicts and undo
 
 Every operation runs as a job; the window stays responsive. Small jobs finish quietly
-with a toast (with **Undo**); longer ones open the **activity panel** (`Ctrl+Shift+J`)
+with a toast (with **Undo**; with nothing selected or filtered, Esc closes the newest toast,
+and Shift+Esc all of them); longer ones open the **activity panel** (`Ctrl+Shift+J`)
 automatically. Each job card shows progress, speed graph and ETA, and can be paused,
 resumed, cancelled, reprioritized or started immediately.
 
@@ -712,7 +720,7 @@ Search the settings with `Ctrl+F` inside the window.
   Anything a pack leaves out keeps the built-in glyph.
 - *Fonts*: one font per role — interface (Inter), headings (its semibold face), terminal
   and hex view (Cascadia Mono), code and text previews plus the text editor (Hack), numbers
-  (the interface font). Soyuz ships eleven screen fonts that need no installation: Inter,
+  (Inter Tabular, whose digits are all equally wide, with an Inter interface; the interface font otherwise). Soyuz ships eleven screen fonts that need no installation: Inter,
   IBM Plex Sans and Noto Sans (each with a SemiBold face for headings), and Cascadia Mono,
   Hack, JetBrains Mono, IBM Plex Mono and Source Code Pro for monospace text. The family field suggests these first (marked *Embedded*),
   then your installed fonts such as Segoe UI or Consolas. The *Embedded* switch ignores

@@ -6,7 +6,7 @@
 //! (assistant, editors, shelf, tool windows) draw in the window that owns them
 //! (`models::owners`); the overlays go to the focused window.
 
-use egui::{CentralPanel, CornerRadius, CursorIcon, Frame, Id, Margin, Rect, Sense, Ui, pos2, vec2};
+use egui::{CentralPanel, CursorIcon, Frame, Id, Margin, Rect, Sense, Ui, pos2, vec2};
 use soyuz_core::Location;
 use soyuz_core::config::{Orientation, TabStripMode};
 
@@ -127,20 +127,20 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         return;
     }
     crate::ui::tools::drag_strip(&ctx, app);
-    crate::ui::welcome::show(&ctx, app, if app.core.ui.status_visible { 24.0 } else { 0.0 });
-    let mut dctx = DialogCtx { cmds: &mut app.core.cmds, ws: &mut app.core.ws };
+    let status_h = if app.core.ui.status_visible { crate::ui::statusbar::height(&ctx) } else { 0.0 };
+    crate::ui::welcome::show(&ctx, app, status_h);
+    let mut dctx = DialogCtx { cmds: &mut app.core.cmds, ws: &mut app.core.ws, thumbs: &app.core.services.thumbs };
     app.gui.dialogs.show(&ctx, &mut app.core.dialogs, &mut dctx);
     crate::ui::quicklook::show(&ctx, app);
     crate::ui::panels::terminal::clipboard_prompt(&ctx, app);
     let screen = ctx.content_rect();
-    let bottom_offset = if app.core.ui.status_visible { 30.0 } else { 6.0 };
+    let bottom_offset = status_h + if app.core.ui.status_visible { 2.0 } else { 6.0 };
     // Toasts stay clear of the assistant panel.
     let ai = app.core.ai.panel.open && here(app, Panel::Assistant);
     let right = screen.right() - if ai { app.core.ai.panel.width } else { 0.0 };
     let anchor = Rect::from_min_max(screen.min, pos2(right, screen.bottom() - bottom_offset));
-    for action in crate::ui::toasts::show(&mut app.core.ui.toasts, &ctx, anchor, app.core.ui.reduced_motion) {
-        app.core.cmds.push(Cmd::Action(action));
-    }
+    let clicked = crate::ui::toasts::show(&mut app.core.ui.toasts, &ctx, anchor, app.core.ui.reduced_motion);
+    app.core.cmds.extend(clicked);
 }
 
 fn status_info(app: &SoyuzApp) -> StatusInfo {
@@ -246,7 +246,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
         } else {
             Rect::from_center_size(splitter.center(), vec2(40.0, 2.0))
         };
-        ui.painter().rect_filled(bar, CornerRadius::same(1), p.accent.gamma_multiply(0.8));
+        ui.painter().rect_filled(bar, crate::theme::tokens::radius::same(1), p.accent.gamma_multiply(0.8));
     }
     if sresp.dragged()
         && let Some(pos) = sresp.interact_pointer_pos()
@@ -313,7 +313,7 @@ fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, 
             } else {
                 Rect::from_center_size(rect.center(), vec2(40.0, 2.0))
             };
-            ui.painter().rect_filled(bar, CornerRadius::same(1), p.accent.gamma_multiply(0.8));
+            ui.painter().rect_filled(bar, crate::theme::tokens::radius::same(1), p.accent.gamma_multiply(0.8));
         }
         if sresp.dragged()
             && let Some(pos) = sresp.interact_pointer_pos()

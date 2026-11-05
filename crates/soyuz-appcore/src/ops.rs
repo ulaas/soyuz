@@ -39,6 +39,8 @@ pub struct NavOpts {
     /// Back / forward / history-graph jump: revisit the existing node of the tab's
     /// "where was I" graph instead of starting a branch.
     pub revisit: bool,
+    /// Typed by hand: a path that does not exist keeps the error page.
+    pub typed: bool,
 }
 
 impl NavOpts {
@@ -162,6 +164,7 @@ pub fn navigate(app: &mut AppCore, id: PaneId, loc: Location, opts: NavOpts) {
             pane.history.push(here, &loc);
         }
         pane.location = loc.clone();
+        pane.typed_location = opts.typed;
         pane.view = view;
         pane.pending_selection.clear();
         pane.collapsed_groups.clear();
@@ -202,7 +205,10 @@ fn sync_others(app: &mut AppCore, ti: usize, pi: usize, old: &Location, new: &Lo
             Some(SyncMove::Up { target, select }) => {
                 navigate(app, id, Location::Dir(target), NavOpts { push_history: true, select, ..Default::default() });
             }
-            Some(SyncMove::Probe(p)) => app.services.lister.probe(id, &p),
+            Some(SyncMove::Probe(p)) => {
+                let generation = app.ws.find_pane(id).map_or(0, |pane| pane.generation);
+                app.services.lister.probe(id, generation, &p);
+            }
             None => {}
         }
     }
@@ -593,6 +599,23 @@ pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
                 && p.generation == generation
             {
                 pane_listing(p, &mut app.services, chunk, done, err);
+                if let Some(w) = p.listing_warning.take() {
+                    let title = if w.kept_old { tr!("ops-relist-failed") } else { tr!("ops-listing-incomplete") };
+                    app.ui.toasts.push(Toast::warning(title).body(w.error.to_string()));
+                }
+                // Already gone when the pane got here (a session restored with the drive
+                // unplugged): no watcher reports that, so look for the nearest ancestor.
+                if done && matches!(p.status, ListingStatus::Ready) {
+                    // It exists: if it goes away later, it is a folder that went missing.
+                    p.typed_location = false;
+                }
+                if done
+                    && !p.typed_location
+                    && let Location::Dir(dir) = &p.location
+                    && matches!(&p.status, ListingStatus::Failed(e) if e.kind == soyuz_core::FsErrorKind::NotFound)
+                {
+                    app.services.lister.resolve(pane, generation, dir);
+                }
             }
         }
         UiMsg::Patched { pane, generation, updated, removed } => {
@@ -623,8 +646,9 @@ pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
                 navigate(app, pane, location, NavOpts::default());
             }
         }
-        UiMsg::Probed { pane, location, exists } => {
-            if exists {
+        UiMsg::Probed { pane, generation, location, exists } => {
+            // A late answer from a slow drive must not move a pane the user has moved since.
+            if exists && app.ws.find_pane(pane).is_some_and(|p| p.generation == generation) {
                 navigate(app, pane, location, NavOpts { push_history: true, ..Default::default() });
             }
         }
@@ -849,6 +873,9 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         Cmd::Navigate { pane, location, select } => {
             navigate(app, pane, location, NavOpts { select, ..NavOpts::user() });
         }
+        Cmd::NavigateTyped { pane, location } => {
+            navigate(app, pane, location, NavOpts { typed: true, ..NavOpts::user() });
+        }
         Cmd::Open { pane, key } => open_entry(app, pane, &key),
         Cmd::OpenInNewTab { location, activate } => open_in_new_tab(app, location, activate),
         Cmd::OpenInOtherPane(loc) => open_in_other_pane(app, loc),
@@ -856,8 +883,8 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
             let title = tr!("ops-open-with-failed", app = &info.name);
             spawn_launch(app, title, move || soyuz_fs::launch::open_with(&path, &info).map_err(|e| e.to_string()));
         }
-        Cmd::RememberOpenWith { ext, app: info, always } => {
-            crate::models::requests::open_with::remember(app, host, &ext, &info, always)
+        Cmd::RememberOpenWith { name, ext, app: info, always } => {
+            crate::models::requests::open_with::remember(app, host, &name, &ext, &info, always)
         }
         Cmd::HistoryJump { pane, back, n } => history_jump(app, pane, back, n),
         Cmd::FocusPane(id) => focus_pane(app, id),
@@ -908,7 +935,14 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
             s.favorites.retain(|f| f.path != path);
             s.favorites_customized = true;
         }
-        Cmd::AskHideSystemFolders => app.frontend.push(crate::models::system_folders::ask_hide()),
+        Cmd::AskHideSystemFolders => {
+            if app.frontend_kind == crate::core::FrontendKind::Tui {
+                app.frontend.push(crate::models::system_folders::ask_hide());
+            } else {
+                crate::models::settings::update_config(app, host, |c| c.sidebar.system_folders = false);
+                app.ui.toasts.push(crate::models::system_folders::hidden_toast());
+            }
+        }
         Cmd::ShowSystemFolders(on) => {
             crate::models::settings::update_config(app, host, |c| c.sidebar.system_folders = on);
         }
@@ -968,9 +1002,16 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         Cmd::ApplyViewToAll(id) => {
             if let Some(p) = app.ws.find_pane(id) {
                 let view = p.view.clone();
+                let before = Box::new(app.views.snapshot());
                 app.views.apply_to_all(&view);
-                app.ui.toasts.push(Toast::success(tr!("ops-view-applied")));
+                app.ui
+                    .toasts
+                    .push(Toast::success(tr!("ops-view-applied")).cmd(tr!("common-undo"), Cmd::RestoreViews(before)));
             }
+        }
+        Cmd::RestoreViews(before) => {
+            app.views.restore(*before);
+            app.ui.toasts.push(Toast::info(tr!("ops-view-restored")));
         }
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
         Cmd::OpenTerminalPanel(dir) => crate::models::terminal::open_at(app, host, dir),

@@ -24,6 +24,12 @@ pub enum Cmd {
         location: Location,
         select: Option<String>,
     },
+    /// A path typed into the address bar: if it does not exist, the pane stays on it and
+    /// shows the error, so the text can be corrected.
+    NavigateTyped {
+        pane: PaneId,
+        location: Location,
+    },
     /// Activate an entry: enter folders, launch files.
     Open {
         pane: PaneId,
@@ -82,6 +88,8 @@ pub enum Cmd {
     SetSplit(f32),
     /// Make the pane's view the default for every folder (after confirmation).
     ApplyViewToAll(PaneId),
+    /// Undo of [`Cmd::ApplyViewToAll`]: the views remembered before it.
+    RestoreViews(Box<crate::state::view_memory::ViewMemory>),
     /// Reveal the given path's parent and select it (path typed into the address bar).
     RevealPath(PathBuf),
     /// Open a new integrated terminal session in this folder.
@@ -122,8 +130,11 @@ pub enum Cmd {
     /// Keep an Open with… choice for the extension `ext` (`[open]`): the last-used app
     /// (with `remember_choice`), and `app` as the default (`always`) or no default.
     RememberOpenWith {
+        /// The file the choice was made for (a rule naming a longer extension of it must
+        /// not keep answering for it).
+        name: String,
         ext: String,
-        app: AppInfo,
+        app: Box<AppInfo>,
         always: bool,
     },
     /// Open a path in a new Soyuz window (in-process or a new process, see

@@ -104,8 +104,9 @@ pub enum AfterJob {
     SelectAndRename { pane: PaneId, path: PathBuf },
     /// Put the cursor on `name` in `pane` (rename keeps the cursor on the item).
     Select { pane: PaneId, name: String },
-    /// Clear the internal clipboard (a cut was pasted).
-    ClearClipboard,
+    /// Clear the internal clipboard (a cut was pasted), if it still holds the set of
+    /// this generation (`Clipboard::generation`).
+    ClearClipboard { generation: u64 },
 }
 
 /// Who started a job other than the user directly (a badge on its activity card).
@@ -189,10 +190,15 @@ impl JobMeta {
     }
 }
 
+/// Job progress is sampled this often while a job works.
+const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(100);
+
 pub struct JobsService {
     engine: Arc<JobEngine>,
     /// Latest snapshots, ordered by job id.
     snapshots: Vec<JobSnapshot>,
+    /// When `snapshots` were taken.
+    snapshot_at: Instant,
     meta: HashMap<JobId, JobMeta>,
     history: Vec<HistoryEntry>,
     history_dirty: bool,
@@ -269,6 +275,7 @@ impl JobsService {
         let mut s = JobsService {
             engine,
             snapshots: Vec::new(),
+            snapshot_at: Instant::now(),
             meta: HashMap::new(),
             history: Vec::new(),
             history_dirty: true,
@@ -354,8 +361,9 @@ impl JobsService {
         self.snapshots.iter().find(|s| s.id == id)
     }
 
-    /// Drain engine events and refresh snapshots when anything changed or a job is
-    /// running. Repaints are requested at 10 Hz only while a job is actually working.
+    /// Drain engine events and refresh snapshots when anything changed, and at the 10 Hz
+    /// of the repaints while a job is working: a snapshot clones every job under the
+    /// engine's lock, which workers contend for, and frames can come faster than that.
     pub fn poll(&mut self, host: &dyn Host) -> Vec<JobEvent> {
         let events: Vec<JobEvent> = self.engine.events().try_iter().collect();
         for e in &events {
@@ -370,11 +378,11 @@ impl JobsService {
             self.affected.event(e);
         }
         let working = self.snapshots.iter().any(|s| s.state.is_active());
-        if !events.is_empty() || working {
+        if !events.is_empty() || (working && self.snapshot_at.elapsed() >= SNAPSHOT_INTERVAL) {
             self.refresh_snapshots();
         }
         if self.snapshots.iter().any(|s| s.state.is_active()) {
-            host.redraw_after(Duration::from_millis(100));
+            host.redraw_after(SNAPSHOT_INTERVAL);
         }
         if self.history_dirty {
             self.refresh_history();
@@ -386,6 +394,7 @@ impl JobsService {
         let mut s = self.engine.snapshots();
         s.sort_by_key(|s| s.id);
         self.snapshots = s;
+        self.snapshot_at = Instant::now();
     }
 
     fn refresh_history(&mut self) {

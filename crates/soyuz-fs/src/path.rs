@@ -1,5 +1,6 @@
 //! Path helpers: long-path wide strings, normalization, env expansion, overlap checks.
 
+use std::borrow::Cow;
 use std::path::{Component, Path, PathBuf};
 
 /// Windows: absolute + `\\?\C:\...` / `\\?\UNC\...`, NUL-terminated UTF-16 (verbatim and
@@ -61,22 +62,27 @@ fn long_form(path: &Path) -> Vec<u16> {
 /// have no verbatim form: they are returned unchanged, byte for byte (a backslash is an
 /// ordinary file-name character there, and names need not be UTF-8).
 pub fn strip_verbatim(path: &Path) -> PathBuf {
+    strip_verbatim_cow(path).into_owned()
+}
+
+/// [`strip_verbatim`] that copies nothing for a path without the prefix (per-row lookups).
+pub fn strip_verbatim_cow(path: &Path) -> Cow<'_, Path> {
     #[cfg(windows)]
     {
+        if !path.as_os_str().as_encoded_bytes().starts_with(br"\\?\") {
+            return Cow::Borrowed(path);
+        }
         let raw = wide_of(path);
         if raw.starts_with(&w(r"\\?\UNC\")) {
             let mut out = w(r"\\");
             out.extend_from_slice(&raw[8..]);
-            return from_wide(&out);
+            return Cow::Owned(from_wide(&out));
         }
-        if raw.starts_with(&w(r"\\?\")) {
-            return from_wide(&raw[4..]);
-        }
-        path.to_path_buf()
+        Cow::Owned(from_wide(&raw[4..]))
     }
     #[cfg(not(windows))]
     {
-        path.to_path_buf()
+        Cow::Borrowed(path)
     }
 }
 
@@ -216,12 +222,14 @@ mod tests {
     fn verbatim() {
         if cfg!(windows) {
             assert_eq!(strip_verbatim(Path::new(r"\\?\C:\x")), PathBuf::from(r"C:\x"));
+            assert!(matches!(strip_verbatim_cow(Path::new(r"\\?\C:\x")), Cow::Owned(_)));
             assert_eq!(strip_verbatim(Path::new(r"\\?\UNC\srv\share\x")), PathBuf::from(r"\\srv\share\x"));
         } else {
             // `\\?\x` is a legal (if odd) relative unix name: never rewritten.
             assert_eq!(strip_verbatim(Path::new(r"\\?\C:\x")), PathBuf::from(r"\\?\C:\x"));
         }
         assert_eq!(strip_verbatim(Path::new("/plain")), PathBuf::from("/plain"));
+        assert!(matches!(strip_verbatim_cow(Path::new("/plain")), Cow::Borrowed(_)), "no copy");
     }
 
     #[cfg(unix)]

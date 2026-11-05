@@ -64,8 +64,8 @@ impl FontRoleKind {
 #[serde(default)]
 pub struct FontRole {
     /// Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses
-    /// the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles
-    /// their default.
+    /// the semibold face of the `ui` family, `numbers` uses Inter Tabular while the `ui`
+    /// font is Inter and the `ui` font otherwise, other roles their default.
     pub family: String,
     /// Only embedded fonts: the one `family` names when it is embedded, else the role's
     /// embedded default (Inter / Inter SemiBold / Cascadia Mono / Hack). Never reads

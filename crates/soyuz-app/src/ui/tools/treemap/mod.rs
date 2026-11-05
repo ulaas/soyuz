@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
-use egui::{Align2, Color32, CornerRadius, FontId, Rect, Sense, Shape, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, Rect, Sense, Shape, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::{SizeStyle, format_size};
 
 use super::{button, progress_bar, tool_window};
@@ -32,7 +32,9 @@ use crate::ui::widgets::{icon_button, menu_item, menu_separator, trunc_galley};
 /// as one cushion per folder.
 const MAX_NEST: usize = 3;
 const HEADER: f32 = 17.0;
-const SIDE_W: f32 = 280.0;
+fn side_w() -> f32 {
+    crate::theme::font::grow(280.0)
+}
 
 /// Tile color for a file class (theme glyph tokens where they exist).
 pub fn class_color(class: FileClass, p: &Palette) -> Color32 {
@@ -186,9 +188,9 @@ impl TreemapWindow {
                 let last = k + 1 == chain.len();
                 let name = self.model.tree.nodes[*id].label().to_string();
                 let text = egui::RichText::new(name).font(if last {
-                    crate::ui::views::flow::semibold(13.0)
+                    crate::theme::font::semibold(13.0)
                 } else {
-                    FontId::proportional(13.0)
+                    crate::theme::font::ui(13.0)
                 });
                 let text = if last { text.color(p.text_primary) } else { text.color(p.text_secondary) };
                 if ui
@@ -209,7 +211,7 @@ impl TreemapWindow {
                 }
                 ui.label(
                     egui::RichText::new(self.model.totals(style))
-                        .font(FontId::proportional(12.5))
+                        .font(crate::theme::font::ui(12.5))
                         .color(p.text_secondary),
                 );
             });
@@ -218,14 +220,14 @@ impl TreemapWindow {
         match &status {
             Status::Scanning { text, .. } => {
                 progress_bar(ui, ui.available_width(), status.fraction());
-                ui.label(egui::RichText::new(text).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                ui.label(egui::RichText::new(text).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(120));
             }
             Status::Failed(e) => {
                 ui.label(egui::RichText::new(e).color(p.danger));
             }
             Status::Done(s) => {
-                ui.label(egui::RichText::new(s).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                ui.label(egui::RichText::new(s).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
             }
             Status::Idle => {}
         }
@@ -247,7 +249,7 @@ impl TreemapWindow {
                         }
                     }
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        let text = egui::RichText::new(text).font(FontId::proportional(11.5)).color(p.text_secondary);
+                        let text = egui::RichText::new(text).font(crate::theme::font::ui(11.5)).color(p.text_secondary);
                         ui.add(egui::Label::new(text).truncate()).on_hover_text(full);
                     });
                 });
@@ -259,7 +261,7 @@ impl TreemapWindow {
         let legend_h = 24.0;
         let confirm_h = if self.model.confirm_delete.is_some() { 40.0 } else { 0.0 };
         let map =
-            Rect::from_min_max(area.min, pos2(area.right() - SIDE_W - 10.0, area.bottom() - legend_h - confirm_h));
+            Rect::from_min_max(area.min, pos2(area.right() - side_w() - 10.0, area.bottom() - legend_h - confirm_h));
         let side = Rect::from_min_max(pos2(map.right() + 10.0, area.top()), pos2(area.right(), map.bottom()));
         ui.allocate_rect(area, Sense::hover());
         self.treemap(ui, map, app);
@@ -279,10 +281,10 @@ impl TreemapWindow {
         for (label, c) in entries {
             ui.painter().rect_filled(
                 Rect::from_center_size(pos2(x + 5.0, lr.center().y), vec2(10.0, 10.0)),
-                CornerRadius::same(3),
+                crate::theme::tokens::radius::same(3),
                 c,
             );
-            let g = ui.painter().layout_no_wrap(label, FontId::proportional(11.5), p.text_secondary);
+            let g = ui.painter().layout_no_wrap(label, crate::theme::font::ui(11.5), p.text_secondary);
             let w = g.size().x;
             ui.painter().galley(pos2(x + 14.0, lr.center().y - g.size().y / 2.0), g, p.text_secondary);
             x += w + 30.0;
@@ -290,12 +292,12 @@ impl TreemapWindow {
         // Delete confirmation bar.
         if let Some(msg) = self.model.confirm_text(style) {
             let cr = Rect::from_min_max(pos2(area.left(), area.bottom() - confirm_h + 4.0), area.max);
-            ui.painter().rect_filled(cr, CornerRadius::same(8), p.danger.gamma_multiply(0.12));
+            ui.painter().rect_filled(cr, crate::theme::tokens::radius::same(8), p.danger.gamma_multiply(0.12));
             ui.painter().text(
                 pos2(cr.left() + 14.0, cr.center().y),
                 Align2::LEFT_CENTER,
                 msg,
-                FontId::proportional(12.5),
+                crate::theme::font::ui(12.5),
                 p.text_primary,
             );
             let br = Rect::from_min_max(pos2(cr.right() - 320.0, cr.top() + 4.0), cr.max - vec2(8.0, 4.0));
@@ -313,7 +315,7 @@ impl TreemapWindow {
 
     fn treemap(&mut self, ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         let p = palette(ui.ctx());
-        ui.painter().rect_filled(rect, CornerRadius::same(8), p.bg_sunken);
+        ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(8), p.bg_sunken);
         let resp = ui.interact(rect, ui.scope_id().with("treemap.area"), Sense::click());
         let inner = rect.shrink(4.0);
         let mut hits: Vec<(Rect, usize)> = Vec::new();
@@ -387,7 +389,7 @@ impl TreemapWindow {
                 rect.center() + vec2(0.0, 14.0),
                 Align2::CENTER_CENTER,
                 text,
-                FontId::proportional(13.0),
+                crate::theme::font::ui(13.0),
                 p.text_secondary,
             );
         }
@@ -399,7 +401,12 @@ impl TreemapWindow {
             if let Some(id) = id
                 && let Some((r, _)) = hits.iter().find(|(_, h)| *h == id)
             {
-                painter.rect_stroke(*r, CornerRadius::same(2), Stroke::new(width, color), StrokeKind::Inside);
+                painter.rect_stroke(
+                    *r,
+                    crate::theme::tokens::radius::same(2),
+                    Stroke::new(width, color),
+                    StrokeKind::Inside,
+                );
             }
         };
         highlight(self.side_hover, p.text_primary.gamma_multiply(0.85), 2.0);
@@ -416,7 +423,7 @@ impl TreemapWindow {
                 if let Some(m) = mark {
                     ui.label(
                         egui::RichText::new(tr!("tools-treemap-diff-tile", mark = m.label()))
-                            .font(crate::ui::views::flow::semibold(11.5))
+                            .font(crate::theme::font::semibold(11.5))
                             .color(mark_color(m, &p)),
                     );
                 }
@@ -476,7 +483,7 @@ impl TreemapWindow {
                 } else {
                     scale(p.bg_surface2, 1.0 - 0.03 * depth as f32)
                 };
-                out.bgs.push(Shape::rect_filled(r, CornerRadius::same(3), bg));
+                out.bgs.push(Shape::rect_filled(r, crate::theme::tokens::radius::same(3), bg));
                 let hr = Rect::from_min_size(r.min, vec2(r.width(), HEADER));
                 out.bgs.push(Shape::rect_filled(
                     hr,
@@ -485,7 +492,7 @@ impl TreemapWindow {
                 ));
                 out.borders.push(Shape::rect_stroke(
                     r,
-                    CornerRadius::same(3),
+                    crate::theme::tokens::radius::same(3),
                     Stroke::new(1.0, p.border_strong),
                     StrokeKind::Inside,
                 ));
@@ -533,7 +540,7 @@ impl TreemapWindow {
 
     fn side(&mut self, ui: &mut Ui, rect: Rect, style: SizeStyle) {
         let p = palette(ui.ctx());
-        ui.painter().rect_filled(rect, CornerRadius::same(8), p.bg_surface2.gamma_multiply(0.5));
+        ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(8), p.bg_surface2.gamma_multiply(0.5));
         let mut child = ui.new_child(
             egui::UiBuilder::new().max_rect(rect.shrink(8.0)).layout(egui::Layout::top_down(egui::Align::Min)),
         );
@@ -555,7 +562,7 @@ impl TreemapWindow {
         if items.is_empty() {
             let msg = self.model.side_empty();
             ui.add_space(12.0);
-            ui.label(egui::RichText::new(msg).font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(egui::RichText::new(msg).font(crate::theme::font::ui(12.0)).color(p.text_tertiary));
         }
         let total = self.model.tree.nodes[self.model.current].bytes.max(1);
         let mut hover = None;
@@ -571,9 +578,9 @@ impl TreemapWindow {
                     let painter = ui.painter();
                     let sel = self.model.selected == Some(id);
                     if sel {
-                        painter.rect_filled(r, CornerRadius::same(6), p.accent_subtle);
+                        painter.rect_filled(r, crate::theme::tokens::radius::same(6), p.accent_subtle);
                     } else if resp.hovered() {
-                        painter.rect_filled(r, CornerRadius::same(6), p.bg_surface3);
+                        painter.rect_filled(r, crate::theme::tokens::radius::same(6), p.bg_surface3);
                     }
                     if resp.hovered() {
                         hover = Some(id);
@@ -594,7 +601,7 @@ impl TreemapWindow {
                         c,
                     );
                     let size = format_size(n.bytes, style);
-                    let sg = painter.layout_no_wrap(size, FontId::proportional(11.5), p.text_secondary);
+                    let sg = painter.layout_no_wrap(size, crate::theme::font::ui(11.5), p.text_secondary);
                     let sw = sg.size().x;
                     painter.galley(
                         pos2(r.right() - 8.0 - sw, r.top() + 13.0 - sg.size().y / 2.0),
@@ -604,7 +611,7 @@ impl TreemapWindow {
                     let g = trunc_galley(
                         painter,
                         n.label(),
-                        FontId::proportional(12.5),
+                        crate::theme::font::ui(12.5),
                         p.text_primary,
                         r.width() - 40.0 - sw - 8.0,
                     );
@@ -613,15 +620,15 @@ impl TreemapWindow {
                     let frac = n.bytes as f32 / total as f32;
                     let bar =
                         Rect::from_min_size(pos2(r.left() + 28.0, r.bottom() - 11.0), vec2(r.width() - 80.0, 4.0));
-                    painter.rect_filled(bar, CornerRadius::same(2), p.border_subtle);
+                    painter.rect_filled(bar, crate::theme::tokens::radius::same(2), p.border_subtle);
                     let mut fill = bar;
                     fill.set_width((bar.width() * frac).max(2.0));
-                    painter.rect_filled(fill, CornerRadius::same(2), c);
+                    painter.rect_filled(fill, crate::theme::tokens::radius::same(2), c);
                     painter.text(
                         pos2(r.right() - 8.0, bar.center().y),
                         Align2::RIGHT_CENTER,
                         percent(f64::from(frac) * 100.0),
-                        FontId::proportional(10.5),
+                        crate::theme::font::ui(10.5),
                         p.text_tertiary,
                     );
                     if resp.clicked() {
@@ -686,7 +693,7 @@ struct Out<'a> {
 }
 
 fn trunc_galley_shape(ui: &Ui, text: &str, size: f32, color: Color32, max_w: f32) -> Arc<egui::Galley> {
-    trunc_galley(ui.painter(), text, FontId::proportional(size), color, max_w)
+    trunc_galley(ui.painter(), text, crate::theme::font::ui(size), color, max_w)
 }
 
 fn tooltip(ui: &mut Ui, tree: &Tree, id: usize, parent_bytes: u64, cur_bytes: u64, style: SizeStyle, color: Color32) {
@@ -695,19 +702,17 @@ fn tooltip(ui: &mut Ui, tree: &Tree, id: usize, parent_bytes: u64, cur_bytes: u6
     ui.set_max_width(360.0);
     ui.horizontal(|ui| {
         ui.label(icons::icon(if n.is_dir { ph::FOLDER_SIMPLE } else { ph::FILE }, 14.0).color(color));
-        ui.label(egui::RichText::new(n.label()).font(crate::ui::views::flow::semibold(13.0)).color(p.text_primary));
+        ui.label(egui::RichText::new(n.label()).font(crate::theme::font::semibold(13.0)).color(p.text_primary));
     });
     if !n.other {
         ui.label(
             egui::RichText::new(super::tags_ui::show_path(&n.path))
-                .font(FontId::proportional(11.5))
+                .font(crate::theme::font::ui(11.5))
                 .color(p.text_tertiary),
         );
     }
     ui.label(
-        egui::RichText::new(format_size(n.bytes, style))
-            .font(crate::ui::views::flow::semibold(14.0))
-            .color(p.text_primary),
+        egui::RichText::new(format_size(n.bytes, style)).font(crate::theme::font::semibold(14.0)).color(p.text_primary),
     );
     ui.label(
         egui::RichText::new(tr!(
@@ -715,20 +720,20 @@ fn tooltip(ui: &mut Ui, tree: &Tree, id: usize, parent_bytes: u64, cur_bytes: u6
             parent = percent(share(n.bytes, parent_bytes)),
             view = percent(share(n.bytes, cur_bytes))
         ))
-        .font(FontId::proportional(11.5))
+        .font(crate::theme::font::ui(11.5))
         .color(p.text_secondary),
     );
     if n.is_dir || n.other {
         ui.label(
             egui::RichText::new(tr!("tools-files", count = n.files))
-                .font(FontId::proportional(11.5))
+                .font(crate::theme::font::ui(11.5))
                 .color(p.text_secondary),
         );
     }
     if n.is_dir && !n.complete {
         ui.label(
             egui::RichText::new(tr!("tools-treemap-measure-deeper"))
-                .font(FontId::proportional(11.0))
+                .font(crate::theme::font::ui(11.0))
                 .color(p.text_tertiary),
         );
     }

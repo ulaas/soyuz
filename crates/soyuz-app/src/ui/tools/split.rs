@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use egui::{Align, FontId, Layout, RichText, Ui, vec2};
+use egui::{Align, Layout, RichText, Ui, vec2};
 use soyuz_core::{SizeStyle, format_size};
 
 use super::{button, progress_bar, tool_window};
@@ -46,7 +46,7 @@ impl SplitWindow {
     fn body(&mut self, ui: &mut Ui) {
         let p = palette(ui.ctx());
         let label = |ui: &mut Ui, s: &str| {
-            ui.label(RichText::new(s).font(FontId::proportional(11.5)).color(p.text_tertiary));
+            ui.label(RichText::new(s).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
         };
         let m = &mut self.model;
         match m.mode {
@@ -75,7 +75,7 @@ impl SplitWindow {
                     super::text_field(ui, &mut m.custom, tr!("tools-split-custom-hint"), 160.0);
                 }
                 if let Some(plan) = m.plan_text() {
-                    ui.label(RichText::new(plan).font(FontId::proportional(12.0)).color(p.text_secondary));
+                    ui.label(RichText::new(plan).font(crate::theme::font::ui(12.0)).color(p.text_secondary));
                 }
             }
             Mode::Join => {
@@ -97,7 +97,7 @@ impl SplitWindow {
                             } else {
                                 tr!("tools-join-no-checksum")
                             })
-                            .font(FontId::proportional(12.0))
+                            .font(crate::theme::font::ui(12.0))
                             .color(if has_ck { p.success } else { p.text_tertiary }),
                         );
                     }
@@ -115,7 +115,7 @@ impl SplitWindow {
         if let (Some((done, total, _)), Some(text)) = (m.progress(), m.progress_text()) {
             let frac = if total > 0 { Some(done as f32 / total as f32) } else { None };
             progress_bar(ui, ui.available_width(), frac);
-            ui.label(RichText::new(text).font(FontId::proportional(12.0)).color(p.text_secondary));
+            ui.label(RichText::new(text).font(crate::theme::font::ui(12.0)).color(p.text_secondary));
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
         if let Some(r) = &m.result {

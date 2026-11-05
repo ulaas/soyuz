@@ -6,8 +6,8 @@ pub mod widgets;
 
 use egui::emath::TSTransform;
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Frame, Id, Key, LayerId, Margin, Modal, Modifiers, Order, Rect, RichText,
-    Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
+    Align2, Color32, CornerRadius, Frame, Id, Key, LayerId, Margin, Modal, Modifiers, Order, Rect, RichText, Sense,
+    Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
 };
 use soyuz_core::config::{Action, KeyContext};
 
@@ -21,10 +21,18 @@ use crate::ui::widgets::trunc_galley;
 
 use widgets::{highlighted, icon_tile, paint_chips};
 
-const ROW_H: f32 = 46.0;
-const HEADER_H: f32 = 26.0;
-const INPUT_H: f32 = 54.0;
-const FOOTER_H: f32 = 36.0;
+fn row_h() -> f32 {
+    crate::theme::font::grow(46.0)
+}
+fn header_h() -> f32 {
+    crate::theme::font::grow(26.0)
+}
+fn input_h() -> f32 {
+    crate::theme::font::grow(54.0)
+}
+fn footer_h() -> f32 {
+    crate::theme::font::grow(36.0)
+}
 const MAX_LIST_H: f32 = 430.0;
 
 fn tint_color(p: &Palette, t: Tint) -> Color32 {
@@ -75,14 +83,9 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     let frame = Frame::new()
         .fill(p.bg_surface3)
         .stroke(Stroke::new(1.0, p.border_strong))
-        .corner_radius(CornerRadius::same(14))
+        .corner_radius(crate::theme::tokens::radius::same(14))
         .inner_margin(Margin::ZERO)
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 18],
-            blur: 56,
-            spread: 0,
-            color: Color32::from_black_alpha((p.shadow_alpha * 255.0 * 1.2).min(255.0) as u8),
-        });
+        .shadow(p.shadow(crate::theme::tokens::shadow::OVERLAY));
     let mut clicked: Option<(Exec, RunMods)> = None;
     let resp = Modal::new(id)
         .area(area)
@@ -175,7 +178,7 @@ fn divider(ui: &mut Ui, p: &Palette) {
 }
 
 fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
-    let (rect, _) = ui.allocate_exact_size(vec2(width, INPUT_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, input_h()), Sense::hover());
     let mode = app.core.palette.mode();
     let painter = ui.painter();
     let mut x = rect.left() + 18.0;
@@ -194,9 +197,9 @@ fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
     // Mode chip for prefixed / folder modes.
     if mode != Mode::Commands {
         let label = mode.label();
-        let g = painter.layout_no_wrap(label.to_string(), FontId::proportional(11.5), p.accent);
+        let g = painter.layout_no_wrap(label.to_string(), crate::theme::font::ui(11.5), p.accent);
         let chip = Rect::from_min_size(pos2(x, rect.center().y - 11.0), vec2(g.size().x + 16.0, 22.0));
-        painter.rect_filled(chip, CornerRadius::same(11), p.accent_subtle);
+        painter.rect_filled(chip, crate::theme::tokens::radius::same(11), p.accent_subtle);
         painter.galley(pos2(chip.left() + 8.0, chip.center().y - g.size().y / 2.0), g, p.accent);
         x = chip.right() + 8.0;
     }
@@ -209,9 +212,9 @@ fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
     let te = TextEdit::singleline(&mut app.core.palette.input)
         .id(Id::unique("soyuz.palette.input"))
         .frame(Frame::NONE)
-        .font(FontId::proportional(16.5))
+        .font(crate::theme::font::ui(16.5))
         .text_color(p.text_primary)
-        .hint_text(RichText::new(hint).color(p.text_tertiary).size(15.0))
+        .hint_text(RichText::new(hint).color(p.text_tertiary).size(crate::theme::font::px(15.0)))
         .desired_width(edit_rect.width())
         .margin(Margin::symmetric(0, 4));
     let out = te.show(&mut child);
@@ -250,7 +253,7 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
             rect.center() + vec2(0.0, 16.0),
             Align2::CENTER_CENTER,
             tr!("actions-palette-no-matches"),
-            FontId::proportional(13.0),
+            crate::theme::font::ui(13.0),
             p.text_secondary,
         );
         return None;
@@ -260,10 +263,10 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
     let mut last: Option<&str> = None;
     for it in items {
         if last != Some(it.section) {
-            total += HEADER_H;
+            total += header_h();
             last = Some(it.section);
         }
-        total += ROW_H;
+        total += row_h();
     }
     let height = total.min(MAX_LIST_H);
     let selected = app.core.palette.selected;
@@ -287,17 +290,17 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
             let mut last: Option<&str> = None;
             for (i, it) in items.iter().enumerate() {
                 if last != Some(it.section) {
-                    let (r, _) = ui.allocate_exact_size(vec2(width, HEADER_H), Sense::hover());
+                    let (r, _) = ui.allocate_exact_size(vec2(width, header_h()), Sense::hover());
                     ui.painter().text(
                         pos2(r.left() + 20.0, r.bottom() - 7.0),
                         Align2::LEFT_BOTTOM,
                         palette::upper(it.section),
-                        FontId::proportional(10.5),
+                        crate::theme::font::ui(10.5),
                         p.text_tertiary,
                     );
                     last = Some(it.section);
                 }
-                let (outer, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+                let (outer, resp) = ui.allocate_exact_size(vec2(width, row_h()), Sense::click());
                 let r = outer.shrink2(vec2(8.0, 2.0));
                 let is_sel = i == selected;
                 let total = items.len();
@@ -333,9 +336,17 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
                     crate::theme::anim(ui.ctx(), 0.08),
                 );
                 if sel_t > 0.0 {
-                    ui.painter().rect_filled(r, CornerRadius::same(9), p.accent_subtle.gamma_multiply(sel_t));
+                    ui.painter().rect_filled(
+                        r,
+                        crate::theme::tokens::radius::same(9),
+                        p.accent_subtle.gamma_multiply(sel_t),
+                    );
                     let bar = Rect::from_min_size(pos2(r.left(), r.center().y - 9.0), vec2(3.0, 18.0));
-                    ui.painter().rect_filled(bar, CornerRadius::same(2), p.accent.gamma_multiply(sel_t));
+                    ui.painter().rect_filled(
+                        bar,
+                        crate::theme::tokens::radius::same(2),
+                        p.accent.gamma_multiply(sel_t),
+                    );
                 }
                 row(ui, p, it, r, is_sel);
             }
@@ -358,7 +369,7 @@ fn row(ui: &Ui, p: &Palette, it: &Item, r: Rect, selected: bool) {
         right = paint_chips(ui, p, c, right, r.center().y, selected) - 6.0;
     }
     if let Some(tag) = &it.tag {
-        let g = ui.painter().layout_no_wrap(tag.clone(), FontId::proportional(10.5), p.text_tertiary);
+        let g = ui.painter().layout_no_wrap(tag.clone(), crate::theme::font::ui(10.5), p.text_tertiary);
         let pos = pos2(right - g.size().x, r.center().y - g.size().y / 2.0);
         right = pos.x - 10.0;
         ui.painter().galley(pos, g, p.text_tertiary);
@@ -370,21 +381,27 @@ fn row(ui: &Ui, p: &Palette, it: &Item, r: Rect, selected: bool) {
     job.wrap = egui::text::TextWrapping::truncate_at_width(max_w);
     let title = ui.painter().layout_job(job);
     let has_detail = !it.detail.is_empty();
-    let ty = if has_detail { r.center().y - 9.0 } else { r.center().y };
+    let line = crate::theme::font::grow(9.0);
+    let ty = if has_detail { r.center().y - line } else { r.center().y };
     ui.painter().galley(pos2(text_left, ty - title.size().y / 2.0), title, title_color);
     if has_detail {
-        let g = trunc_galley(ui.painter(), &it.detail, FontId::proportional(11.5), p.text_tertiary, max_w);
-        ui.painter().galley(pos2(text_left, r.center().y + 9.0 - g.size().y / 2.0), g, p.text_tertiary);
+        let g = trunc_galley(ui.painter(), &it.detail, crate::theme::font::ui(11.5), p.text_tertiary, max_w);
+        ui.painter().galley(pos2(text_left, r.center().y + line - g.size().y / 2.0), g, p.text_tertiary);
     }
 }
 
 fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Option<(Exec, RunMods)>) {
     divider(ui, p);
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FOOTER_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, footer_h()), Sense::hover());
     let painter = ui.painter();
     painter.rect_filled(
         rect,
-        CornerRadius { nw: 0, ne: 0, sw: 14, se: 14 },
+        CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: crate::theme::tokens::radius::scaled(14),
+            se: crate::theme::tokens::radius::scaled(14),
+        },
         if p.dark { p.bg_surface2.gamma_multiply(0.6) } else { p.bg_surface2 },
     );
     let cy = rect.center().y;
@@ -393,7 +410,7 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
         let w = widgets::chips_width(ui, keys);
         paint_chips(ui, p, keys, *x + w, cy, false);
         *x += w + 4.0;
-        let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(11.0), p.text_tertiary);
+        let g = ui.painter().layout_no_wrap(label.to_string(), crate::theme::font::ui(11.0), p.text_tertiary);
         ui.painter().galley(pos2(*x, cy - g.size().y / 2.0), g.clone(), p.text_tertiary);
         *x += g.size().x + 12.0;
     };
@@ -407,7 +424,7 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
     for m in Mode::PREFIXED.iter().rev() {
         let c = m.prefix().unwrap_or(' ');
         let label = format!("{c} {}", m.legend());
-        let g = ui.painter().layout_no_wrap(label, FontId::proportional(11.0), p.text_secondary);
+        let g = ui.painter().layout_no_wrap(label, crate::theme::font::ui(11.0), p.text_secondary);
         let r = Rect::from_min_size(pos2(rx - g.size().x - 12.0, cy - 10.0), vec2(g.size().x + 12.0, 20.0));
         if r.left() < x {
             break;
@@ -422,9 +439,14 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
         } else {
             Color32::TRANSPARENT
         };
-        ui.painter().rect_filled(r, CornerRadius::same(10), fill);
+        ui.painter().rect_filled(r, crate::theme::tokens::radius::same(10), fill);
         if !active {
-            ui.painter().rect_stroke(r, CornerRadius::same(10), Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
+            ui.painter().rect_stroke(
+                r,
+                crate::theme::tokens::radius::same(10),
+                Stroke::new(1.0, p.border_subtle),
+                StrokeKind::Inside,
+            );
         }
         let color = if active { p.accent } else { p.text_secondary };
         ui.painter().galley(pos2(r.left() + 6.0, cy - g.size().y / 2.0), g, color);
@@ -440,19 +462,19 @@ fn sequence_hint(ctx: &egui::Context, app: &SoyuzApp) {
     let Some(label) = app.core.keyseq.pending_label() else { return };
     let p = crate::theme::palette(ctx);
     let screen = ctx.content_rect();
-    let font = FontId::proportional(12.5);
+    let font = crate::theme::font::ui(12.5);
     let g = ctx.fonts_mut(|f| f.layout_no_wrap(label, font, p.text_primary));
     let size = vec2(g.size().x + 46.0, 30.0);
     let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - 60.0), size);
     let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::unique("soyuz.keyseq")));
     painter.add(
-        egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) }
-            .as_shape(rect, CornerRadius::same(15)),
+        p.shadow(crate::theme::tokens::shadow::POPUP)
+            .as_shape(rect, crate::theme::tokens::radius::same(crate::theme::tokens::radius::PILL)),
     );
-    painter.rect_filled(rect, CornerRadius::same(15), p.bg_surface3);
+    painter.rect_filled(rect, crate::theme::tokens::radius::same(crate::theme::tokens::radius::PILL), p.bg_surface3);
     painter.rect_stroke(
         rect,
-        CornerRadius::same(15),
+        crate::theme::tokens::radius::same(crate::theme::tokens::radius::PILL),
         Stroke::new(1.0, p.accent.gamma_multiply(0.6)),
         StrokeKind::Inside,
     );

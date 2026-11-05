@@ -44,6 +44,7 @@ fn accept(t: &mut TransferModel, ui: &mut ModelUi, i: usize) {
     let Some(name) = ui.names.get(i).cloned() else { return };
     crumbs::accept(&mut t.dest, &name);
     set_text(&mut ui.form, 0, &t.dest);
+    ui.form.error = t.error().map(str::to_string);
     ui.names.clear();
     ui.list = SelectList::default();
 }
@@ -52,6 +53,7 @@ fn on_form(t: &mut TransferModel, ui: &mut ModelUi, out: FormOutcome) -> Option<
     match out {
         FormOutcome::Changed(_) => {
             t.dest = ui.form.fields[0].value().unwrap_or_default().to_string();
+            ui.form.error = t.error().map(str::to_string);
             None
         }
         FormOutcome::Pressed(1) => t.confirm().map(|c| Outcome::Close(Some(c))),
@@ -159,6 +161,26 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn a_relative_destination_is_refused_with_a_message() {
+        let mut m: DialogModel = TransferModel::new(vec![PathBuf::from("a")], PathBuf::new(), true).into();
+        let mut u = ui(&m);
+        on_form_text(&mut m, &mut u, "Backup");
+        assert!(u.form.error.is_some(), "says why");
+        assert!(matches!(on_input(&mut m, &mut u, &chord("Enter")), Outcome::Keep), "nothing moves");
+        let abs = std::env::temp_dir().display().to_string();
+        on_form_text(&mut m, &mut u, &abs);
+        assert!(u.form.error.is_none());
+        assert!(matches!(on_input(&mut m, &mut u, &chord("Enter")), Outcome::Close(Some(_))));
+    }
+
+    /// The field as if typed: the form reports the change and the model follows.
+    fn on_form_text(m: &mut DialogModel, u: &mut ModelUi, text: &str) {
+        set_text(&mut u.form, 0, text);
+        let DialogModel::Transfer(t) = m else { panic!() };
+        on_form(t, u, FormOutcome::Changed(0));
     }
 
     #[test]

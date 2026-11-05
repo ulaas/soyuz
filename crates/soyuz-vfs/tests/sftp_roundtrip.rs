@@ -17,7 +17,7 @@ use soyuz_core::FsErrorKind;
 use soyuz_vfs::RemoteUri;
 use soyuz_vfs::local::LocalProvider;
 use soyuz_vfs::registry::{self, Credentials, Hooks, HostKeyPrompt};
-use soyuz_vfs::transfer::{FileCopy, NoHooks, copy_file};
+use soyuz_vfs::transfer::{FileCopy, NoHooks, copy_file, mark_partial};
 use tokio::sync::Mutex;
 
 /// Throwaway keys generated for this test only.
@@ -341,6 +341,7 @@ fn sftp_provider_against_in_process_server() {
     std::fs::write(root.path().join("up").join(".big.bin.soyuzpart"), &data[..250_000]).unwrap();
     let s = src.to_string_lossy().into_owned();
     let local = LocalProvider;
+    mark_partial(&local, &s, &*sftp, "/up/big.bin").unwrap();
     let st = copy_file(
         &FileCopy {
             src: &local,

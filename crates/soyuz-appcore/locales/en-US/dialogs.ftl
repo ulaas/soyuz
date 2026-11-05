@@ -441,6 +441,7 @@ dialogs-transfer-move-many = Move { $count } items to:
 dialogs-transfer-copy-many = Copy { $count } items to:
 dialogs-transfer-dest = Destination folder
 dialogs-transfer-dest-hint = Folder path
+dialogs-transfer-relative = Type the folder's full path, starting at the drive or root.
 
 ## Open with
 
@@ -449,7 +450,7 @@ dialogs-openwith-looking = Looking up applications…
 dialogs-openwith-none = No registered applications for this file type
 # $app: application name.
 dialogs-openwith-default-handler = { $app } (opens with the default handler)
-dialogs-openwith-other = Or another program (full path):
+dialogs-openwith-other = Or a program path:
 dialogs-openwith-open = Open
 dialogs-openwith-always = Always use this app for .{ $ext } files
 dialogs-openwith-always-noext = Always use this app for files without an extension
@@ -457,6 +458,15 @@ dialogs-openwith-always-system = This application opens through the system, so i
 # $path: the typed program path.
 dialogs-openwith-not-program = { $path } is not a program file
 dialogs-openwith-choose = Choose an application or type a program path
+dialogs-openwith-browse = Browse…
+dialogs-openwith-back = Back
+dialogs-openwith-browse-tip = Find a program on this computer (Alt+B)
+dialogs-openwith-browse-title = Choose a program
+dialogs-openwith-all-files = All files
+dialogs-openwith-filter = Type to filter
+dialogs-openwith-place-start-menu = Start menu
+dialogs-openwith-place-start-menu-all = Start menu (all users)
+dialogs-openwith-place-user-programs = My programs
 
 ## MCP approval
 

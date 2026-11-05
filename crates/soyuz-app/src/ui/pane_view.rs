@@ -1,32 +1,36 @@
 //! A pane card: rounded surface with an optional header (dual pane), loading / error /
 //! empty states, and the active view.
 
-use egui::{Align2, CornerRadius, FontId, Id, Rect, Sense, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2};
+use egui::{Align2, Id, Rect, Sense, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2};
+use soyuz_core::config::Action;
 use soyuz_core::{Location, ViewMode};
 
 use crate::cmd::Cmd;
 use crate::state::crumbs::location_title;
 use crate::state::listing::EmptyKind;
 use crate::state::pane::{ContextTarget, ListingStatus, Pane};
+use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
 use crate::theme::{icons::ph, palette};
 use crate::ui::context_menu;
 use crate::ui::empty_state::EmptyState;
-use crate::ui::views::flow::{self, Style, semibold};
+use crate::ui::views::flow::{self, Style};
 use crate::ui::views::{ViewCtx, computer, miller};
-use crate::ui::widgets::{spinner, trunc_galley};
+use crate::ui::widgets::{fit, spinner};
 
-const HEADER_H: f32 = 32.0;
+fn header_h() -> f32 {
+    crate::theme::font::grow(32.0)
+}
 /// Inset that keeps square fills inside the card's rounded corners.
 const INSET: f32 = 4.0;
 
 pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, with_header: bool) {
     let p = palette(ui.ctx());
-    let card = CornerRadius::same(radius::MODAL);
+    let card = crate::theme::tokens::radius::same(radius::MODAL);
     ui.painter().rect_filled(rect, card, p.bg_surface1);
     let mut content = rect.shrink(INSET);
     if with_header {
-        let hr = Rect::from_min_size(rect.min, vec2(rect.width(), HEADER_H));
+        let hr = Rect::from_min_size(rect.min, vec2(rect.width(), header_h()));
         header(ui, hr, pane, v);
         content.min.y = hr.bottom() + 2.0;
     }
@@ -61,23 +65,19 @@ fn header(ui: &mut Ui, r: Rect, pane: &Pane, v: &mut ViewCtx<'_>) {
     let dot = pos2(r.left() + 16.0, r.center().y);
     ui.painter().circle_filled(dot, 3.5, if active { p.accent } else { p.border_strong });
     let title = location_title(&pane.location);
-    let tg = trunc_galley(
+    let tg = fit::ends(
         ui.painter(),
         &title,
         semibold(12.5),
         if active { p.text_primary } else { p.text_secondary },
         r.width() * 0.45,
-    );
+    )
+    .galley;
     let tw = tg.size().x;
     ui.painter().galley(pos2(r.left() + 28.0, r.center().y - tg.size().y / 2.0), tg, p.text_primary);
     let path = pane.location.display();
-    let pg = trunc_galley(
-        ui.painter(),
-        &path,
-        FontId::proportional(11.5),
-        p.text_tertiary,
-        r.right() - (r.left() + 40.0 + tw) - 12.0,
-    );
+    let room = r.right() - (r.left() + 40.0 + tw) - 12.0;
+    let pg = fit::ends(ui.painter(), &path, crate::theme::font::ui(11.5), p.text_tertiary, room).galley;
     ui.painter().galley(pos2(r.left() + 38.0 + tw, r.center().y - pg.size().y / 2.0), pg, p.text_tertiary);
     ui.painter().line_segment(
         [pos2(r.left() + INSET, r.bottom() + 0.5), pos2(r.right() - INSET, r.bottom() + 0.5)],
@@ -125,14 +125,19 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                 Some(p.danger),
                 title,
                 &sub,
-                &[("Alt+Up", tr!("views-pane-hint-go-up")), ("Alt+Left", tr!("views-pane-hint-go-back"))],
+                &[(Action::Up, tr!("views-pane-hint-go-up")), (Action::Back, tr!("views-pane-hint-go-back"))],
             );
         }
         ListingStatus::Loading { since } if pane.entries.is_empty() => {
             // Avoid a flash for fast listings: skeleton rows after a short delay.
             if since.elapsed().as_secs_f32() > 0.12 {
                 let grid = matches!(pane.view.mode, ViewMode::Grid | ViewMode::Gallery);
-                crate::ui::looks::paint_skeleton(ui, rect, grid, v.config.appearance.density.row_height());
+                crate::ui::looks::paint_skeleton(
+                    ui,
+                    rect,
+                    grid,
+                    crate::theme::font::height(v.config.appearance.density.row_height(), 13.0),
+                );
                 if since.elapsed().as_secs_f32() > 2.5 {
                     // Slow folder (network, huge): say so.
                     spinner(ui, pos2(rect.right() - 24.0, rect.bottom() - 20.0), 6.0, p.accent);
@@ -140,7 +145,7 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         pos2(rect.right() - 36.0, rect.bottom() - 20.0),
                         Align2::RIGHT_CENTER,
                         tr!("common-loading"),
-                        FontId::proportional(12.0),
+                        crate::theme::font::ui(12.0),
                         p.text_tertiary,
                     );
                 }
@@ -163,7 +168,7 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                             Some(p.text_secondary),
                             tr!("views-pane-no-matches"),
                             &sub,
-                            &[("Esc", tr!("views-pane-hint-clear-filter"))],
+                            &[(Action::SelectNone, tr!("views-pane-hint-clear-filter"))],
                         );
                     }
                     EmptyKind::OnlyHidden => empty(
@@ -175,7 +180,7 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         Some(p.text_secondary),
                         tr!("views-pane-only-hidden"),
                         tr!("views-pane-only-hidden-sub"),
-                        &[("Ctrl+H", tr!("views-pane-hint-show-hidden"))],
+                        &[(Action::ToggleHidden, tr!("views-pane-hint-show-hidden"))],
                     ),
                     _ if matches!(pane.location, Location::Timeline) => empty(
                         ui,
@@ -223,7 +228,7 @@ fn empty(
     color: Option<egui::Color32>,
     title: &str,
     subtitle: &str,
-    hints: &[(&str, &str)],
+    hints: &[(Action, &str)],
 ) {
     let bg = ui.interact(rect, Id::unique(("soyuz.pane.empty", pane.id.0)), Sense::click());
     if bg.clicked() || bg.secondary_clicked() {
@@ -231,6 +236,10 @@ fn empty(
         pane.context = ContextTarget::Background;
     }
     let mut child = ui.new_child(UiBuilder::new().max_rect(rect));
-    EmptyState { glyph, glyph_color: color, title, subtitle, hints }.show(&mut child);
+    // The keys as bound now; an unbound action has no hint.
+    let bound: Vec<(String, &str)> =
+        hints.iter().filter_map(|(a, what)| Some((crate::keys::chord_label(v.keymap, a)?, *what))).collect();
+    let hints: Vec<(&str, &str)> = bound.iter().map(|(k, what)| (k.as_str(), *what)).collect();
+    EmptyState { glyph, glyph_color: color, title, subtitle, hints: &hints }.show(&mut child);
     context_menu::show_pane_menu(ui, &bg, pane, v, |_| rect.left_top() + egui::vec2(16.0, 8.0));
 }

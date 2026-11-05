@@ -481,6 +481,29 @@ pub fn windows_quote_arg(arg: &str) -> String {
     out
 }
 
+/// `path` ready to sit right before a closing `"`: its trailing backslashes are doubled. As
+/// written, a volume root would read as `D:` plus an escaped quote that swallows the next
+/// arguments.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn windows_before_quote(path: &str) -> String {
+    let trailing = path.len() - path.trim_end_matches('\\').len();
+    format!("{path}{}", "\\".repeat(trailing))
+}
+
+/// `path` as an `explorer.exe` argument. It splits on commas outside quotes, so paths stay
+/// quoted; a volume root has no quotes to get wrong when it has no spaces either.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn explorer_path_arg(path: &str) -> String {
+    if path.ends_with('\\') { windows_quote_arg(path) } else { format!("\"{path}\"") }
+}
+
+/// The arguments of `cmd.exe` running the script `path`. `%` in the name would expand as a
+/// variable (`50%OFF%.bat`): `%%cd:~,%` is the form that comes out as a plain `%`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn batch_command_line(path: &str) -> String {
+    format!("/e:ON /v:OFF /d /c \"\"{}\"\"", path.replace('%', "%%cd:~,%"))
+}
+
 /// The `Start-Process -Verb RunAs` script for [`run_elevated`]. `-ArgumentList` gets one
 /// pre-quoted command-line string (Start-Process joins list items with bare spaces, which
 /// would split arguments containing spaces).
@@ -553,7 +576,8 @@ pub fn reveal_in_system(path: &Path) -> FsResult<()> {
     {
         use std::os::windows::process::CommandExt;
         let mut c = Command::new("explorer.exe");
-        c.raw_arg(format!("/select,\"{}\"", crate::path::strip_verbatim(&crate::path::normalize(path)).display()));
+        let p = crate::path::strip_verbatim(&crate::path::normalize(path));
+        c.raw_arg(format!("/select,{}", explorer_path_arg(&p.to_string_lossy())));
         spawn_detached(c, "reveal", path)
     }
     #[cfg(target_os = "macos")]
@@ -587,6 +611,33 @@ pub fn shortcut_target(path: &Path) -> FsResult<Option<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trailing_backslashes_survive_a_closing_quote() {
+        assert_eq!(windows_before_quote(r"C:\a b"), r"C:\a b");
+        assert_eq!(windows_before_quote(r"D:\"), r"D:\\");
+        assert_eq!(explorer_path_arg(r"C:\a,b.txt"), r#""C:\a,b.txt""#);
+        assert_eq!(explorer_path_arg(r"D:\"), r"D:\");
+    }
+
+    #[test]
+    fn percent_signs_in_a_script_name_are_escaped() {
+        assert_eq!(batch_command_line(r"C:\x\a.bat"), r#"/e:ON /v:OFF /d /c ""C:\x\a.bat"""#);
+        assert_eq!(batch_command_line(r"C:\50%OFF%.bat"), r#"/e:ON /v:OFF /d /c ""C:\50%%cd:~,%OFF%%cd:~,%.bat"""#);
+    }
+
+    /// `cmd.exe` really runs a script whose name holds a variable, instead of expanding it.
+    #[cfg(windows)]
+    #[test]
+    fn a_batch_file_with_percent_signs_runs() {
+        use std::os::windows::process::CommandExt;
+        let d = tempfile::tempdir().unwrap();
+        let script = d.path().join("50%PATH%x.bat");
+        std::fs::write(&script, "@echo ran> \"%~dp0marker.txt\"\r\n").unwrap();
+        let status = Command::new("cmd.exe").raw_arg(batch_command_line(&script.to_string_lossy())).status().unwrap();
+        assert!(status.success(), "{status:?}");
+        assert!(d.path().join("marker.txt").exists(), "the script did not run");
+    }
 
     #[test]
     fn placeholders_are_substituted_in_one_pass() {

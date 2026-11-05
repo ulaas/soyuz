@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use egui::{Align, Color32, FontId, Layout, Rect, RichText, Sense, Ui, vec2};
+use egui::{Align, Color32, Layout, Rect, RichText, Sense, Ui, vec2};
 use soyuz_core::config::RemoteSection;
 
 use super::{button, tool_window};
@@ -52,7 +52,11 @@ impl ShareWindow {
             match m.qr() {
                 Some(qr) => paint_qr(ui, rect, qr),
                 None => {
-                    ui.painter().rect_filled(rect, 8.0, p.bg_surface2);
+                    ui.painter().rect_filled(
+                        rect,
+                        crate::theme::tokens::radius::same(crate::theme::tokens::radius::CARD),
+                        p.bg_surface2,
+                    );
                     ui.painter().text(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
@@ -66,7 +70,7 @@ impl ShareWindow {
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width());
                 let label = |ui: &mut Ui, s: &str| {
-                    ui.label(RichText::new(s).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                    ui.label(RichText::new(s).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
                 };
                 if let Some(problem) = m.problem() {
                     ui.label(RichText::new(problem).color(if m.running() { p.warning } else { p.danger }));
@@ -75,9 +79,11 @@ impl ShareWindow {
                 if let Some(url) = m.url().filter(|_| m.running()) {
                     label(ui, tr!("tools-share-address"));
                     ui.add(
-                        egui::Label::new(RichText::new(&url).font(FontId::monospace(13.0)).color(p.text_primary))
-                            .wrap()
-                            .selectable(true),
+                        egui::Label::new(
+                            RichText::new(&url).font(crate::theme::font::mono(13.0)).color(p.text_primary),
+                        )
+                        .wrap()
+                        .selectable(true),
                     );
                     if m.addresses.len() > 1 {
                         // Other networks this computer is on.
@@ -93,7 +99,7 @@ impl ShareWindow {
                     ui.add_space(6.0);
                     ui.label(
                         RichText::new(tr!("tools-share-intro"))
-                            .font(FontId::proportional(12.0))
+                            .font(crate::theme::font::ui(12.0))
                             .color(p.text_secondary),
                     );
                     ui.add_space(6.0);
@@ -107,7 +113,7 @@ impl ShareWindow {
                     ui.label(RichText::new(format!("+{}", m.items.len() - 6)).color(p.text_tertiary));
                 }
                 ui.add_space(6.0);
-                ui.label(RichText::new(m.status()).font(FontId::proportional(12.0)).color(p.text_secondary));
+                ui.label(RichText::new(m.status()).font(crate::theme::font::ui(12.0)).color(p.text_secondary));
             });
         });
         ui.with_layout(Layout::bottom_up(Align::Max), |ui| {

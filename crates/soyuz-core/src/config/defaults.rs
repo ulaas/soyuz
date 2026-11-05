@@ -119,6 +119,9 @@ impl Default for Appearance {
             write_os_thumbnails: true,
             icon_pack: String::new(),
             thumb_disk_cache_mib: 256,
+            name_truncation: NameTruncation::KeepExtension,
+            name_tooltips: true,
+            welcome_tips: true,
         }
     }
 }
@@ -245,10 +248,12 @@ impl Default for OpenSection {
         OpenSection {
             remember_choice: true,
             choose_when_unknown: true,
+            always_for_unknown: true,
             run_binaries: true,
             store_apps_via_explorer: true,
             elevate_when_required: true,
             default_apps: Vec::new(),
+            programs: Vec::new(),
             last_used: BTreeMap::new(),
         }
     }
@@ -478,7 +483,7 @@ impl Default for Editor {
 
 impl Default for Git {
     fn default() -> Self {
-        Git { status_column: true, refresh_secs: 5 }
+        Git { status_column: true, refresh_secs: 15 }
     }
 }
 

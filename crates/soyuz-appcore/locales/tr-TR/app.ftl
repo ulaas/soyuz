@@ -199,7 +199,9 @@ app-place-music = Müzik
 app-place-videos = Videolar
 # Sık kullanılanların altındaki sistem klasörleri ([sidebar] system_folders).
 app-sysfolders-section = Sistem
-app-sysfolders-hide = Sistem klasörlerini gizle…
+app-sysfolders-hide = Sistem klasörlerini gizle
+app-sysfolders-hidden = Sistem klasörleri gizlendi
+app-sysfolders-hidden-body = Ayarlar → Görünümler ve düzen → Sistem klasörleri bölümünden yeniden gösterilir.
 app-sysfolders-hide-tip = Sistem klasörlerini gizle
 app-sysfolders-hide-title = Sistem klasörleri gizlensin mi?
 app-sysfolders-hide-message = Sık kullanılanlarınızın altındaki sistem klasörleri kenar çubuğundan kalkar. İstediğiniz zaman Ayarlar → Görünümler ve düzen → Sistem klasörleri bölümünden yeniden gösterebilir, hangilerinin görüneceğini de oradan seçebilirsiniz.
@@ -299,6 +301,7 @@ app-picker-folder-path = Klasör yolu
 app-picker-file-name = Dosya adı
 # $name bir dosya adıdır.
 app-picker-replace = “{ $name }” zaten var. Üzerine yazmak için Kaydet'e yeniden basın.
+app-picker-saves-as = { $name } olarak kaydedilir
 app-picker-open = Aç
 app-picker-no-items = Eşleşen öğe yok
 # Satırın ekran okuyucu adı; $kind "folder" ya da "file".

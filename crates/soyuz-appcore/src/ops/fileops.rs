@@ -84,6 +84,8 @@ pub enum FileOpCmd {
         job: JobId,
         response: PromptResponse,
     },
+    /// Undo one history entry (the Undo button of a job's toast).
+    UndoEntry(HistoryId),
     /// Show a deferred prompt again.
     Resolve(JobId),
     CancelJob(JobId),
@@ -378,8 +380,7 @@ fn start_rename(app: &mut AppCore, pane_id: PaneId) {
     if !matches!(pane.location, Location::Dir(_)) {
         return;
     }
-    let target =
-        pane.cursor.as_deref().and_then(|c| pane.entry(c)).filter(|e| pane.selection.contains(&e.name)).cloned();
+    let target = pane.cursor_pos().and_then(|p| pane.entry_at(p)).filter(|e| pane.selection.contains(&e.name)).cloned();
     let target = target.or_else(|| pane.selected_entries().first().map(|e| (*e).clone()));
     let Some(e) = target else { return };
     if let Some(pos) = pane.visible_pos(&e.name) {
@@ -428,12 +429,13 @@ fn paste_files(
         return;
     };
     let effect = if mode == ClipMode::Cut { DropEffect::Move } else { DropEffect::Copy };
+    let generation = app.fileops.clipboard.generation();
     let id = transfer_with(app, paths, dest, effect, verify);
     if mode == ClipMode::Cut
         && let Some(id) = id
         && let Some(m) = app.fileops.jobs.meta(id).cloned()
     {
-        app.fileops.jobs.track(id, m.after(AfterJob::ClearClipboard));
+        app.fileops.jobs.track(id, m.after(AfterJob::ClearClipboard { generation }));
     }
 }
 
@@ -651,6 +653,7 @@ pub fn apply(app: &mut AppCore, cmd: FileOpCmd, _host: &dyn Host) {
             app.fileops.prompts.remove(job);
             app.fileops.jobs.refresh_snapshots();
         }
+        FileOpCmd::UndoEntry(h) => history_action(app, h, HistoryAction::Undo),
         FileOpCmd::Resolve(job) => app.fileops.prompts.undefer(job),
         FileOpCmd::CancelJob(job) => {
             app.fileops.jobs.engine().cancel(job);
@@ -723,19 +726,25 @@ pub fn end_frame(app: &mut AppCore, _host: &dyn Host) {
 
 fn on_prompt(app: &mut AppCore, id: JobId) {
     let prompt = app.fileops.jobs.snapshot(id).and_then(|s| s.pending_prompt.clone());
-    if let Some(JobPrompt::TrashUnsupported { .. }) = prompt {
-        let auto = match app.config.jobs.trash_unsupported {
-            TrashUnsupportedPolicy::Ask => None,
-            TrashUnsupportedPolicy::Permanent => Some(true),
-            TrashUnsupportedPolicy::Skip => Some(false),
-        };
-        if let Some(permanent) = auto {
-            app.fileops.jobs.engine().respond(id, PromptResponse::TrashUnsupported { permanent, apply_to_all: true });
-            app.fileops.jobs.refresh_snapshots();
-            return;
-        }
+    if let Some(JobPrompt::TrashUnsupported { .. }) = prompt
+        && let Some(permanent) = trash_unsupported_answer(&app.config)
+    {
+        app.fileops.jobs.engine().respond(id, PromptResponse::TrashUnsupported { permanent, apply_to_all: true });
+        app.fileops.jobs.refresh_snapshots();
+        return;
     }
     app.fileops.prompts.push(id);
+}
+
+/// The automatic answer to "this volume has no trash" (`None`: ask). The policy
+/// `permanent` still honours `[general] confirm_permanent_delete`: a permanent delete never
+/// happens without a confirmation the user has not turned off.
+fn trash_unsupported_answer(c: &Config) -> Option<bool> {
+    match c.jobs.trash_unsupported {
+        TrashUnsupportedPolicy::Ask => None,
+        TrashUnsupportedPolicy::Permanent => (!c.general.confirm_permanent_delete).then_some(true),
+        TrashUnsupportedPolicy::Skip => Some(false),
+    }
 }
 
 fn reconcile_prompts(app: &mut AppCore) {
@@ -788,7 +797,11 @@ fn reconcile_prompts(app: &mut AppCore) {
             }
             _ => cfg!(windows),
         };
-        app.dialogs.push(PromptModel::new(job, prompt, title, shared).windows_rules(windows_rules));
+        let general = &app.config.general;
+        let (size_style, date_format) = (general.size_style, general.date_format.clone());
+        app.dialogs.push(
+            PromptModel::new(job, prompt, title, shared).windows_rules(windows_rules).display(size_style, date_format),
+        );
     }
 }
 
@@ -818,9 +831,8 @@ fn on_finished(app: &mut AppCore, id: JobId, summary: &JobSummary) {
                         p.pending_cursor = Some(name.clone());
                     }
                 }
-                AfterJob::ClearClipboard => {
-                    if summary.items_failed == 0 {
-                        app.fileops.clipboard.clear();
+                AfterJob::ClearClipboard { generation } => {
+                    if summary.items_failed == 0 && app.fileops.clipboard.clear_if_generation(*generation) {
                         crate::services::os_clipboard::clear_cut();
                     }
                 }
@@ -838,8 +850,10 @@ fn on_finished(app: &mut AppCore, id: JobId, summary: &JobSummary) {
                 app.ui.toasts.push(Toast::info(title).body(names::summary_line(summary)));
             } else {
                 let mut t = Toast::success(title).body(names::summary_line(summary));
-                if meta.op.undoable() {
-                    t = t.action(tr!("common-undo"), Action::Undo);
+                if meta.op.undoable()
+                    && let Some(h) = app.fileops.jobs.engine().undoable_history_of(id)
+                {
+                    t = t.undo_button(tr!("common-undo"), h);
                     t.duration = Some(7.0);
                 }
                 app.ui.toasts.push(t);
@@ -857,10 +871,47 @@ fn on_finished(app: &mut AppCore, id: JobId, summary: &JobSummary) {
             let what = names::job_title(&meta, true, total, &snap.label);
             let mut t = Toast::info(tr!("ops-outcome-cancelled")).body(what);
             t.duration = Some(3.0);
+            // What it finished before the cancel can be undone.
+            if meta.op.undoable()
+                && let Some(h) = app.fileops.jobs.engine().undoable_history_of(id)
+            {
+                t = t.undo_button(tr!("common-undo"), h);
+                t.duration = Some(7.0);
+            }
             app.ui.toasts.push(t);
         }
         _ => {}
     }
+}
+
+#[cfg(test)]
+#[test]
+fn the_permanent_policy_still_honours_the_confirmation() {
+    let mut c = Config::default();
+    c.jobs.trash_unsupported = TrashUnsupportedPolicy::Permanent;
+    c.general.confirm_permanent_delete = true;
+    assert_eq!(trash_unsupported_answer(&c), None, "asks");
+    c.general.confirm_permanent_delete = false;
+    assert_eq!(trash_unsupported_answer(&c), Some(true));
+    c.jobs.trash_unsupported = TrashUnsupportedPolicy::Skip;
+    assert_eq!(trash_unsupported_answer(&c), Some(false));
+    c.jobs.trash_unsupported = TrashUnsupportedPolicy::Ask;
+    assert_eq!(trash_unsupported_answer(&c), None);
+}
+
+#[cfg(test)]
+#[test]
+fn a_finished_move_leaves_a_newer_clipboard_alone() {
+    let mut clip = Clipboard::default();
+    clip.set(ClipMode::Cut, vec![PathBuf::from("a")]);
+    let pasted = clip.generation();
+    clip.set(ClipMode::Copy, vec![PathBuf::from("b")]);
+    assert!(!clip.clear_if_generation(pasted), "B was copied while A moved");
+    assert_eq!(clip.paths(), [PathBuf::from("b")]);
+    let current = clip.generation();
+    assert!(clip.clear_if_generation(current));
+    assert!(clip.is_empty());
+    assert_ne!(clip.generation(), current, "clearing is a change too");
 }
 
 fn lower_first(s: &str) -> String {

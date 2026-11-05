@@ -15,6 +15,7 @@ tui-requests-columns-hints = Up/Down choose · Space show or hide · Enter done 
 
 ## Open with
 tui-requests-openwith-hints = Up/Down choose · Enter open · Tab next · Space tick · Esc cancel
+tui-requests-openwith-browse-hints = Type to filter · Up/Down choose · Enter open or pick · Backspace parent · Tab next · Esc back
 
 ## Interrupted operations
 tui-requests-recovery-hints = Up/Down operations · R resume · B roll back · D discard · L or Esc decide later

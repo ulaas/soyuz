@@ -147,3 +147,39 @@ fn slow_io_is_slow() {
     assert!(t.elapsed() >= Duration::from_millis(90), "4 chunks × 30 ms");
     assert_eq!(std::fs::read(d.path().join("t")).unwrap(), std::fs::read(&src).unwrap());
 }
+
+/// A link to a new folder inside `dir`: a junction on Windows (no privilege needed), a
+/// symlink elsewhere.
+fn link_in(dir: &Path) -> std::path::PathBuf {
+    let folder = dir.join("folder");
+    std::fs::create_dir(&folder).unwrap();
+    let link = dir.join("link");
+    #[cfg(windows)]
+    soyuz_fs::junction(&folder, &link).unwrap();
+    #[cfg(not(windows))]
+    soyuz_fs::symlink(&folder, &link, soyuz_fs::LinkKind::Dir).unwrap();
+    link
+}
+
+#[test]
+fn a_link_that_cannot_be_created_keeps_the_old_file() {
+    let d = tempfile::tempdir().unwrap();
+    let link = link_in(d.path());
+    let dst = d.path().join("dst");
+    std::fs::write(&dst, b"precious").unwrap();
+    let o = CopyOptions { overwrite: Overwrite::Always, ..opts() };
+
+    let g = install(FaultPlan::new(d.path()).fail(FaultOp::Create, 1, FaultKind::access_denied()));
+    let e = soyuz_fs::copy_file(&link, &dst, &o, &OpControl::new(), &mut ()).unwrap_err();
+    assert_eq!(e.kind, FsErrorKind::PermissionDenied, "{e}");
+    assert_eq!(g.fired().len(), 1);
+    drop(g);
+    assert_eq!(std::fs::read(&dst).unwrap(), b"precious");
+    assert_eq!(names(d.path()), vec!["dst", "folder", "link"]);
+
+    // A failed swap leaves the file too, and no temp link.
+    let _g = install(FaultPlan::new(d.path()).fail_from(FaultOp::Rename, 1, FaultKind::access_denied()));
+    assert!(soyuz_fs::copy_file(&link, &dst, &o, &OpControl::new(), &mut ()).is_err());
+    assert_eq!(std::fs::read(&dst).unwrap(), b"precious");
+    assert_eq!(names(d.path()), vec!["dst", "folder", "link"]);
+}

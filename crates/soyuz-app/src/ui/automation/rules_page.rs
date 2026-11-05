@@ -28,7 +28,7 @@ fn tag_name(tag: &str) -> String {
 }
 
 fn label(ui: &mut Ui, p: &Palette, s: &str) {
-    ui.label(RichText::new(s).size(12.0).color(p.text_secondary));
+    ui.label(RichText::new(s).size(crate::theme::font::px(12.0)).color(p.text_secondary));
 }
 
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
@@ -51,10 +51,10 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             let p = palette(ui.ctx());
             match &cli_status {
                 Some(Ok(name)) => {
-                    ui.label(RichText::new(name).monospace().size(10.5).color(p.text_tertiary));
+                    ui.label(RichText::new(name).monospace().size(crate::theme::font::px(10.5)).color(p.text_tertiary));
                 }
                 Some(Err(e)) => {
-                    ui.label(RichText::new(e).size(11.0).color(p.warning));
+                    ui.label(RichText::new(e).size(crate::theme::font::px(11.0)).color(p.warning));
                 }
                 None => {}
             }
@@ -68,7 +68,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             ui.label(icons::icon(ph::INFO, 13.0).color(p.info));
-            ui.label(RichText::new(n).size(12.0).color(p.text_secondary));
+            ui.label(RichText::new(n).size(crate::theme::font::px(12.0)).color(p.text_secondary));
         });
     }
     if !searching {
@@ -86,7 +86,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     ..Default::default()
                 });
             }
-            ui.label(RichText::new(tr!("automation-rules-start-from")).size(11.5).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("automation-rules-start-from"))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_tertiary),
+            );
             if small_button(ui, Some(ph::FILE_PDF), tr!("automation-rules-preset-pdf"), false).clicked() {
                 let home = soyuz_fs::home();
                 app.gui.settings.draft.automation.rules.push(AutomationRule {
@@ -113,7 +117,9 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 });
             }
         });
-        ui.label(RichText::new(tr!("automation-rules-intro")).size(11.5).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("automation-rules-intro")).size(crate::theme::font::px(11.5)).color(p.text_tertiary),
+        );
     }
     let n = app.gui.settings.draft.automation.rules.len();
     let mut remove = None;
@@ -143,7 +149,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.add(
                     egui::TextEdit::singleline(&mut r.name)
                         .hint_text(tr!("automation-rules-name-hint"))
-                        .font(egui::FontId::proportional(14.0))
+                        .font(crate::theme::font::ui(14.0))
                         .desired_width(220.0)
                         .margin(egui::Margin::symmetric(8, 4)),
                 );
@@ -158,7 +164,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.painter().circle_filled(rect.center(), 4.5, dot);
                 resp.on_hover_text(&tip);
                 if let Some(Err(e)) = &status {
-                    ui.label(RichText::new(e).size(11.0).color(p.danger));
+                    ui.label(RichText::new(e).size(crate::theme::font::px(11.0)).color(p.danger));
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if small_button(ui, Some(ph::TRASH), "", true)
@@ -217,14 +223,22 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut r.min_size_kib).prefix("≥ ").speed(16));
                     ui.add(egui::DragValue::new(&mut r.max_size_kib).prefix("≤ ").speed(16));
-                    ui.label(RichText::new(tr!("automation-rules-no-limit")).size(11.0).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("automation-rules-no-limit"))
+                            .size(crate::theme::font::px(11.0))
+                            .color(p.text_tertiary),
+                    );
                 });
                 ui.end_row();
                 label(ui, &p, tr!("automation-rules-age"));
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut r.min_age_minutes).prefix("≥ ").speed(1));
                     ui.add(egui::DragValue::new(&mut r.max_age_minutes).prefix("≤ ").speed(1));
-                    ui.label(RichText::new(tr!("automation-rules-by-mtime")).size(11.0).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("automation-rules-by-mtime"))
+                            .size(crate::theme::font::px(11.0))
+                            .color(p.text_tertiary),
+                    );
                 });
                 ui.end_row();
                 label(ui, &p, tr!("automation-rules-wait"));
@@ -234,7 +248,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                             .range(0..=3600)
                             .suffix(tr!("automation-rules-seconds-suffix")),
                     );
-                    ui.label(RichText::new(tr!("automation-rules-after-change")).size(11.0).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("automation-rules-after-change"))
+                            .size(crate::theme::font::px(11.0))
+                            .color(p.text_tertiary),
+                    );
                     ui.checkbox(&mut r.apply_to_existing, tr!("automation-rules-existing"));
                 });
                 ui.end_row();
@@ -255,7 +273,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             if !log.is_empty() {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(tr!("automation-rules-run-log")).size(10.5).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("automation-rules-run-log"))
+                            .size(crate::theme::font::px(10.5))
+                            .color(p.text_tertiary),
+                    );
                     if small_button(ui, None, tr!("automation-rules-clear"), false).clicked() {
                         cmds.push(Cmd::Automation(AutoCmd::ClearLog(r.name.clone())));
                     }
@@ -286,8 +308,8 @@ fn steps(ui: &mut Ui, p: &Palette, i: usize, actions: &mut Vec<RuleAction>) {
         .unwrap_or_default();
     for (k, a) in actions.iter_mut().enumerate() {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{}.", k + 1)).size(12.0).color(p.text_tertiary));
-            ui.label(RichText::new(rule_action(a)).size(12.5).color(p.text_primary));
+            ui.label(RichText::new(format!("{}.", k + 1)).size(crate::theme::font::px(12.0)).color(p.text_tertiary));
+            ui.label(RichText::new(rule_action(a)).size(crate::theme::font::px(12.5)).color(p.text_primary));
             match a {
                 RuleAction::Move { to } | RuleAction::Copy { to } => {
                     let mut s = to.to_string_lossy().into_owned();
@@ -348,7 +370,11 @@ fn steps(ui: &mut Ui, p: &Palette, i: usize, actions: &mut Vec<RuleAction>) {
 fn preview_block(ui: &mut Ui, p: &Palette, preview: Option<&crate::automation::RulePreview>) {
     let Some(pv) = preview else { return };
     ui.horizontal(|ui| {
-        ui.label(RichText::new(tr!("automation-rules-matches-now")).size(10.5).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("automation-rules-matches-now"))
+                .size(crate::theme::font::px(10.5))
+                .color(p.text_tertiary),
+        );
         if pv.loading {
             ui.add(egui::Spinner::new().size(10.0));
         }
@@ -356,31 +382,43 @@ fn preview_block(ui: &mut Ui, p: &Palette, preview: Option<&crate::automation::R
     match &pv.result {
         None => {}
         Some(Err(e)) => {
-            ui.label(RichText::new(e).size(12.0).color(p.warning));
+            ui.label(RichText::new(e).size(crate::theme::font::px(12.0)).color(p.warning));
         }
         Some(Ok((items, total))) => {
             if *total == 0 {
-                ui.label(RichText::new(tr!("automation-rules-no-matches")).size(12.0).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("automation-rules-no-matches"))
+                        .size(crate::theme::font::px(12.0))
+                        .color(p.text_tertiary),
+                );
             }
             for it in items.iter().take(6) {
                 ui.horizontal(|ui| {
                     ui.label(icons::icon(if it.is_dir { ph::FOLDER } else { ph::FILE }, 13.0).color(p.text_secondary));
                     let name = it.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                    ui.label(RichText::new(name).size(12.0).color(p.text_primary));
+                    ui.label(RichText::new(name).size(crate::theme::font::px(12.0)).color(p.text_primary));
                     if !it.is_dir {
                         ui.label(
-                            RichText::new(format_size(it.size, SizeStyle::Binary)).size(11.0).color(p.text_tertiary),
+                            RichText::new(format_size(it.size, SizeStyle::Binary))
+                                .size(crate::theme::font::px(11.0))
+                                .color(p.text_tertiary),
                         );
                     }
                     ui.add(
-                        egui::Label::new(RichText::new(it.steps.join(" → ")).size(11.0).color(p.text_tertiary))
-                            .truncate(),
+                        egui::Label::new(
+                            RichText::new(it.steps.join(" → "))
+                                .size(crate::theme::font::px(11.0))
+                                .color(p.text_tertiary),
+                        )
+                        .truncate(),
                     );
                 });
             }
             if *total > 6 {
                 ui.label(
-                    RichText::new(tr!("automation-and-more", count = total - 6)).size(11.5).color(p.text_tertiary),
+                    RichText::new(tr!("automation-and-more", count = total - 6))
+                        .size(crate::theme::font::px(11.5))
+                        .color(p.text_tertiary),
                 );
             }
         }
@@ -401,9 +439,12 @@ fn log_row(ui: &mut Ui, p: &Palette, e: &soyuz_script::rules::worker::LogEntry) 
     };
     ui.horizontal(|ui| {
         ui.label(icons::icon(glyph, 12.0).color(color));
-        ui.label(RichText::new(when).monospace().size(11.0).color(p.text_tertiary));
+        ui.label(RichText::new(when).monospace().size(crate::theme::font::px(11.0)).color(p.text_tertiary));
         let name = e.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        ui.label(RichText::new(name).size(12.0).color(p.text_primary));
-        ui.add(egui::Label::new(RichText::new(&e.message).size(11.5).color(p.text_secondary)).truncate());
+        ui.label(RichText::new(name).size(crate::theme::font::px(12.0)).color(p.text_primary));
+        ui.add(
+            egui::Label::new(RichText::new(&e.message).size(crate::theme::font::px(11.5)).color(p.text_secondary))
+                .truncate(),
+        );
     });
 }

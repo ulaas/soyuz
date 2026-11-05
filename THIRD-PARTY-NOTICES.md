@@ -11,7 +11,7 @@ SIL Open Font License, Version 1.1 (full text in the appendix below).
 
 | Font | Copyright |
 |---|---|
-| Inter, Inter Variable | Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter) |
+| Inter, Inter Variable, Inter Tabular | Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter) |
 | IBM Plex Sans, IBM Plex Mono | Copyright © 2017 IBM Corp. with Reserved Font Name "Plex" |
 | Noto Sans | Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic) |
 | Cascadia Mono | Copyright (c) 2019 - Present, Microsoft Corporation, with Reserved Font Name Cascadia Code |

@@ -58,6 +58,9 @@ os_thumbnail_cache = true        # reuse the system's thumbnails (Windows thumbc
 write_os_thumbnails = true       # Linux: also write Soyuz-made thumbnails to ~/.cache/thumbnails for other apps (ignored elsewhere)
 icon_pack = ""                   # "" = built-in glyphs | "flat" (built-in) | "<folder in icons/>" with a pack.toml
 thumb_disk_cache_mib = 256       # on-disk thumbnail cache in thumbs/ (0 = off)
+name_truncation = "keep_extension" # keep_extension (report-fin….pdf; folders and paths cut in the middle) | middle | end
+name_tooltips = true             # hovering a file whose name was cut shows the whole name
+welcome_tips = true              # new profiles start with the card of first steps
 
 # Fonts per role. `family` = an embedded font (Inter, Inter SemiBold, IBM Plex Sans,
 # IBM Plex Sans SemiBold, Noto Sans, Noto Sans SemiBold, Cascadia Mono, Hack, JetBrains Mono,
@@ -91,7 +94,7 @@ family = "Hack"
 family = "Cascadia Mono"
 
 [fonts.numbers]                  # sizes, dates, counters, progress figures
-family = ""                      # "" = the ui font ("IBM Plex Sans" / "Noto Sans" have tabular digits)
+family = ""                      # "" = "Inter Tabular" with Inter, else the ui font ("IBM Plex Sans" / "Noto Sans" have tabular digits)
 
 [theme.colors]                   # optional overrides, hex strings, same names as the design tokens
 # accent = "#5B8CFF"
@@ -187,9 +190,11 @@ drag_out = true                  # dragging items out of the window hands them t
 [open]                           # the apps Soyuz opens files with (Enter, double-click, `soyuz open`)
 remember_choice = true           # Open with… (Shift+Enter) starts on the app last chosen for the file type
 choose_when_unknown = true       # a file no app is registered for (or without an extension) opens Open with… on Enter
+always_for_unknown = true        # Open with… for such a type starts with "Always use this app" ticked, so the choice sticks
 run_binaries = true              # Enter on an executable binary / AppImage runs it (Linux); scripts still open in their editor
 store_apps_via_explorer = true   # Windows: a Store-app default (Photos, ...) opens through Explorer; off = first registered program
 elevate_when_required = true     # Windows: a program that needs admin rights (installers, ...) opens with the UAC prompt; off = an error
+# [[open.programs]]              # written by Soyuz: programs picked in Open with… (newest first), listed for every file
 # last_used = { png = "..." }    # written by Soyuz: last Open with… choice per extension ("." = no extension)
 
 # [[open.default_apps]]          # set from Open with… -> "Always use this app"; first matching rule wins
@@ -210,7 +215,7 @@ preserve = ["times", "attrs", "xattr"]   # times | attrs | xattr | acl | owner |
 reflink = "auto"                 # auto | never | always
 copy_duplicates = "clone"        # files copied twice in one job: clone (ReFS / btrfs / XFS / APFS) | link (hard link) | copy
 history_limit = 500
-trash_unsupported = "ask"        # ask | permanent | skip
+trash_unsupported = "ask"        # ask | permanent (asks while confirm_permanent_delete is on) | skip
 auto_open_activity = true        # open the activity panel when a job runs longer than 1 s
 io_stats = true                  # job details start with "Why is this slow?" (speeds, where the time went, what holds it back)
 
@@ -329,7 +334,7 @@ max_image_mp = 200               # largest image the image editor decodes
 
 [git]
 status_column = true
-refresh_secs = 5
+refresh_secs = 15                # fallback; changes in an open folder or in .git refresh at once
 
 [sync]                           # scheduled sync profiles, two-way sync, previous versions
 scheduler = true                 # run profiles on their schedules while Soyuz is open (no OS service)

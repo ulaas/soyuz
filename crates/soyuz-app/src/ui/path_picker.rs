@@ -1,25 +1,26 @@
 //! A small in-app file picker (no native dialog / COM): browse folders, pick a file to
-//! open or type a file name to save. Listings run on a worker thread, so a slow or dead
-//! network folder never blocks the UI. Used by settings export / import.
+//! open or type a file name to save. Listings run on a worker thread
+//! ([`FileBrowser`]), so a slow or dead network folder never blocks the UI. Used by
+//! settings export / import and, on programs ([`PathPicker::programs`]), by Open with….
+//!
+//! Keyboard: when picking a file, typing filters the list; ↑ / ↓ choose, Enter opens the
+//! folder or picks the file, Backspace on an empty filter goes up, Esc cancels.
 //!
 //! The picker is drawn as its own [`egui::Modal`], so it stacks on top of whatever modal
 //! opened it (draw it after that modal in the frame).
 
 use std::path::{Path, PathBuf};
 
-use crossbeam_channel::{Receiver, unbounded};
 use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, Modal, RichText, ScrollArea, Sense,
-    Stroke, TextEdit, Ui, vec2,
+    Align, Align2, Frame, Id, Key, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke, TextEdit, Ui, vec2,
 };
-use soyuz_core::{EntryInfo, FsError};
-use soyuz_fs::ListOptions;
 
+use crate::models::file_browser::{BrowseFilter, FileBrowser};
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::theme::tokens::radius;
-use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{icon_button, pill_button, trunc_galley};
+use crate::ui::widgets::{Btn, chip, fit, icon_button, pill_button};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PickMode {
@@ -37,25 +38,33 @@ pub enum PickResult {
     Picked(PathBuf),
 }
 
-type Listing = (PathBuf, Result<Vec<EntryInfo>, FsError>);
+/// The folders above the list: filled once, off the UI thread, for programs.
+type PlacesSlot = std::sync::Arc<parking_lot::Mutex<Option<Vec<(String, PathBuf)>>>>;
 
 pub struct PathPicker {
     id: Id,
     title: String,
     mode: PickMode,
-    /// Lower-case extensions shown as candidates (`["toml"]`); empty = all files.
-    exts: Vec<String>,
-    dir: PathBuf,
+    browser: FileBrowser,
     path_text: String,
     name: String,
-    entries: Vec<EntryInfo>,
-    error: Option<String>,
-    loading: bool,
-    rx: Option<Receiver<Listing>>,
+    /// Typed text narrowing the list (mirrors the browser's query).
+    query: String,
     selected: Option<usize>,
+    /// The next frame scrolls the selected row into view.
+    scroll_to_selected: bool,
     confirm_replace: Option<PathBuf>,
     places: Vec<(String, &'static str, PathBuf)>,
+    /// The program folders on their way ([`PathPicker::programs`]).
+    places_slot: Option<PlacesSlot>,
+    /// Picking programs: rows and places say so, and "All files" is offered.
+    programs: bool,
+    /// The name of the row last picked.
+    picked_name: Option<String>,
+    /// Saving with one extension on offer: a name typed without one gets it.
+    save_ext: Option<String>,
     focus_name: bool,
+    focus_query: bool,
 }
 
 impl PathPicker {
@@ -73,79 +82,137 @@ impl PathPicker {
             })
             .map(|(_, p)| (p.label, crate::ui::sidebar::place_glyph(p.role), p.path))
             .collect();
+        let filter = if exts.is_empty() {
+            BrowseFilter::All
+        } else {
+            BrowseFilter::Exts(exts.iter().map(|e| e.to_ascii_lowercase()).collect())
+        };
         let mut picker = PathPicker {
             id: Id::unique(("soyuz.picker", title.to_string())),
             title: title.into(),
             mode,
-            exts: exts.iter().map(|e| e.to_ascii_lowercase()).collect(),
-            dir: PathBuf::new(),
+            browser: FileBrowser::polled(filter),
             path_text: String::new(),
             name: name.into(),
-            entries: Vec::new(),
-            error: None,
-            loading: false,
-            rx: None,
+            query: String::new(),
             selected: None,
+            scroll_to_selected: false,
             confirm_replace: None,
             places,
+            places_slot: None,
+            programs: false,
+            picked_name: None,
+            save_ext: match exts {
+                [ext] if mode == PickMode::Save => Some(ext.trim_start_matches('.').to_string()),
+                _ => None,
+            },
             focus_name: mode == PickMode::Save,
+            focus_query: mode == PickMode::Open,
         };
         picker.navigate(dir);
         picker
     }
 
+    /// A picker on programs (Windows: shortcuts to programs count), starting in `dir`,
+    /// with the usual program folders as its places.
+    pub fn programs(title: &str, dir: PathBuf) -> Self {
+        let mut picker = PathPicker::new(title, PickMode::Open, dir.clone(), "", &[]);
+        picker.browser = FileBrowser::polled(BrowseFilter::Programs);
+        picker.programs = true;
+        picker.navigate(dir);
+        let slot = PlacesSlot::default();
+        let filled = slot.clone();
+        let _ = std::thread::Builder::new().name("soyuz-picker-places".into()).spawn(move || {
+            *filled.lock() = Some(crate::models::requests::open_with::existing_program_places());
+        });
+        picker.places_slot = Some(slot);
+        picker
+    }
+
     /// The folder currently shown.
     pub fn dir(&self) -> &Path {
-        &self.dir
+        self.browser.dir()
+    }
+
+    /// The name shown for the row last picked: a shortcut's name, without the extension.
+    pub fn picked_name(&self) -> Option<String> {
+        self.picked_name.clone()
     }
 
     fn navigate(&mut self, dir: PathBuf) {
-        self.dir = dir.clone();
         self.path_text = soyuz_fs::strip_verbatim(&dir).display().to_string();
-        self.entries.clear();
+        self.browser.navigate(dir);
+        self.query.clear();
         self.selected = None;
-        self.error = None;
-        self.loading = true;
         self.confirm_replace = None;
-        let (tx, rx) = unbounded();
-        self.rx = Some(rx);
-        let _ = std::thread::Builder::new().name("soyuz-picker-list".into()).spawn(move || {
-            let dot_hidden = crate::services::lister::dot_hidden();
-            let opts = ListOptions { include_hidden: false, dot_hidden, ..ListOptions::default() };
-            let _ = tx.send((dir.clone(), soyuz_fs::read_dir(&dir, &opts)));
-        });
+        self.focus_query = self.mode == PickMode::Open;
     }
 
     fn poll(&mut self) {
-        let Some(rx) = &self.rx else { return };
-        if let Ok((dir, result)) = rx.try_recv() {
-            if dir == self.dir {
-                self.loading = false;
-                match result {
-                    Ok(mut entries) => {
-                        entries.retain(|e| e.is_dir_like() || self.matches(e));
-                        soyuz_core::sort_entries(&mut entries, &soyuz_core::SortSpec::default());
-                        self.entries = entries;
-                    }
-                    Err(e) => self.error = Some(e.to_string()),
-                }
-            }
-            self.rx = None;
+        self.browser.poll();
+        let places = self.places_slot.as_ref().and_then(|slot| slot.lock().take());
+        if let Some(places) = places {
+            self.places_slot = None;
+            self.places.retain(|(_, _, path)| *path == soyuz_fs::home());
+            self.places.extend(places.into_iter().map(|(label, path)| (label, ph::APP_WINDOW, path)));
         }
     }
 
-    fn matches(&self, e: &EntryInfo) -> bool {
-        self.exts.is_empty()
-            || Path::new(&e.name)
-                .extension()
-                .is_some_and(|x| self.exts.iter().any(|w| x.to_string_lossy().eq_ignore_ascii_case(w)))
+    /// Move the selection by `delta` rows.
+    fn step(&mut self, delta: isize) {
+        let n = self.browser.len();
+        if n == 0 {
+            return;
+        }
+        let next = match self.selected {
+            None if delta < 0 => n - 1,
+            None => 0,
+            Some(i) => i.saturating_add_signed(delta).min(n - 1),
+        };
+        self.selected = Some(next);
+        self.scroll_to_selected = true;
+    }
+
+    /// The keys of the list (when picking a file; a text field has no use for them).
+    fn list_keys(&mut self, ui: &Ui, go: &mut Option<PathBuf>) {
+        use egui::Modifiers as M;
+        let (up, down, page_up, page_down) = ui.input_mut(|i| {
+            (
+                i.consume_key(M::NONE, Key::ArrowUp),
+                i.consume_key(M::NONE, Key::ArrowDown),
+                i.consume_key(M::NONE, Key::PageUp),
+                i.consume_key(M::NONE, Key::PageDown),
+            )
+        });
+        for (pressed, delta) in [(up, -1), (down, 1), (page_up, -10), (page_down, 10)] {
+            if pressed {
+                self.step(delta);
+            }
+        }
+        // Runs before the filter field: the Backspace that empties it stays in the folder.
+        let focus = ui.memory(|m| m.focused());
+        if self.query.is_empty()
+            && (focus.is_none() || focus == Some(self.id.with("query")))
+            && ui.input(|i| i.key_pressed(Key::Backspace))
+        {
+            *go = self.browser.parent();
+        }
+    }
+
+    /// The name a save will really use when it differs from the typed one: the only
+    /// extension on offer is added to a name without any.
+    fn final_name(&self) -> Option<String> {
+        let name = self.name.trim();
+        let ext = self.save_ext.as_deref()?;
+        let bare = Path::new(name).extension().is_none() && !name.eq_ignore_ascii_case(&format!(".{ext}"));
+        (bare && !name.is_empty()).then(|| format!("{}.{ext}", name.trim_end_matches('.')))
     }
 
     /// The path the primary button would return now.
     fn target(&self) -> Option<PathBuf> {
         match self.mode {
             PickMode::Open => {
-                let e = self.selected.and_then(|i| self.entries.get(i)).filter(|e| !e.is_dir_like())?;
+                let e = self.selected.and_then(|i| self.browser.row(i)).filter(|e| !e.is_dir)?;
                 Some(e.path.clone())
             }
             PickMode::Save => {
@@ -153,7 +220,7 @@ impl PathPicker {
                 if name.is_empty() || soyuz_core::validate_name(name).is_err() {
                     return None;
                 }
-                Some(self.dir.join(name))
+                Some(self.browser.dir().join(self.final_name().unwrap_or_else(|| name.to_string())))
             }
         }
     }
@@ -161,21 +228,16 @@ impl PathPicker {
     /// Draw the picker (call every frame while it is open).
     pub fn show(&mut self, ctx: &egui::Context) -> PickResult {
         self.poll();
-        if self.loading {
+        if self.browser.loading() || self.places_slot.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
         let p = palette(ctx);
         let frame = Frame::new()
             .fill(p.bg_surface3)
             .stroke(Stroke::new(1.0, p.border_strong))
-            .corner_radius(CornerRadius::same(radius::MODAL))
+            .corner_radius(crate::theme::tokens::radius::same(radius::MODAL))
             .inner_margin(Margin::same(18))
-            .shadow(egui::epaint::Shadow {
-                offset: [0, 12],
-                blur: 40,
-                spread: 0,
-                color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
-            });
+            .shadow(p.shadow(crate::theme::tokens::shadow::WINDOW));
         let mut result = PickResult::Pending;
         let mut go: Option<PathBuf> = None;
         let title = self.title.clone();
@@ -192,7 +254,7 @@ impl PathPicker {
             }
             // Location row: up + editable path.
             ui.horizontal(|ui| {
-                let parent = self.dir.parent().map(Path::to_path_buf);
+                let parent = self.browser.parent();
                 if icon_button(ui, ph::ARROW_UP, tr!("app-picker-parent"), parent.is_some()).clicked() {
                     go = parent;
                 }
@@ -211,18 +273,31 @@ impl PathPicker {
             // Quick places.
             ui.horizontal_wrapped(|ui| {
                 for (label, glyph, path) in &self.places {
-                    let on = &self.dir == path;
-                    // Glyphs live in the icon font family, the label in the UI font.
-                    let color = if on { p.accent } else { p.text_secondary };
-                    let mut job = egui::text::LayoutJob::default();
-                    job.append(glyph, 0.0, egui::TextFormat::simple(icons::font(13.0), color));
-                    job.append(label, 6.0, egui::TextFormat::simple(FontId::proportional(12.5), color));
-                    if ui.add(egui::Button::selectable(on, job)).clicked() {
+                    let on = self.browser.dir() == path;
+                    if chip(ui, Some(*glyph), label, on).clicked() {
                         go = Some(path.clone());
                     }
                 }
             });
             ui.add_space(6.0);
+            if self.mode == PickMode::Open {
+                self.list_keys(ui, &mut go);
+                ui.horizontal(|ui| {
+                    if self.programs {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let mut all = self.browser.show_all();
+                            if ui.checkbox(&mut all, tr!("dialogs-openwith-all-files")).changed() {
+                                self.browser.set_show_all(all);
+                                self.selected = None;
+                            }
+                            self.query_field(ui);
+                        });
+                    } else {
+                        self.query_field(ui);
+                    }
+                });
+                ui.add_space(6.0);
+            }
             self.list(ui, &mut go, &mut result);
             ui.add_space(10.0);
             if self.mode == PickMode::Save {
@@ -244,6 +319,16 @@ impl PathPicker {
                         result = self.confirm();
                     }
                 });
+                if let Some(name) = self.final_name() {
+                    ui.add_space(4.0);
+                    ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                        ui.label(
+                            RichText::new(tr!("app-picker-saves-as", name = name))
+                                .size(crate::theme::font::px(11.5))
+                                .color(p.text_tertiary),
+                        );
+                    });
+                }
             }
             if let Some(path) = &self.confirm_replace {
                 ui.add_space(6.0);
@@ -256,12 +341,12 @@ impl PathPicker {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let label = if self.mode == PickMode::Save { tr!("common-save") } else { tr!("app-picker-open") };
                 let ok = self.target().is_some();
-                let resp = ui.add_enabled_ui(ok, |ui| pill_button(ui, None, label, true)).inner;
+                let resp = ui.add_enabled_ui(ok, |ui| pill_button(ui, None, label, Btn::Primary)).inner;
                 if resp.clicked() && ok {
                     result = self.confirm();
                 }
                 ui.add_space(6.0);
-                if pill_button(ui, None, tr!("common-cancel"), false).clicked() {
+                if pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked() {
                     result = PickResult::Cancelled;
                 }
             });
@@ -297,8 +382,32 @@ impl PathPicker {
         result
     }
 
+    /// The filter field: it has the keyboard from the start, and selects the first match.
+    fn query_field(&mut self, ui: &mut Ui) {
+        let r = ui.add(
+            TextEdit::singleline(&mut self.query)
+                .id(self.id.with("query"))
+                .hint_text(tr!("dialogs-openwith-filter"))
+                .desired_width(f32::INFINITY)
+                .margin(Margin::symmetric(8, 6)),
+        );
+        if self.focus_query {
+            self.focus_query = false;
+            r.request_focus();
+        }
+        if r.changed() {
+            self.browser.set_query(&self.query);
+            self.selected = (!self.query.trim().is_empty() && !self.browser.is_empty()).then_some(0);
+            self.scroll_to_selected = true;
+        }
+    }
+
     fn confirm(&mut self) -> PickResult {
         let Some(path) = self.target() else { return PickResult::Pending };
+        if let Some(row) = self.selected.and_then(|i| self.browser.row(i)) {
+            let name = Path::new(&row.name).file_stem().map(|n| n.to_string_lossy().into_owned());
+            self.picked_name = name;
+        }
         if self.mode == PickMode::Save
             && self.confirm_replace.as_ref() != Some(&path)
             && soyuz_fs::exists_nofollow(&path)
@@ -315,101 +424,127 @@ impl PathPicker {
         Frame::new()
             .fill(p.bg_sunken)
             .stroke(Stroke::new(1.0, p.border_subtle))
-            .corner_radius(CornerRadius::same(radius::CARD))
+            .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
             .inner_margin(Margin::same(4))
             .show(ui, |ui| {
                 ui.set_min_height(280.0);
                 ui.set_width(ui.available_width());
-                if self.loading {
+                if self.browser.loading() {
                     ui.add_space(12.0);
                     ui.vertical_centered(|ui| ui.label(RichText::new(tr!("common-loading")).color(p.text_tertiary)));
                     return;
                 }
-                if let Some(e) = &self.error {
+                if let Some(e) = self.browser.error() {
                     ui.add_space(12.0);
                     ui.vertical_centered(|ui| ui.label(RichText::new(e).color(p.danger)));
                     return;
                 }
-                if self.entries.is_empty() {
+                if self.browser.is_empty() {
                     ui.add_space(12.0);
                     ui.vertical_centered(|ui| {
                         ui.label(RichText::new(tr!("app-picker-no-items")).color(p.text_tertiary))
                     });
                     return;
                 }
-                ScrollArea::vertical().max_height(280.0).auto_shrink([false, false]).show_rows(
-                    ui,
-                    row_h,
-                    self.entries.len(),
-                    |ui, range| {
-                        for i in range {
-                            let e = &self.entries[i];
-                            let (rect, resp) =
-                                ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
-                            let kind = if e.is_dir_like() { "folder" } else { "file" };
-                            crate::ui::a11y::toggle(
-                                &resp,
-                                &tr!("app-picker-row", name = &e.name, kind = kind),
-                                self.selected == Some(i),
+                let mut area = ScrollArea::vertical().max_height(280.0).auto_shrink([false, false]);
+                if std::mem::take(&mut self.scroll_to_selected)
+                    && let Some(i) = self.selected
+                {
+                    // Keeps the row near the middle (only rows in view exist to scroll to).
+                    let pitch = row_h + ui.spacing().item_spacing.y;
+                    area = area.vertical_scroll_offset((i as f32 * pitch - 126.0).max(0.0));
+                }
+                let row_count = self.browser.len();
+                area.show_rows(ui, row_h, row_count, |ui, range| {
+                    for i in range {
+                        let Some(e) = self.browser.row(i) else { continue };
+                        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
+                        let kind = if e.is_dir { "folder" } else { "file" };
+                        crate::ui::a11y::toggle(
+                            &resp,
+                            &tr!("app-picker-row", name = &e.name, kind = kind),
+                            self.selected == Some(i),
+                        );
+                        let sel = self.selected == Some(i);
+                        if sel {
+                            ui.painter().rect_filled(
+                                rect,
+                                crate::theme::tokens::radius::same(radius::ROW),
+                                p.accent_subtle,
                             );
-                            let sel = self.selected == Some(i);
-                            if sel {
-                                ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.accent_subtle);
-                            } else if resp.hovered() {
-                                ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.bg_surface2);
-                            }
-                            if resp.has_focus() {
-                                crate::ui::widgets::focus_ring(ui, rect.shrink(1.0));
-                            }
-                            let (glyph, color) = if e.is_dir_like() {
-                                (ph::FOLDER, p.glyph_folder)
-                            } else {
-                                (ph::FILE_TEXT, p.text_secondary)
-                            };
-                            ui.painter().text(
-                                rect.left_center() + vec2(14.0, 0.0),
-                                Align2::CENTER_CENTER,
-                                glyph,
-                                icons::font_fill(15.0),
-                                color,
+                        } else if resp.hovered() {
+                            ui.painter().rect_filled(
+                                rect,
+                                crate::theme::tokens::radius::same(radius::ROW),
+                                p.bg_surface2,
                             );
-                            let g = trunc_galley(
-                                ui.painter(),
-                                &e.name,
-                                FontId::proportional(13.0),
-                                p.text_primary,
-                                rect.width() - 40.0,
-                            );
-                            ui.painter().galley(rect.left_center() + vec2(30.0, -g.size().y / 2.0), g, p.text_primary);
-                            if resp.clicked() {
-                                self.selected = Some(i);
-                                if !e.is_dir_like() && self.mode == PickMode::Save {
-                                    self.name = e.name.clone();
-                                    self.confirm_replace = None;
-                                }
-                            }
-                            if resp.double_clicked() {
-                                if e.is_dir_like() {
-                                    *go = Some(e.path.clone());
-                                } else {
-                                    self.selected = Some(i);
-                                    *result = self.confirm();
-                                }
+                        }
+                        if resp.has_focus() {
+                            crate::ui::widgets::focus_ring(ui, rect.shrink(1.0));
+                        }
+                        let resp = if self.programs && !e.is_dir {
+                            resp.on_hover_text(e.path.display().to_string())
+                        } else {
+                            resp
+                        };
+                        let (glyph, color) = if e.is_dir {
+                            (ph::FOLDER, p.glyph_folder)
+                        } else if self.programs {
+                            (ph::APP_WINDOW, p.text_secondary)
+                        } else {
+                            (ph::FILE_TEXT, p.text_secondary)
+                        };
+                        ui.painter().text(
+                            rect.left_center() + vec2(14.0, 0.0),
+                            Align2::CENTER_CENTER,
+                            glyph,
+                            icons::font_fill(15.0),
+                            color,
+                        );
+                        let g = fit::entry_name(
+                            ui.painter(),
+                            &e.name,
+                            e.is_dir,
+                            crate::theme::font::ui(13.0),
+                            p.text_primary,
+                            rect.width() - 40.0,
+                        )
+                        .galley;
+                        ui.painter().galley(rect.left_center() + vec2(30.0, -g.size().y / 2.0), g, p.text_primary);
+                        if resp.clicked() {
+                            self.selected = Some(i);
+                            if !e.is_dir && self.mode == PickMode::Save {
+                                self.name = e.name.clone();
+                                self.confirm_replace = None;
                             }
                         }
-                    },
-                );
+                        if resp.double_clicked() {
+                            if e.is_dir {
+                                *go = Some(e.path.clone());
+                            } else {
+                                self.selected = Some(i);
+                                *result = self.confirm();
+                            }
+                        }
+                    }
+                });
             });
-        // Enter on a selected folder opens it (when no text field has the keyboard).
-        if ui.memory(|m| m.focused().is_none())
+        // Enter on the selected row (a text field gives up the keyboard on Enter). The
+        // path and name fields already acted on theirs.
+        if go.is_none()
+            && *result == PickResult::Pending
+            && ui.memory(|m| m.focused().is_none())
             && ui.input(|i| i.key_pressed(Key::Enter))
-            && let Some(e) = self.selected.and_then(|i| self.entries.get(i))
+            && let Some(e) = self.selected.and_then(|i| self.browser.row(i))
         {
-            if e.is_dir_like() {
+            if e.is_dir {
                 *go = Some(e.path.clone());
             } else {
                 *result = self.confirm();
             }
+        } else if self.mode == PickMode::Open && go.is_none() && ui.input(|i| i.key_pressed(Key::Enter)) {
+            // Nothing to act on: the filter keeps the keyboard.
+            self.focus_query = true;
         }
     }
 }
@@ -421,7 +556,7 @@ mod tests {
     fn wait(p: &mut PathPicker) {
         for _ in 0..200 {
             p.poll();
-            if !p.loading {
+            if !p.browser.loading() {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -437,7 +572,7 @@ mod tests {
         std::fs::write(d.path().join("b.txt"), "").unwrap();
         let mut p = PathPicker::new("Import", PickMode::Open, d.path().to_path_buf(), "", &["toml"]);
         wait(&mut p);
-        let names: Vec<_> = p.entries.iter().map(|e| e.name.as_str()).collect();
+        let names: Vec<_> = p.browser.rows().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["sub", "a.toml"]);
         assert_eq!(p.target(), None, "nothing selected");
         p.selected = Some(1);
@@ -458,5 +593,44 @@ mod tests {
         assert_eq!(p.confirm(), PickResult::Picked(d.path().join("new.toml")));
         p.name = "bad/name".into();
         assert_eq!(p.target(), None);
+    }
+
+    #[test]
+    fn saving_adds_the_only_extension_on_offer() {
+        let d = tempfile::tempdir().unwrap();
+        let mut p = PathPicker::new("Export", PickMode::Save, d.path().to_path_buf(), "settings", &["toml"]);
+        wait(&mut p);
+        assert_eq!(p.final_name().as_deref(), Some("settings.toml"));
+        assert_eq!(p.target(), Some(d.path().join("settings.toml")));
+        p.name = "settings.toml".into();
+        assert_eq!(p.final_name(), None);
+        p.name = "settings.bak".into();
+        assert_eq!(p.final_name(), None, "another extension is the user's choice");
+        assert_eq!(p.target(), Some(d.path().join("settings.bak")));
+        p.name = ".toml".into();
+        assert_eq!(p.final_name(), None);
+        let any = PathPicker::new("Export", PickMode::Save, d.path().to_path_buf(), "x", &["toml", "json"]);
+        assert_eq!(any.final_name(), None, "two extensions on offer: no guess");
+    }
+
+    #[test]
+    fn the_keyboard_walks_the_filtered_rows() {
+        let d = tempfile::tempdir().unwrap();
+        for f in ["alpha.toml", "beta.toml", "gamma.toml"] {
+            std::fs::write(d.path().join(f), "").unwrap();
+        }
+        let mut p = PathPicker::new("Import", PickMode::Open, d.path().to_path_buf(), "", &["toml"]);
+        wait(&mut p);
+        p.step(1);
+        assert_eq!(p.target(), Some(d.path().join("alpha.toml")));
+        p.step(10);
+        assert_eq!(p.target(), Some(d.path().join("gamma.toml")), "stops at the end");
+        p.step(-1);
+        assert_eq!(p.target(), Some(d.path().join("beta.toml")));
+        p.browser.set_query("gam");
+        p.selected = Some(0);
+        assert_eq!(p.target(), Some(d.path().join("gamma.toml")));
+        assert_eq!(p.confirm(), PickResult::Picked(d.path().join("gamma.toml")));
+        assert_eq!(p.picked_name().as_deref(), Some("gamma"));
     }
 }

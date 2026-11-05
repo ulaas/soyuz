@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use egui::{FontId, RichText, Ui};
+use egui::{RichText, Ui};
 use soyuz_core::{FsError, FsErrorKind};
 use soyuz_fs::attrs::InodeFlags;
 
@@ -130,7 +130,9 @@ impl InodeEdit {
         let p = palette(ui.ctx());
         caption(ui, tr!("dialogs-inode-title"));
         if let Some(why) = &self.unavailable {
-            ui.add(egui::Label::new(RichText::new(why).font(FontId::proportional(11.5)).color(p.text_tertiary)).wrap());
+            ui.add(
+                egui::Label::new(RichText::new(why).font(crate::theme::font::ui(11.5)).color(p.text_tertiary)).wrap(),
+            );
             return;
         }
         if self.rows.is_empty() || self.busy() {
@@ -150,17 +152,17 @@ impl InodeEdit {
                 }
                 if row.1 != row.2 {
                     ui.label(
-                        RichText::new(tr!("dialogs-props-changed")).font(FontId::proportional(10.5)).color(p.accent),
+                        RichText::new(tr!("dialogs-props-changed")).font(crate::theme::font::ui(10.5)).color(p.accent),
                     );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(*hint).font(FontId::proportional(11.0)).color(p.text_tertiary));
+                    ui.label(RichText::new(*hint).font(crate::theme::font::ui(11.0)).color(p.text_tertiary));
                 });
             });
         }
         if self.changes().is_some_and(|(s, c)| (s | c).intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND)) {
             ui.label(
-                RichText::new(tr!("dialogs-inode-root-note")).font(FontId::proportional(11.0)).color(p.text_tertiary),
+                RichText::new(tr!("dialogs-inode-root-note")).font(crate::theme::font::ui(11.0)).color(p.text_tertiary),
             );
         }
     }

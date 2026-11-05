@@ -187,6 +187,7 @@ impl JournalWriter {
         let stamp = match r {
             UndoRecord::Copied { dst } | UndoRecord::Extracted { dst } => UndoStamp::take(dst),
             UndoRecord::Created(p) => UndoStamp::take(p),
+            UndoRecord::Moved { to, .. } | UndoRecord::Renamed { to, .. } => UndoStamp::take(to),
             _ => None,
         };
         if let Some(s) = self.jobs.lock().get_mut(&id) {

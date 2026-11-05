@@ -4,8 +4,7 @@
 //! search card (natural language → editable query pills).
 
 use egui::{
-    Align, Align2, CornerRadius, FontId, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke, StrokeKind,
-    TextEdit, Ui, pos2, vec2,
+    Align, Align2, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
 };
 
 use super::{PanelAct, Tone, button, chip};
@@ -13,15 +12,15 @@ use crate::ai::audit::{self, AuditRecord};
 use crate::ai::smart_search::{self, Pill, PillKey};
 use crate::app::SoyuzApp;
 use crate::theme::Palette;
+use crate::theme::font::semibold;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::radius;
-use crate::ui::views::flow::semibold;
 
 fn card(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui)) {
     Frame::new()
         .fill(p.bg_window)
         .stroke(Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(radius::CARD))
+        .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -33,7 +32,7 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
     if !app.core.ai.recipes.loaded {
         app.core.ai.load_recipes();
     }
-    ui.label(RichText::new(tr!("ai-recipes-intro")).size(11.5).color(p.text_tertiary));
+    ui.label(RichText::new(tr!("ai-recipes-intro")).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
     ui.add_space(6.0);
     ScrollArea::vertical().id_salt("soyuz.ai.recipes").auto_shrink([false, false]).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 8.0;
@@ -82,7 +81,9 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
                         });
                     });
                     if !rec.description.is_empty() {
-                        ui.label(RichText::new(&rec.description).size(11.5).color(p.text_secondary));
+                        ui.label(
+                            RichText::new(&rec.description).size(crate::theme::font::px(11.5)).color(p.text_secondary),
+                        );
                     }
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
@@ -97,7 +98,7 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
                             path.strip_prefix(&dir).unwrap_or(&path).display(),
                             rec.created.get(..16).unwrap_or(&rec.created).replace('T', " ")
                         ))
-                        .size(10.5)
+                        .size(crate::theme::font::px(10.5))
                         .color(p.text_tertiary),
                     );
                 }
@@ -106,12 +107,14 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
                         ui.label(icons::icon(ph::WARNING, 14.0).color(p.warning));
                         ui.add(
                             egui::Label::new(
-                                RichText::new(path.display().to_string()).size(12.0).color(p.text_primary),
+                                RichText::new(path.display().to_string())
+                                    .size(crate::theme::font::px(12.0))
+                                    .color(p.text_primary),
                             )
                             .truncate(),
                         );
                     });
-                    ui.label(RichText::new(e).size(11.0).color(p.danger));
+                    ui.label(RichText::new(e).size(crate::theme::font::px(11.0)).color(p.danger));
                 }
             });
         }
@@ -194,7 +197,7 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
             total = a.events.len(),
             path = audit::default_path().display().to_string()
         ))
-        .size(10.5)
+        .size(crate::theme::font::px(10.5))
         .color(p.text_tertiary),
     );
     ScrollArea::vertical().id_salt("soyuz.ai.audit").auto_shrink([false, false]).show_rows(
@@ -206,7 +209,7 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
                 let w = ui.available_width();
                 let (r, resp) = ui.allocate_exact_size(vec2(w, 36.0), Sense::hover());
                 if resp.hovered() {
-                    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
+                    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
                 }
                 let mcp = e.source == audit::SOURCE_MCP;
                 let (icon, color) = match (e.event.as_str(), e.outcome.as_str()) {
@@ -260,19 +263,19 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
                 let bg = crate::ui::widgets::trunc_galley(
                     ui.painter(),
                     &badge,
-                    FontId::proportional(10.0),
+                    crate::theme::font::ui(10.0),
                     badge_color,
                     (w * 0.35).max(60.0),
                 );
                 let bw = bg.size().x + 12.0;
                 let br = egui::Rect::from_min_size(pos2(r.right() - 4.0 - bw, r.top() + 3.0), vec2(bw, 16.0));
-                ui.painter().rect_filled(br, CornerRadius::same(8), badge_color.gamma_multiply(0.12));
+                ui.painter().rect_filled(br, crate::theme::tokens::radius::same(8), badge_color.gamma_multiply(0.12));
                 ui.painter().galley(pos2(br.left() + 6.0, br.center().y - bg.size().y / 2.0), bg, badge_color);
                 let mw = bw + 6.0;
                 let hg = crate::ui::widgets::trunc_galley(
                     ui.painter(),
                     &head,
-                    FontId::proportional(11.5),
+                    crate::theme::font::ui(11.5),
                     p.text_primary,
                     (w - 26.0 - mw - 10.0).max(40.0),
                 );
@@ -287,7 +290,7 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
                 let g = crate::ui::widgets::trunc_galley(
                     ui.painter(),
                     &body,
-                    FontId::proportional(11.0),
+                    crate::theme::font::ui(11.0),
                     p.text_secondary,
                     w - 32.0,
                 );
@@ -313,16 +316,16 @@ fn local_time(ts: &str) -> String {
 
 fn pill_ui(ui: &mut Ui, p: &Palette, pill: &Pill) -> bool {
     let key = pill.key.word();
-    let font = FontId::proportional(11.5);
+    let font = crate::theme::font::ui(11.5);
     let kg = ui.painter().layout_no_wrap(format!("{key}:"), font.clone(), p.accent);
     let vg = ui.painter().layout_no_wrap(pill.value.clone(), font, p.text_primary);
     let w = kg.size().x + vg.size().x + 34.0;
     let (r, resp) = ui.allocate_exact_size(vec2(w, 24.0), Sense::click());
-    ui.painter().rect_filled(r, CornerRadius::same(12), p.accent_subtle);
+    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(12), p.accent_subtle);
     if resp.hovered() {
         ui.painter().rect_stroke(
             r,
-            CornerRadius::same(12),
+            crate::theme::tokens::radius::same(12),
             Stroke::new(1.0, p.accent.gamma_multiply(0.5)),
             StrokeKind::Inside,
         );
@@ -347,7 +350,7 @@ pub fn smart_card(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<P
     Frame::new()
         .fill(p.bg_window)
         .stroke(Stroke::new(1.0, p.accent.gamma_multiply(0.45)))
-        .corner_radius(CornerRadius::same(radius::CARD))
+        .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -381,7 +384,9 @@ pub fn smart_card(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<P
                     }
                 }
                 if s.pills.is_empty() {
-                    ui.label(RichText::new(tr!("ai-smart-empty")).size(11.0).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("ai-smart-empty")).size(crate::theme::font::px(11.0)).color(p.text_tertiary),
+                    );
                 }
             });
             if let Some(i) = remove {
@@ -389,10 +394,12 @@ pub fn smart_card(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<P
                 s.query_text = smart_search::to_text(&s.pills);
             }
             ui.horizontal(|ui| {
-                ui.label(RichText::new(tr!("ai-smart-query")).size(10.5).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("ai-smart-query")).size(crate::theme::font::px(10.5)).color(p.text_tertiary),
+                );
                 let r = ui.add(
                     TextEdit::singleline(&mut s.query_text)
-                        .font(FontId::monospace(11.5))
+                        .font(crate::theme::font::mono(11.5))
                         .desired_width(f32::INFINITY)
                         .hint_text(PillKey::ALL.iter().map(|k| format!("{}:", k.word())).collect::<Vec<_>>().join(" ")),
                 );
@@ -404,7 +411,7 @@ pub fn smart_card(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<P
                 }
             });
             if let Some(e) = &s.error {
-                ui.label(RichText::new(e).size(11.0).color(p.danger));
+                ui.label(RichText::new(e).size(crate::theme::font::px(11.0)).color(p.danger));
             }
             ui.horizontal(|ui| {
                 if button(

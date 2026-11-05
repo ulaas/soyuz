@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use soyuz_core::HashAlgo;
 
 use super::properties_widgets::{badge, caption, copy_button, small_icon_button};
@@ -50,7 +50,11 @@ impl Checksums {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let any_idle = self.set.any_idle();
                 if any_idle
-                    && ui.add(egui::Button::new(RichText::new(tr!("dialogs-hash-compute-all")).size(12.0))).clicked()
+                    && ui
+                        .add(egui::Button::new(
+                            RichText::new(tr!("dialogs-hash-compute-all")).size(crate::theme::font::px(12.0)),
+                        ))
+                        .clicked()
                 {
                     self.start_all(&ctx);
                 }
@@ -68,7 +72,7 @@ impl Checksums {
             egui::Frame::new()
                 .fill(if hit { p.success.gamma_multiply(0.12) } else { p.bg_surface2 })
                 .stroke(egui::Stroke::new(1.0, if hit { p.success } else { egui::Color32::TRANSPARENT }))
-                .corner_radius(CornerRadius::same(crate::theme::tokens::radius::ROW))
+                .corner_radius(crate::theme::tokens::radius::same(crate::theme::tokens::radius::ROW))
                 .inner_margin(Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -76,7 +80,7 @@ impl Checksums {
                         ui.add_sized(
                             vec2(62.0, 20.0),
                             egui::Label::new(
-                                RichText::new(algo.label()).font(FontId::proportional(12.0)).color(p.text_secondary),
+                                RichText::new(algo.label()).font(crate::theme::font::ui(12.0)).color(p.text_secondary),
                             ),
                         );
                         match &state {
@@ -99,21 +103,21 @@ impl Checksums {
                                             "dialogs-hash-percent",
                                             percent = format!("{:.0}", frac * 100.0)
                                         ))
-                                        .font(FontId::proportional(11.0))
+                                        .font(crate::theme::font::ui(11.0))
                                         .color(p.text_tertiary),
                                     );
                                     let (r, _) =
                                         ui.allocate_exact_size(vec2(ui.available_width(), 6.0), Sense::hover());
-                                    ui.painter().rect_filled(r, CornerRadius::same(3), p.bg_surface3);
+                                    ui.painter().rect_filled(r, crate::theme::tokens::radius::same(3), p.bg_surface3);
                                     let mut f = r;
                                     f.set_width((r.width() * frac).max(4.0));
-                                    ui.painter().rect_filled(f, CornerRadius::same(3), p.accent);
+                                    ui.painter().rect_filled(f, crate::theme::tokens::radius::same(3), p.accent);
                                 });
                             }
                             HashState::Done(h) => {
                                 ui.add(
                                     egui::Label::new(
-                                        RichText::new(h).font(FontId::monospace(11.5)).color(p.text_primary),
+                                        RichText::new(h).font(crate::theme::font::mono(11.5)).color(p.text_primary),
                                     )
                                     .truncate()
                                     .selectable(true),
@@ -147,7 +151,7 @@ impl Checksums {
         let r = ui.add(
             TextEdit::singleline(&mut self.compare)
                 .hint_text(tr!("dialogs-hash-compare-hint"))
-                .font(FontId::monospace(12.0))
+                .font(crate::theme::font::mono(12.0))
                 .desired_width(f32::INFINITY)
                 .margin(Margin::symmetric(10, 6)),
         );

@@ -216,3 +216,83 @@ fn many_jobs_respect_max_parallel() {
         h.ok(id);
     }
 }
+
+#[test]
+fn a_cancelled_move_keeps_a_partial_history_entry_that_undoes() {
+    let h = H::new();
+    write(&h.p("s/first"), &[1u8; 10]);
+    write(&h.p("s/big"), &[2u8; 2_000_000]);
+    std::fs::create_dir_all(h.p("d")).unwrap();
+    let mut spec = JobSpec::new(JobKind::Move {
+        sources: vec![h.p("s/first"), h.p("s/big")],
+        dest_dir: h.p("d"),
+        rename_to: None,
+    });
+    spec.options.mv.force_cross_device = true;
+    spec.options.copy.throttle_bps = Some(1_000_000);
+    let id = h.engine.submit(spec);
+    wait_for(Duration::from_secs(20), || h.p("d/first").exists().then_some(()));
+    wait_for(Duration::from_secs(20), || (!h.p("s/first").exists()).then_some(()));
+    h.engine.cancel(id);
+    assert_eq!(h.done(id), JobState::Cancelled);
+    assert!(!h.p("s/first").exists() && h.p("d/first").exists(), "the first file was moved");
+    let hist = h.engine.history();
+    assert_eq!(hist.len(), 1, "{hist:?}");
+    assert!(hist[0].partial && hist[0].undoable, "{:?}", hist[0]);
+    assert_eq!(h.engine.undoable_history_of(id), Some(hist[0].id));
+    let u = h.engine.undo(hist[0].id).expect("undoable");
+    h.ok(u);
+    assert_eq!(read(&h.p("s/first")), [1u8; 10]);
+    assert!(!h.p("d/first").exists());
+}
+
+#[test]
+fn a_cancelled_job_that_finished_nothing_leaves_no_entry() {
+    let h = H::new();
+    write(&h.p("big"), &[1u8; 2_000_000]);
+    std::fs::create_dir_all(h.p("out")).unwrap();
+    let id = h.engine.submit(throttled(copy_kind(&[&h.p("big")], &h.p("out")), 1_000_000));
+    wait_for(Duration::from_secs(10), || (h.snap(id).progress.bytes_done > 0).then_some(()));
+    h.engine.cancel(id);
+    assert_eq!(h.done(id), JobState::Cancelled);
+    assert!(h.engine.history().is_empty());
+    assert_eq!(h.engine.undoable_history_of(id), None);
+}
+
+/// A probe stuck on a dead network path holds up its own job, not the scheduler.
+#[test]
+fn a_stuck_device_probe_does_not_stall_other_jobs() {
+    struct Stuck(Arc<std::sync::atomic::AtomicBool>);
+    impl soyuz_fs::FsProbe for Stuck {
+        fn space(&self, _: &Path) -> soyuz_core::FsResult<(u64, u64)> {
+            Ok((u64::MAX, u64::MAX))
+        }
+        fn device_of(&self, p: &Path) -> soyuz_core::FsResult<soyuz_core::DeviceId> {
+            while p.to_string_lossy().contains("dead") && !self.0.load(std::sync::atomic::Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Ok(soyuz_core::DeviceId(1))
+        }
+        fn trash_support(&self, _: &Path) -> soyuz_fs::TrashSupport {
+            soyuz_fs::TrashSupport::Unsupported("test".into())
+        }
+    }
+    let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let d = tempfile::tempdir().unwrap();
+    let engine =
+        crate::JobEngine::new(crate::EngineConfig::default(), Arc::new(Stuck(release.clone())), Arc::new(|| {}));
+    let dead = d.path().join("dead");
+    let live = d.path().join("live");
+    let stuck = engine.submit(JobSpec::new(JobKind::Create { path: dead.join("x"), kind: crate::CreateKind::Dir }));
+    let other = engine.submit(JobSpec::new(JobKind::Create { path: live, kind: crate::CreateKind::Dir }));
+    let t = Instant::now();
+    wait_for(Duration::from_secs(10), || {
+        matches!(engine.snapshot(other).map(|s| s.state), Some(JobState::Done(_))).then_some(())
+    });
+    assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());
+    release.store(true, std::sync::atomic::Ordering::SeqCst);
+    wait_for(Duration::from_secs(10), || {
+        engine.snapshot(stuck).is_some_and(|s| !s.state.is_active() && s.state != JobState::Queued).then_some(())
+    });
+    engine.shutdown(Duration::from_secs(5));
+}

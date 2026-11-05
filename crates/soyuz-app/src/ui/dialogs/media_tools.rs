@@ -5,18 +5,16 @@
 //! choice when the name is taken, the dry-run plan card and the Run / Cancel footer.
 //! Enter runs, Esc (the host) cancels.
 
-use egui::{
-    Align2, CornerRadius, FontId, Frame, Key, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
-};
+use egui::{Align2, Frame, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2};
 
 use super::DialogCtx;
-use super::conflict::{Btn, button};
 use crate::models::media_tools::{
     AUDIO_CODECS, ConflictChoice, ImageFormat, MediaTool, MediaToolsModel, PlanTone, codec_label, preset_label,
 };
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons::ph, palette};
 use crate::ui::widgets::dropdown as dd;
+use crate::ui::widgets::{Btn, pill_button};
 
 pub(crate) fn icon(m: &MediaToolsModel) -> &'static str {
     match m.tool {
@@ -29,7 +27,7 @@ pub(crate) fn icon(m: &MediaToolsModel) -> &'static str {
 
 /// Small caption above a control.
 fn caption(ui: &mut Ui, text: &str, p: &Palette) {
-    ui.label(RichText::new(text).size(11.5).color(p.text_tertiary));
+    ui.label(RichText::new(text).size(crate::theme::font::px(11.5)).color(p.text_tertiary));
     ui.add_space(2.0);
 }
 
@@ -39,7 +37,7 @@ fn text_segmented(ui: &mut Ui, id: &str, labels: &[&str], selected: usize, cell_
     let p = palette(ui.ctx());
     let cell = vec2(cell_w, 26.0);
     let (rect, _) = ui.allocate_exact_size(vec2(cell.x * labels.len() as f32 + 4.0, cell.y + 4.0), Sense::hover());
-    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.bg_surface2);
+    ui.painter().rect_filled(rect, crate::theme::tokens::radius::same(radius::ROW), p.bg_surface2);
     let mut clicked = None;
     for (i, label) in labels.iter().enumerate() {
         let r = egui::Rect::from_min_size(pos2(rect.left() + 2.0 + i as f32 * cell.x, rect.top() + 2.0), cell);
@@ -47,10 +45,10 @@ fn text_segmented(ui: &mut Ui, id: &str, labels: &[&str], selected: usize, cell_
         crate::ui::a11y::toggle(&resp, label, i == selected);
         let sel = i == selected;
         if sel {
-            ui.painter().rect_filled(r, CornerRadius::same(radius::CONTROL + 1), p.bg_surface1);
+            ui.painter().rect_filled(r, crate::theme::tokens::radius::same(radius::CONTROL + 1), p.bg_surface1);
             ui.painter().rect_stroke(
                 r,
-                CornerRadius::same(radius::CONTROL + 1),
+                crate::theme::tokens::radius::same(radius::CONTROL + 1),
                 Stroke::new(1.0, p.border_subtle),
                 StrokeKind::Inside,
             );
@@ -62,7 +60,7 @@ fn text_segmented(ui: &mut Ui, id: &str, labels: &[&str], selected: usize, cell_
         } else {
             p.text_tertiary
         };
-        ui.painter().text(r.center(), Align2::CENTER_CENTER, *label, FontId::proportional(12.0), c);
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, *label, crate::theme::font::ui(12.0), c);
         if resp.clicked() {
             clicked = Some(i);
         }
@@ -88,7 +86,7 @@ fn card(ui: &mut Ui, title: &str, lines: &[(PlanTone, String)], p: &Palette) {
     Frame::new()
         .fill(p.bg_surface2)
         .stroke(Stroke::new(1.0, p.border_subtle))
-        .corner_radius(CornerRadius::same(radius::CARD))
+        .corner_radius(crate::theme::tokens::radius::same(radius::CARD))
         .inner_margin(Margin::symmetric(10, 8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -104,7 +102,9 @@ fn card(ui: &mut Ui, title: &str, lines: &[(PlanTone, String)], p: &Palette) {
                         ui.label(crate::theme::icons::icon(g, 12.5).color(color));
                     }
                     // Names and encoder messages come from disk / the libraries: plain text.
-                    ui.add(egui::Label::new(RichText::new(line).size(12.0).color(color)).wrap());
+                    ui.add(
+                        egui::Label::new(RichText::new(line).size(crate::theme::font::px(12.0)).color(color)).wrap(),
+                    );
                 });
             }
         });
@@ -183,7 +183,10 @@ pub(crate) fn show(ui: &mut Ui, m: &mut MediaToolsModel, ctx: &mut DialogCtx<'_>
             });
             ui.add_space(6.0);
             let mut on = m.stream_copy;
-            if ui.checkbox(&mut on, RichText::new(tr!("dialogs-media-stream-copy")).size(12.0)).changed() {
+            if ui
+                .checkbox(&mut on, RichText::new(tr!("dialogs-media-stream-copy")).size(crate::theme::font::px(12.0)))
+                .changed()
+            {
                 m.set_stream_copy(on);
             }
         }
@@ -230,7 +233,7 @@ pub(crate) fn show(ui: &mut Ui, m: &mut MediaToolsModel, ctx: &mut DialogCtx<'_>
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label(crate::theme::icons::icon(ph::WARNING, 12.5).color(p.warning));
-            ui.label(RichText::new(tr!("dialogs-media-exists")).size(11.5).color(p.warning));
+            ui.label(RichText::new(tr!("dialogs-media-exists")).size(crate::theme::font::px(11.5)).color(p.warning));
         });
         ui.add_space(2.0);
         let labels: Vec<&str> = ConflictChoice::ALL.iter().map(|c| c.label()).collect();
@@ -247,17 +250,20 @@ pub(crate) fn show(ui: &mut Ui, m: &mut MediaToolsModel, ctx: &mut DialogCtx<'_>
     let error = m.error();
     if let Some(e) = &error {
         ui.add_space(6.0);
-        ui.add(egui::Label::new(RichText::new(e).size(11.5).color(p.danger)).wrap());
+        ui.add(egui::Label::new(RichText::new(e).size(crate::theme::font::px(11.5)).color(p.danger)).wrap());
     }
     ui.add_space(16.0);
     let mut go = false;
     let mut cancel = false;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
-        go = ui.add_enabled_ui(error.is_none(), |ui| button(ui, m.tool.go_label(), Btn::Primary)).inner.clicked();
-        cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
+        go = ui
+            .add_enabled_ui(error.is_none(), |ui| pill_button(ui, None, m.tool.go_label(), Btn::Primary))
+            .inner
+            .clicked();
+        cancel = pill_button(ui, None, tr!("common-cancel"), Btn::Secondary).clicked();
     });
-    if ui.input(|i| i.key_pressed(Key::Enter)) && error.is_none() {
+    if super::enter_default(ui) && error.is_none() {
         go = true;
     }
     if go {

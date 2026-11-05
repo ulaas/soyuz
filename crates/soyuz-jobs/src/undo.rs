@@ -10,7 +10,8 @@
 //!
 //! Safety: a path is only removed when its identity still matches the
 //! [`UndoStamp`] taken when the job finished (same object; same size and modification time
-//! for files), otherwise the record fails with "changed since". A permanent delete (no
+//! for files), otherwise the record fails with "changed since"; a moved or renamed item is
+//! only moved back while it is the same object. A permanent delete (no
 //! trash on that volume) of anything but an empty folder / empty file asks first through
 //! the `TrashUnsupported` prompt. Every record that was actually reversed is reported with
 //! [`JobCtx::mark_undone`] so a partially failed undo can drop exactly those records.
@@ -105,14 +106,31 @@ pub fn touched_roots(records: &[UndoRecord]) -> Vec<PathBuf> {
 pub(crate) fn run_undo(ctx: &JobCtx, records: &[UndoRecord], stamps: &[UndoStamp]) -> FsResult<()> {
     ctx.set_totals(0, records.len() as u64);
     ctx.set_running();
-    // Reverse moves/renames as one batch (handles a→b, b→a cycles).
-    let (pair_recs, pairs): (Vec<&UndoRecord>, Vec<(PathBuf, PathBuf)>) = records
-        .iter()
-        .filter_map(|r| match r {
-            UndoRecord::Moved { from, to } | UndoRecord::Renamed { from, to } => Some((r, (to.clone(), from.clone()))),
-            _ => None,
-        })
-        .unzip();
+    // Reverse moves/renames as one batch (handles a→b, b→a cycles). A destination that is
+    // no longer the object the job put there stays where it is: undo only moves what the
+    // job moved (editing it since is fine, nothing is lost by moving it back).
+    let moved_stamp = |p: &Path| stamps.iter().rev().find(|s| s.path == p);
+    let mut pair_recs: Vec<&UndoRecord> = Vec::new();
+    let mut pairs: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for r in records {
+        let (UndoRecord::Moved { from, to } | UndoRecord::Renamed { from, to }) = r else { continue };
+        if let Some(s) = moved_stamp(to)
+            && let Some(now) = UndoStamp::take(to)
+            && !s.same_object(&now)
+        {
+            ctx.begin_item(to, 0);
+            let e = FsError::with_message(
+                FsErrorKind::Io,
+                "undo",
+                Some(to),
+                "another item took this place after the operation, so undo left it alone",
+            );
+            ctx.item_failed(to, e, 0);
+            continue;
+        }
+        pair_recs.push(r);
+        pairs.push((to.clone(), from.clone()));
+    }
     if !pairs.is_empty() {
         for (_, back) in &pairs {
             if let Some(parent) = back.parent()
@@ -313,6 +331,7 @@ pub(crate) fn stamp_records(records: &[UndoRecord]) -> Vec<UndoStamp> {
         .filter_map(|r| match r {
             UndoRecord::Copied { dst } | UndoRecord::Extracted { dst } => Some(dst),
             UndoRecord::Created(p) | UndoRecord::Replaced { path: p, .. } => Some(p),
+            UndoRecord::Moved { to, .. } | UndoRecord::Renamed { to, .. } => Some(to),
             _ => None,
         })
         .filter_map(|p| UndoStamp::take(p))

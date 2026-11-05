@@ -33,6 +33,7 @@ fn char_cmp(ca: char, cb: char, ci: bool, l: Locale) -> Ordering {
     }
     match l {
         Locale::EnUs if !ci => ca.cmp(&cb),
+        Locale::EnUs if ca.is_ascii() && cb.is_ascii() => ca.to_ascii_lowercase().cmp(&cb.to_ascii_lowercase()),
         // Unchanged from before locales existed, except that 'İ' folds to a plain 'i'.
         Locale::EnUs if ca != 'İ' && cb != 'İ' => ca.to_lowercase().cmp(cb.to_lowercase()),
         _ => {
@@ -43,16 +44,17 @@ fn char_cmp(ca: char, cb: char, ci: bool, l: Locale) -> Ordering {
 }
 
 fn natural_cmp_inner(a: &str, b: &str, ci: bool, l: Locale) -> Ordering {
-    let mut ai = a.chars().peekable();
-    let mut bi = b.chars().peekable();
+    // Walks both strings by slice, so a comparison allocates nothing: a sort does millions.
+    let (mut ra, mut rb) = (a, b);
     loop {
-        match (ai.peek().copied(), bi.peek().copied()) {
+        let (mut ai, mut bi) = (ra.chars(), rb.chars());
+        match (ai.next(), bi.next()) {
             (None, None) => return Ordering::Equal,
             (None, Some(_)) => return Ordering::Less,
             (Some(_), None) => return Ordering::Greater,
             (Some(ca), Some(cb)) if ca.is_ascii_digit() && cb.is_ascii_digit() => {
-                let da = take_digits(&mut ai);
-                let db = take_digits(&mut bi);
+                let (da, rest_a) = split_digits(ra);
+                let (db, rest_b) = split_digits(rb);
                 let ta = da.trim_start_matches('0');
                 let tb = db.trim_start_matches('0');
                 let ord = ta.len().cmp(&tb.len()).then_with(|| ta.cmp(tb));
@@ -64,30 +66,23 @@ fn natural_cmp_inner(a: &str, b: &str, ci: bool, l: Locale) -> Ordering {
                 if ord != Ordering::Equal {
                     return ord;
                 }
+                (ra, rb) = (rest_a, rest_b);
             }
             (Some(ca), Some(cb)) => {
-                ai.next();
-                bi.next();
                 let ord = char_cmp(ca, cb, ci, l);
                 if ord != Ordering::Equal {
                     return ord;
                 }
+                (ra, rb) = (ai.as_str(), bi.as_str());
             }
         }
     }
 }
 
-fn take_digits(it: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
-    let mut s = String::new();
-    while let Some(&c) = it.peek() {
-        if c.is_ascii_digit() {
-            s.push(c);
-            it.next();
-        } else {
-            break;
-        }
-    }
-    s
+/// `s` split after its leading ASCII digits (one byte each, so the split is on a boundary).
+#[inline]
+fn split_digits(s: &str) -> (&str, &str) {
+    s.split_at(s.bytes().take_while(u8::is_ascii_digit).count())
 }
 
 /// Pick a free name in `dir` for `name`: returns `dir/name` if free, otherwise expands
@@ -382,6 +377,82 @@ mod tests {
                 "z10"
             ]
         );
+    }
+
+    /// The comparison as it was with an owned String per digit run: the slice-based one
+    /// must order every pair the same way.
+    fn natural_reference(a: &str, b: &str, ci: bool, l: Locale) -> Ordering {
+        fn take(it: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+            let mut s = String::new();
+            while let Some(c) = it.next_if(char::is_ascii_digit) {
+                s.push(c);
+            }
+            s
+        }
+        let (mut ai, mut bi) = (a.chars().peekable(), b.chars().peekable());
+        loop {
+            match (ai.peek().copied(), bi.peek().copied()) {
+                (None, None) => return Ordering::Equal,
+                (None, Some(_)) => return Ordering::Less,
+                (Some(_), None) => return Ordering::Greater,
+                (Some(ca), Some(cb)) if ca.is_ascii_digit() && cb.is_ascii_digit() => {
+                    let (da, db) = (take(&mut ai), take(&mut bi));
+                    let (ta, tb) = (da.trim_start_matches('0'), db.trim_start_matches('0'));
+                    let ord = ta.len().cmp(&tb.len()).then_with(|| ta.cmp(tb)).then_with(|| da.len().cmp(&db.len()));
+                    if ord != Ordering::Equal {
+                        return ord;
+                    }
+                }
+                (Some(ca), Some(cb)) => {
+                    ai.next();
+                    bi.next();
+                    let ord = match l {
+                        Locale::EnUs if !ci && ca != cb => ca.cmp(&cb),
+                        Locale::EnUs if ca != cb && ca != 'İ' && cb != 'İ' => {
+                            ca.to_lowercase().cmp(cb.to_lowercase())
+                        }
+                        _ if ca == cb => Ordering::Equal,
+                        _ => {
+                            let (fa, fb) = if ci { (lower_char_in(ca, l), lower_char_in(cb, l)) } else { (ca, cb) };
+                            collation_weight(fa, l).cmp(&collation_weight(fb, l))
+                        }
+                    };
+                    if ord != Ordering::Equal {
+                        return ord;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn natural_matches_the_reference_on_generated_names() {
+        let parts = [
+            "", "0", "00", "007", "1", "01", "10", "2", "99", "a", "A", "b", "Z", "_", " ", ".", "IMG_", "i", "I", "ı",
+            "İ", "ç", "Ç", "é", "ß", "Σ", "日本", "🦀",
+        ];
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state as usize
+        };
+        let names: Vec<String> =
+            (0..400).map(|_| (0..next() % 5).map(|_| parts[next() % parts.len()]).collect()).collect();
+        for a in &names {
+            for b in &names {
+                for ci in [true, false] {
+                    for l in Locale::ALL {
+                        assert_eq!(
+                            natural_cmp_inner(a, b, ci, l),
+                            natural_reference(a, b, ci, l),
+                            "{a:?} {b:?} {ci} {l:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
