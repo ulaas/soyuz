@@ -168,7 +168,7 @@ pub fn close(app: &mut SoyuzApp) {
 }
 
 fn flush_save(app: &mut SoyuzApp) {
-    crate::models::settings::flush(&mut app.core);
+    crate::models::settings::save_in_background(&mut app.core);
 }
 
 fn key_cache(s: &mut SettingsState) -> &KeyCache {

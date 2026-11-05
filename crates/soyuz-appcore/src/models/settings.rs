@@ -1,8 +1,10 @@
 //! Changing and saving the active configuration: live apply now, `config.toml` written
 //! shortly after (debounced), merged into the user's file so comments survive.
 
+use std::path::Path;
 use std::time::{Duration, Instant};
 
+use crossbeam_channel::{Receiver, TryRecvError, bounded};
 use soyuz_core::config::{self, Config};
 
 use crate::core::AppCore;
@@ -256,6 +258,23 @@ pub struct ConfigSave {
     /// A write could not happen (the file does not load, or the disk said no); the changes
     /// are still in memory and a successful reload schedules the write again.
     pub held: bool,
+    /// The write running on a worker.
+    pub(crate) in_flight: Option<SaveInFlight>,
+}
+
+/// A `config.toml` write on a worker, and the configuration it writes.
+#[derive(Clone, Debug)]
+pub(crate) struct SaveInFlight {
+    rx: Receiver<SaveOutcome>,
+    config: Config,
+}
+
+#[derive(Debug)]
+pub(crate) enum SaveOutcome {
+    Written(String),
+    /// The file was left alone: it could not be read, or the merge failed.
+    Refused(String),
+    WriteFailed(String),
 }
 
 impl ConfigSave {
@@ -282,59 +301,128 @@ pub fn update_config(app: &mut AppCore, host: &dyn Host, edit: impl FnOnce(&mut 
     host.redraw_after(SAVE_DELAY);
 }
 
-/// Write `config.toml` once the debounce delay has passed.
+/// How often a frame looks for the worker's answer (a write takes milliseconds).
+const SAVE_POLL: Duration = Duration::from_millis(20);
+
+/// Write `config.toml` on a worker once the debounce delay has passed.
 pub fn pump(app: &mut AppCore, host: &dyn Host) {
+    if settle(app) {
+        host.redraw_after(SAVE_POLL);
+        return;
+    }
     if let Some(due) = app.config_save.due {
         let now = Instant::now();
         if now >= due {
-            flush(app);
+            save_in_background(app);
+            host.redraw_after(SAVE_POLL);
         } else {
             host.redraw_after(due - now);
         }
     }
 }
 
-/// Write `config.toml` now if a save is pending (closing settings, app exit).
-pub fn flush(app: &mut AppCore) {
-    if app.config_save.due.take().is_none() {
+/// Take the worker's answer if it is there. Returns whether a write is still running.
+pub fn settle(app: &mut AppCore) -> bool {
+    let Some(flight) = &app.config_save.in_flight else { return false };
+    let outcome = match flight.rx.try_recv() {
+        Ok(outcome) => outcome,
+        Err(TryRecvError::Empty) => return true,
+        Err(TryRecvError::Disconnected) => SaveOutcome::WriteFailed("the save worker stopped".into()),
+    };
+    if let Some(flight) = app.config_save.in_flight.take() {
+        finish(app, flight.config, outcome);
+    }
+    false
+}
+
+/// Wait for a write running on the worker.
+pub fn wait_for_save(app: &mut AppCore) {
+    if let Some(flight) = app.config_save.in_flight.take() {
+        let outcome = flight.rx.recv().unwrap_or_else(|_| SaveOutcome::WriteFailed("the save worker stopped".into()));
+        finish(app, flight.config, outcome);
+    }
+}
+
+/// Start writing a pending save now, on a worker (closing the settings window). One write
+/// runs at a time; a change made meanwhile waits for it.
+pub fn save_in_background(app: &mut AppCore) {
+    if app.config_save.in_flight.is_some() || app.config_save.due.take().is_none() {
         return;
     }
-    let path = app.config_watch.path().to_path_buf();
-    // The active configuration did not come from the file: writing it would replace the
-    // user's settings with defaults. Wait for a reload that works.
+    if refused_while_broken(app) {
+        return;
+    }
+    let (path, snapshot) = (app.config_watch.path().to_path_buf(), app.config.clone());
+    let (tx, rx) = bounded(1);
+    let (worker_path, worker_config) = (path.clone(), snapshot.clone());
+    let spawned = std::thread::Builder::new().name("soyuz-config-save".into()).spawn(move || {
+        let _ = tx.send(write_config(&worker_path, &worker_config));
+    });
+    match spawned {
+        Ok(_) => app.config_save.in_flight = Some(SaveInFlight { rx, config: snapshot }),
+        Err(e) => {
+            log::warn!("cannot spawn the config save thread: {e}");
+            let outcome = write_config(&path, &snapshot);
+            finish(app, snapshot, outcome);
+        }
+    }
+}
+
+/// Write `config.toml` now if a save is pending, and return when it is on disk (app exit,
+/// handing the terminal to an editor).
+pub fn flush(app: &mut AppCore) {
+    wait_for_save(app);
+    if app.config_save.due.take().is_none() || refused_while_broken(app) {
+        return;
+    }
+    let snapshot = app.config.clone();
+    let outcome = write_config(app.config_watch.path(), &snapshot);
+    finish(app, snapshot, outcome);
+}
+
+/// The active configuration did not come from the file: writing it would replace the
+/// user's settings with defaults. Wait for a reload that works.
+fn refused_while_broken(app: &mut AppCore) -> bool {
     if app.config_watch.load_error.is_some() {
         refuse(app, None);
-        return;
+        return true;
     }
-    // Merge into the user's file so comments and formatting survive (toml_edit).
-    let existing = match std::fs::read_to_string(&path) {
+    false
+}
+
+/// Merge `config` into the user's file, so comments and formatting survive (toml_edit), and
+/// write it. A file that cannot be read stays as it is.
+fn write_config(path: &Path, config: &Config) -> SaveOutcome {
+    let existing = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => {
-            refuse(app, Some(e.to_string()));
-            return;
-        }
+        Err(e) => return SaveOutcome::Refused(e.to_string()),
     };
-    let text = match config::to_string_preserving(&existing, &app.config) {
+    let text = match config::to_string_preserving(&existing, config) {
         Ok(text) => text,
-        Err(e) => {
-            refuse(app, Some(e.to_string()));
-            return;
-        }
+        Err(e) => return SaveOutcome::Refused(e.to_string()),
     };
     if let Some(dir) = path.parent() {
         let _ = soyuz_fs::create_dir_all(dir);
     }
-    match soyuz_fs::write_atomic(&path, text.as_bytes()) {
-        Ok(()) => {
+    match soyuz_fs::write_atomic(path, text.as_bytes()) {
+        Ok(()) => SaveOutcome::Written(text),
+        Err(e) => SaveOutcome::WriteFailed(e.to_string()),
+    }
+}
+
+fn finish(app: &mut AppCore, written: Config, outcome: SaveOutcome) {
+    match outcome {
+        SaveOutcome::Written(text) => {
             app.config_watch.last_text = Some(text);
             app.config_save.flashed = Some(Instant::now());
-            app.config_save.baseline = Some(app.config.clone());
+            app.config_save.baseline = Some(written);
             app.config_save.held = false;
         }
-        Err(e) => {
+        SaveOutcome::Refused(why) => refuse(app, Some(why)),
+        SaveOutcome::WriteFailed(e) => {
             app.config_save.held = true;
-            app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e));
         }
     }
 }

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use soyuz_appcore::cmd::Cmd;
 use soyuz_appcore::core::{AppCore, Startup};
 use soyuz_appcore::host::{Host, NullHost};
-use soyuz_appcore::models::settings::{flush, update_config};
+use soyuz_appcore::models::settings::{self, flush, update_config};
 use soyuz_appcore::ops::fileops::FileOpCmd;
 use soyuz_appcore::ops::fileops::drop::DropEffect;
 use soyuz_appcore::services::config_watch::{self, ConfigWatch};
@@ -63,6 +63,7 @@ fn run_all(data: &Path) {
     external_edit_keeps_a_pending_setting(&path, data);
     std::fs::remove_file(&path).unwrap();
     reload_without_pending_changes_replaces(&path, data);
+    background_save_writes_and_keeps_the_refusal(&path, data);
     toast_undo_targets_the_operation_it_names(data);
     folder_gone_at_navigation_falls_back(data);
     late_probe_answer_is_ignored(data);
@@ -191,6 +192,57 @@ fn reload_without_pending_changes_replaces(path: &Path, data: &Path) {
     config_watch::handle(&mut app, &host, config::parse_str(text), false);
     assert_eq!(app.config.appearance.sidebar_width, 222.0);
     assert!(!app.config_save.pending());
+}
+
+/// The debounced save runs on a worker: it reports back like a direct write, and the
+/// refusal for a file that does not load still holds.
+fn background_save_writes_and_keeps_the_refusal(path: &Path, data: &Path) {
+    let host = NullHost::default();
+    let _ = std::fs::remove_file(path);
+    std::fs::write(path, "# mine\n").unwrap();
+    let mut app = core_on(path, data);
+    let wanted = !app.config.general.natural_sort;
+    update_config(&mut app, &host, |c| c.general.natural_sort = wanted);
+    settings::save_in_background(&mut app);
+    // A change made while the write runs is not lost: it stays due, and goes out next.
+    let later = app.config.appearance.sidebar_width + 7.0;
+    update_config(&mut app, &host, |c| c.appearance.sidebar_width = later);
+    let start = Instant::now();
+    while settings::settle(&mut app) {
+        assert!(start.elapsed() < Duration::from_secs(30), "the worker answers");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let text = std::fs::read_to_string(path).unwrap();
+    assert!(text.contains("# mine"), "{text}");
+    assert_eq!(app.config_watch.last_text.as_deref(), Some(text.as_str()), "our own write is known");
+    assert!(app.config_save.flashed.is_some());
+    assert!(app.config_save.due.is_some(), "the later change is still pending");
+    let baseline = app.config_save.baseline.as_ref().expect("baseline");
+    assert_eq!(baseline.general.natural_sort, wanted);
+    assert_ne!(baseline.appearance.sidebar_width, later, "the baseline is what was written");
+    flush(&mut app);
+    let back = config::parse_str(&std::fs::read_to_string(path).unwrap()).unwrap().config;
+    assert_eq!((back.general.natural_sort, back.appearance.sidebar_width), (wanted, later));
+
+    // A file that stopped loading is refused before any worker starts.
+    let broken = "[[[ nope";
+    std::fs::write(path, broken).unwrap();
+    app.config_watch.load_error = config::parse_str(broken).err();
+    update_config(&mut app, &host, |c| c.general.natural_sort = !wanted);
+    settings::save_in_background(&mut app);
+    assert!(!settings::settle(&mut app), "no write started");
+    assert_eq!(std::fs::read_to_string(path).unwrap(), broken);
+    assert!(app.config_save.held);
+    assert!(has_toast(&app, tr!("settings-save-refused")));
+
+    // A file that broke after the last load: the worker reads it and leaves it alone.
+    app.config_watch.load_error = None;
+    update_config(&mut app, &host, |c| c.general.natural_sort = wanted);
+    settings::save_in_background(&mut app);
+    settings::wait_for_save(&mut app);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), broken);
+    assert!(app.config_save.held);
+    std::fs::remove_file(path).unwrap();
 }
 
 /// Moves and renames only: the undo here never reaches the real trash.
