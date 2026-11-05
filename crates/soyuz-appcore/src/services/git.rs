@@ -7,21 +7,24 @@
 //! * **Branch** comes from reading `HEAD` directly (no process spawn).
 //! * **Status** runs `git --no-optional-locks status --porcelain=v2 -z --branch` in the
 //!   repository root on a background thread with a timeout. Results are cached per
-//!   repository and refreshed when a watcher event touches a folder inside the repo, or
-//!   when the cache is older than `[git] refresh_secs` while the repo is on screen.
+//!   repository and refreshed when a watcher event touches a folder inside the repo, when
+//!   its git directory changes (`index`, `HEAD`… : a commit or checkout from a terminal),
+//!   or, as a fallback, when the cache is older than `[git] refresh_secs` while the repo
+//!   is on screen.
 //!
 //! All state is UI-thread-local (like `services::search`); the painting code calls the
 //! cheap lookups [`status_of`] / [`summary_for`] every frame.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{Receiver, Sender, select, unbounded};
 
 /// Kill `git status` after this long (huge repos, network drives, hung credential helpers).
 pub const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
@@ -29,6 +32,10 @@ pub const STATUS_TIMEOUT: Duration = Duration::from_secs(15);
 const TOUCH_WINDOW: Duration = Duration::from_secs(3);
 /// Minimum time between two status runs of one repository.
 const MIN_INTERVAL: Duration = Duration::from_millis(1500);
+/// Debounce of the watches on git directories.
+const GIT_DIR_DEBOUNCE: Duration = Duration::from_millis(500);
+/// The files in a git directory that a status or branch depends on.
+const GIT_DIR_FILES: [&str; 5] = ["index", "HEAD", "packed-refs", "FETCH_HEAD", "MERGE_HEAD"];
 
 /// Summarized status of one path, ordered by display priority (highest last).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -504,6 +511,68 @@ pub struct RepoSummary {
 enum Reply {
     Discovered { dir: PathBuf, repo: Option<RepoLocation>, branch: Option<String> },
     Status { root: PathBuf, result: Result<Porcelain, String>, branch: Option<String> },
+    GitDirChanged { root: PathBuf },
+}
+
+/// Size and mtime of [`GIT_DIR_FILES`].
+type GitDirSignature = [Option<(u64, Option<SystemTime>)>; GIT_DIR_FILES.len()];
+
+fn git_dir_signature(git_dir: &Path) -> GitDirSignature {
+    GIT_DIR_FILES.map(|name| std::fs::metadata(git_dir.join(name)).ok().map(|m| (m.len(), m.modified().ok())))
+}
+
+/// A thread with one watch per repository's git directory. Reports a repository when the
+/// files that matter changed: a watch also fires for lock files and, on some systems, for
+/// our own `git status` opening the index, which must not cause another run.
+/// `(root, git dir)` sent to the returned channel adds a watch; dropping it ends the thread.
+fn spawn_git_dir_watcher(tx: Sender<Reply>, wake: Option<crate::host::Wake>) -> Option<Sender<(PathBuf, PathBuf)>> {
+    let (add_tx, add_rx) = unbounded::<(PathBuf, PathBuf)>();
+    let body = move || {
+        let (ev_tx, ev_rx) = unbounded();
+        let mut watcher = match soyuz_fs::Watcher::new(ev_tx, GIT_DIR_DEBOUNCE, crate::host::no_wake()) {
+            Ok(w) => w,
+            Err(e) => {
+                log::warn!("git directories are not watched: {e}");
+                return;
+            }
+        };
+        let mut repos: HashMap<soyuz_fs::WatchId, (PathBuf, PathBuf, GitDirSignature)> = HashMap::new();
+        loop {
+            select! {
+                recv(add_rx) -> added => {
+                    let Ok((root, dir)) = added else { return };
+                    match watcher.watch(&dir, false) {
+                        Ok(id) => {
+                            let signature = git_dir_signature(&dir);
+                            repos.insert(id, (root, dir, signature));
+                        }
+                        Err(e) => log::debug!("cannot watch {}: {e}", dir.display()),
+                    }
+                }
+                recv(ev_rx) -> event => {
+                    let Ok(event) = event else { return };
+                    let Some((root, dir, signature)) = repos.get_mut(&event.id) else { continue };
+                    let now = git_dir_signature(dir);
+                    if now != *signature {
+                        *signature = now;
+                        if tx.send(Reply::GitDirChanged { root: root.clone() }).is_err() {
+                            return;
+                        }
+                        if let Some(w) = &wake {
+                            w();
+                        }
+                    }
+                }
+            }
+        }
+    };
+    match std::thread::Builder::new().name("soyuz-git-watch".into()).spawn(body) {
+        Ok(_) => Some(add_tx),
+        Err(e) => {
+            log::warn!("cannot spawn the git directory watcher: {e}");
+            None
+        }
+    }
 }
 
 struct Repo {
@@ -514,6 +583,9 @@ struct Repo {
     loaded_at: Option<Instant>,
     running: bool,
     stale: bool,
+    /// Its git directory changed: run one frame soon, whose painting tells whether the
+    /// repo is on screen (an idle window runs none by itself).
+    nudge: bool,
     touched: Instant,
     error: Option<String>,
 }
@@ -527,6 +599,9 @@ struct Registry {
     discovering: HashSet<PathBuf>,
     repos: HashMap<PathBuf, Repo>,
     enabled: bool,
+    /// Adds watches to the git directory watcher ([`spawn_git_dir_watcher`], started with
+    /// the first repository).
+    git_dirs: Option<Sender<(PathBuf, PathBuf)>>,
 }
 
 impl Default for Registry {
@@ -540,6 +615,7 @@ impl Default for Registry {
             discovering: HashSet::new(),
             repos: HashMap::new(),
             enabled: true,
+            git_dirs: None,
         }
     }
 }
@@ -550,6 +626,11 @@ thread_local! {
 
 fn key(p: &Path) -> PathBuf {
     soyuz_fs::strip_verbatim(p)
+}
+
+/// `rel` with `/` separators, as git prints paths.
+fn slashed(rel: Cow<'_, str>) -> Cow<'_, str> {
+    if rel.contains('\\') { Cow::Owned(rel.replace('\\', "/")) } else { rel }
 }
 
 /// Install the repaint hook (idempotent; called every frame).
@@ -575,6 +656,12 @@ pub fn pump(refresh_secs: u64) -> bool {
                     if let (Some(loc), Some(root)) = (repo, root)
                         && !r.repos.contains_key(&root)
                     {
+                        if r.git_dirs.is_none() {
+                            r.git_dirs = spawn_git_dir_watcher(r.tx.clone(), r.wake.clone());
+                        }
+                        if let Some(git_dirs) = &r.git_dirs {
+                            let _ = git_dirs.send((root.clone(), loc.git_dir.clone()));
+                        }
                         r.repos.insert(
                             root,
                             Repo {
@@ -585,6 +672,7 @@ pub fn pump(refresh_secs: u64) -> bool {
                                 loaded_at: None,
                                 running: false,
                                 stale: true,
+                                nudge: false,
                                 touched: Instant::now(),
                                 error: None,
                             },
@@ -611,6 +699,12 @@ pub fn pump(refresh_secs: u64) -> bool {
                         }
                     }
                 }
+                Reply::GitDirChanged { root } => {
+                    if let Some(repo) = r.repos.get_mut(&root) {
+                        repo.stale = true;
+                        repo.nudge = true;
+                    }
+                }
             }
         }
         if !r.enabled {
@@ -621,6 +715,7 @@ pub fn pump(refresh_secs: u64) -> bool {
         let ttl = (refresh_secs > 0).then(|| Duration::from_secs(refresh_secs));
         let mut start = Vec::new();
         for (root, repo) in r.repos.iter_mut() {
+            pending |= std::mem::take(&mut repo.nudge);
             if repo.running || now.duration_since(repo.touched) > TOUCH_WINDOW {
                 continue;
             }
@@ -689,13 +784,18 @@ pub fn status_of(path: &Path, is_dir: bool) -> Option<GitCode> {
         if !r.enabled {
             return None;
         }
+        // Runs for every painted row: nothing here copies a path.
         let parent = path.parent()?;
-        let root = root_for(r, parent)?;
-        let repo = r.repos.get_mut(&root)?;
+        let parent_key = soyuz_fs::strip_verbatim_cow(parent);
+        let Some(root) = r.dir_root.get(parent_key.as_ref()) else {
+            root_for(r, parent);
+            return None;
+        };
+        let root = root.as_ref()?;
+        let repo = r.repos.get_mut(root)?;
         repo.touched = Instant::now();
-        let p = key(path);
-        let rel = p.strip_prefix(&root).ok()?;
-        let rel = rel.to_string_lossy().replace('\\', "/");
+        let p = soyuz_fs::strip_verbatim_cow(path);
+        let rel = slashed(p.strip_prefix(root).ok()?.to_string_lossy());
         if rel.is_empty() || rel == ".git" {
             return None;
         }
@@ -766,6 +866,41 @@ pub fn file_status(path: &Path) -> Option<FileStatus> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relative_paths_use_forward_slashes() {
+        assert!(matches!(slashed("a/b".into()), Cow::Borrowed("a/b")), "no copy");
+        assert_eq!(slashed(r"a\b\c".into()), "a/b/c");
+    }
+
+    #[test]
+    fn git_dir_changes_are_reported_once_and_only_for_files_that_matter() {
+        let dir = tempfile::tempdir().unwrap();
+        let (git_dir, root) = (dir.path().join("dotgit"), dir.path().join("work"));
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(git_dir.join("index"), b"one").unwrap();
+        let before = git_dir_signature(&git_dir);
+        assert_eq!(before, git_dir_signature(&git_dir), "reading changes nothing");
+
+        let (tx, rx) = unbounded();
+        let add = spawn_git_dir_watcher(tx, None).expect("watcher thread");
+        add.send((root.clone(), git_dir.clone())).unwrap();
+        // The watch is set up on its thread: nothing to wait for but time.
+        std::thread::sleep(Duration::from_millis(300));
+
+        // Not one of the files a status depends on, and our own read of one that is.
+        std::fs::write(git_dir.join("index.lock"), b"x").unwrap();
+        let _ = std::fs::read(git_dir.join("index")).unwrap();
+        assert!(rx.recv_timeout(GIT_DIR_DEBOUNCE * 4).is_err(), "no report for these");
+
+        std::fs::write(git_dir.join("index"), b"two, longer").unwrap();
+        match rx.recv_timeout(Duration::from_secs(20)) {
+            Ok(Reply::GitDirChanged { root: reported }) => assert_eq!(reported, root),
+            Ok(_) => panic!("another reply"),
+            Err(e) => panic!("no report: {e}"),
+        }
+        assert_ne!(before, git_dir_signature(&git_dir));
+    }
 
     fn sample() -> Vec<u8> {
         let recs: Vec<&[u8]> = vec![

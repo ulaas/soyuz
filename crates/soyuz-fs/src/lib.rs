@@ -85,7 +85,7 @@ pub use meta::{MetaSnapshot, meta_snapshot};
 pub use mv::{
     MoveFast, MoveOptions, RenameMode, is_case_variant, on_disk_name, rename, rename_case_only, try_rename_or_crossdev,
 };
-pub use path::{expand_env, home, is_root, normalize, path_overlaps, strip_verbatim, to_wide_long};
+pub use path::{expand_env, home, is_root, normalize, path_overlaps, strip_verbatim, strip_verbatim_cow, to_wide_long};
 pub use perms::{AccessRights, AceLite, SecurityInfo, chown, effective_access, security_info, set_mode};
 pub use times::{TimesSet, set_times};
 pub use trash::{TrashItem, TrashSupport, trash_support};

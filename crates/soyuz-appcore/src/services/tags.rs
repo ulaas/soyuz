@@ -84,7 +84,8 @@ fn norm(p: &Path) -> PathBuf {
 
 impl TagStore {
     pub fn get(&self, path: &Path) -> TagMask {
-        self.map.get(&norm(path)).copied().unwrap_or(0)
+        // Every painted row asks: no copy of the path.
+        self.map.get(soyuz_fs::strip_verbatim_cow(path).as_ref()).copied().unwrap_or(0)
     }
 
     pub fn set(&mut self, path: &Path, mask: TagMask) {
