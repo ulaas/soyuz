@@ -135,7 +135,7 @@ monitor-gui-iowait = I/O wait
 monitor-gui-irq = Interrupts
 monitor-gui-sockets = Sockets
 monitor-gui-clock = Clock
-monitor-gui-max-clock = Max clock
+monitor-gui-max-clock = Rated clock
 monitor-gui-ctx-switches = Context switches
 monitor-gui-interrupts = Interrupts
 monitor-gui-per-sec = { $value } /s
@@ -358,3 +358,5 @@ settings-monitor-alert-sustain = For at least
 settings-monitor-alert-sustain-desc = How long a value must stay above its limit before the alert fires.
 settings-monitor-alert-snapshot = Snapshot on alert
 settings-monitor-alert-snapshot-desc = Take a snapshot automatically when an alert fires.
+
+monitor-gui-status = { $page } · { $processes } processes, { $running } running

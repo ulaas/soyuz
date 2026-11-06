@@ -28,6 +28,8 @@ pub struct StatusInfo {
     pub size_style: SizeStyle,
     /// Jobs indicator (ring + count) shown while operations run.
     pub activity: crate::ui::panels::activity::Indicator,
+    /// A monitor pane's line instead of item counts, and no view controls.
+    pub monitor: Option<String>,
     /// Folder shown by the pane (git branch chip).
     pub git_dir: Option<std::path::PathBuf>,
 }
@@ -68,7 +70,9 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                     let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
                     spinner(ui, r.center(), 5.0, p.accent);
                 }
-                let items = if info.filtered {
+                let items = if let Some(line) = &info.monitor {
+                    line.clone()
+                } else if info.filtered {
                     tr!("app-status-items-filtered", visible = info.visible, count = info.total)
                 } else {
                     tr!("app-status-items", count = info.visible)
@@ -106,18 +110,20 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                     }
                     crate::ui::tools::shelf_toggle(ui, cmds);
                     crate::ui::smart::status_chip(ui, cmds);
-                    let current = MODES.iter().position(|m| m.0 == info.mode).unwrap_or(match info.mode {
-                        ViewMode::Gallery => 2,
-                        _ => 0,
-                    });
-                    let items: Vec<(&str, &str)> =
-                        MODES.iter().map(|m| (m.1, crate::ui::context_menu::mode_label(m.0))).collect();
-                    // `segmented` frames its cells with 2 points all around.
-                    let cell = control(ui) - 4.0;
-                    if let Some(i) = segmented(ui, &items, current, vec2(cell + 8.0, cell)) {
-                        cmds.push(Cmd::PaneAction(info.pane, MODES[i].2.clone()));
+                    if info.monitor.is_none() {
+                        let current = MODES.iter().position(|m| m.0 == info.mode).unwrap_or(match info.mode {
+                            ViewMode::Gallery => 2,
+                            _ => 0,
+                        });
+                        let items: Vec<(&str, &str)> =
+                            MODES.iter().map(|m| (m.1, crate::ui::context_menu::mode_label(m.0))).collect();
+                        // `segmented` frames its cells with 2 points all around.
+                        let cell = control(ui) - 4.0;
+                        if let Some(i) = segmented(ui, &items, current, vec2(cell + 8.0, cell)) {
+                            cmds.push(Cmd::PaneAction(info.pane, MODES[i].2.clone()));
+                        }
                     }
-                    if matches!(info.mode, ViewMode::Grid | ViewMode::Gallery) {
+                    if info.monitor.is_none() && matches!(info.mode, ViewMode::Grid | ViewMode::Gallery) {
                         let mut z = info.zoom as f32;
                         let r = mini_slider(ui, &mut z, 16.0..=256.0, 96.0)
                             .on_hover_text(tr!("app-status-icon-size", size = info.zoom.to_string()));

@@ -1,12 +1,12 @@
 //! The Snapshots page: saved system states, and comparing two of them or one with now.
 //! Files are read and written on `Loader` workers; comparing runs on one too.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use soyuz_core::config::CpuScale;
 use soyuz_sysmon::fetch::Loader;
-use soyuz_sysmon::snapshot::{self, Snapshot, SnapshotMeta};
+use soyuz_sysmon::snapshot::{self, SnapshotMeta};
 use soyuz_sysmon::{Change, Comparison, DiffSort, Frame, MatchBy, Tolerance, compare, sort_diffs};
 
 use super::data_dir;
@@ -49,8 +49,6 @@ pub struct SnapshotsState {
     pub error: Option<String>,
     /// Editing the label of a snapshot (`id`, text).
     pub renaming: Option<(String, String)>,
-    /// Snapshots read from disk (their files can be large).
-    cache: HashMap<String, Arc<Snapshot>>,
     compare_loader: Option<Loader<Result<Comparison, String>>>,
 }
 
@@ -74,7 +72,6 @@ impl Default for SnapshotsState {
             comparing: false,
             error: None,
             renaming: None,
-            cache: HashMap::new(),
             compare_loader: None,
         }
     }
@@ -117,31 +114,29 @@ impl SnapshotsState {
     }
 
     /// Compare `a` with `b`, on a worker.
-    pub fn start_compare(&mut self, live: Option<Arc<Frame>>, wake: &soyuz_sysmon::Wake) {
+    pub fn start_compare(&mut self, live: Option<Arc<Frame>>, scale: CpuScale, wake: &soyuz_sysmon::Wake) {
         let Some(a_id) = self.a.clone() else { return };
         let b = self.b.clone();
         let match_by = self.match_by;
-        let cached_a = self.cache.get(&a_id).cloned();
-        let cached_b = match &b {
-            CompareTarget::Snapshot(id) => self.cache.get(id).cloned(),
-            CompareTarget::Live => None,
-        };
         let dir = data_dir();
         self.comparing = true;
         self.compare_loader = Some(Loader::spawn("snapshot-compare", wake.clone(), move || {
-            let load = |id: &str, cached: Option<Arc<Snapshot>>| -> Result<Arc<Snapshot>, String> {
-                match cached {
-                    Some(s) => Ok(s),
-                    None => snapshot::load(&dir, id).map(Arc::new).map_err(|e| e.to_string()),
-                }
-            };
-            let a = load(&a_id, cached_a)?;
+            let load = |id: &str| snapshot::load(&dir, id).map_err(|e| e.to_string());
+            let a = load(&a_id)?;
             let bf: Arc<Frame> = match &b {
                 CompareTarget::Live => live.ok_or_else(|| tr!("monitor-no-data").to_string())?,
-                CompareTarget::Snapshot(id) => Arc::new(load(id, cached_b)?.frame.clone()),
+                CompareTarget::Snapshot(id) => Arc::new(load(id)?.frame),
             };
-            Ok(compare(&a.frame, &bf, match_by, Tolerance::default()))
+            Ok(compare_scaled(&a.frame, &bf, match_by, scale))
         }));
+    }
+
+    /// Forget the comparison, and one still being computed.
+    pub fn close_compare(&mut self) {
+        self.compare_loader = None;
+        self.comparing = false;
+        self.comparison = None;
+        self.shown.clear();
     }
 
     /// Apply the sort, filter and "show unchanged" to the comparison.
@@ -172,6 +167,25 @@ impl SnapshotsState {
     pub fn label_of(&self, id: &str) -> Option<&str> {
         self.metas.iter().find(|m| m.id == id).map(|m| m.label.as_str())
     }
+}
+
+/// A comparison with CPU figures on the table's scale. Half a point of the machine counts as
+/// unchanged, so that the jitter of idle programs does not fill the list.
+fn compare_scaled(a: &Frame, b: &Frame, by: MatchBy, scale: CpuScale) -> Comparison {
+    let ncpu = a.ncpu().max(b.ncpu()).max(1) as f32;
+    let tolerance = match scale {
+        CpuScale::Machine => Tolerance { cpu_points: 0.5 * ncpu, ..Tolerance::default() },
+        CpuScale::PerCore => Tolerance { cpu_points: 1.0, ..Tolerance::default() },
+    };
+    let mut c = compare(a, b, by, tolerance);
+    if scale == CpuScale::Machine {
+        for d in &mut c.procs {
+            for v in [&mut d.a, &mut d.b].into_iter().flatten() {
+                v.cpu_percent /= ncpu;
+            }
+        }
+    }
+    c
 }
 
 /// Where exports go (`<monitor data>/exports`).

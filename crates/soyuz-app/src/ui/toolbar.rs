@@ -93,7 +93,11 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let in_use = app.core.ui.filter_focus
                 || app.core.ws.pane().filter_active()
                 || ui.memory(|m| m.has_focus(Id::unique("soyuz.filter")));
-            let filter_field = {
+            // A monitor pane has its own filter box for processes.
+            let on_monitor = matches!(app.core.ws.pane().location, soyuz_core::Location::Monitor);
+            let filter_field = if on_monitor {
+                None
+            } else {
                 use crate::theme::font::grow;
                 filter_width(middle, grow(OMNI_MIN), grow(FILTER_MIN), grow(FILTER_W), in_use)
             };
@@ -163,6 +167,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             view_menu(ui, &view, app);
             sort_menu(ui, &sort, app);
             if filter_field.is_none()
+                && !on_monitor
                 && right_btn(ui, ph::FUNNEL_SIMPLE, &tip(app, tr!("app-toolbar-filter"), &Action::Filter), false)
                     .clicked()
             {

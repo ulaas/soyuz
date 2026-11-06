@@ -135,7 +135,7 @@ monitor-gui-iowait = G/Ç bekleme
 monitor-gui-irq = Kesmeler
 monitor-gui-sockets = Yuvalar
 monitor-gui-clock = Saat
-monitor-gui-max-clock = En yüksek saat
+monitor-gui-max-clock = Anma saati
 monitor-gui-ctx-switches = Bağlam değişimleri
 monitor-gui-interrupts = Kesmeler
 monitor-gui-per-sec = { $value } /sn
@@ -358,3 +358,5 @@ settings-monitor-alert-sustain = En az şu kadar süre
 settings-monitor-alert-sustain-desc = Uyarı verilmeden önce değerin sınırın üstünde kalması gereken süre.
 settings-monitor-alert-snapshot = Uyarıda anlık görüntü
 settings-monitor-alert-snapshot-desc = Bir uyarı verildiğinde kendiliğinden anlık görüntü al.
+
+monitor-gui-status = { $page } · { $processes } işlem, { $running } çalışıyor

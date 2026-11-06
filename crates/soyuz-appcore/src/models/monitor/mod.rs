@@ -303,6 +303,11 @@ impl MonitorState {
         self.series.clear();
     }
 
+    /// The page `pane` shows, if it has a view yet.
+    pub fn page_of(&self, pane: PaneId) -> Option<MonitorPage> {
+        self.views.get(&pane).map(|v| v.page)
+    }
+
     /// The last `seconds` of `metric`, at most `max_points` wide. Read once per frame of data.
     pub fn series(&mut self, metric: &Metric, seconds: u32, max_points: usize) -> Arc<Vec<Pt>> {
         if self.series_generation != self.generation {

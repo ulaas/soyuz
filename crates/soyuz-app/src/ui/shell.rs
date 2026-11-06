@@ -157,7 +157,21 @@ fn status_info(app: &SoyuzApp) -> StatusInfo {
             .map(|v| (v.total, v.free)),
         _ => None,
     };
+    let monitor = matches!(pane.location, Location::Monitor).then(|| {
+        let page = app.core.ui.monitor.page_of(pane.id).unwrap_or(app.core.config.monitor.page);
+        let title = crate::models::monitor::labels::page_title(page);
+        match &app.core.ui.monitor.frame {
+            Some(f) => tr!(
+                "monitor-gui-status",
+                page = title,
+                processes = f.counts.processes as usize,
+                running = f.counts.running as usize,
+            ),
+            None => title.to_string(),
+        }
+    });
     StatusInfo {
+        monitor,
         pane: pane.id,
         visible: pane.visible.len(),
         total: pane.entries.len(),

@@ -492,14 +492,14 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
         C::CompareWith(t) => app.ui.monitor.view(pane, &cfg).snapshots.b = t,
         C::RunCompare => {
             let live = app.ui.monitor.frame.clone();
-            app.ui.monitor.view(pane, &cfg).snapshots.start_compare(live, &wake);
+            app.ui.monitor.view(pane, &cfg).snapshots.start_compare(live, cfg.cpu_scale, &wake);
         }
         C::SetMatchBy(m) => {
             let live = app.ui.monitor.frame.clone();
             let s = &mut app.ui.monitor.view(pane, &cfg).snapshots;
             s.match_by = m;
             if s.comparison.is_some() {
-                s.start_compare(live, &wake);
+                s.start_compare(live, cfg.cpu_scale, &wake);
             }
         }
         C::DiffSortBy(sort) => {
@@ -523,9 +523,7 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
             s.reshow();
         }
         C::CloseCompare => {
-            let s = &mut app.ui.monitor.view(pane, &cfg).snapshots;
-            s.comparison = None;
-            s.shown.clear();
+            app.ui.monitor.view(pane, &cfg).snapshots.close_compare();
         }
         C::StartRename(id) => {
             let s = &mut app.ui.monitor.view(pane, &cfg).snapshots;
