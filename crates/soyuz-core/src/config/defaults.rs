@@ -41,6 +41,7 @@ impl Default for Config {
             remote: RemoteSection::default(),
             linux: LinuxSection::default(),
             tui: TuiSection::default(),
+            monitor: Default::default(),
             keys: Keys::default(),
             ai: super::ai::Ai::default(),
             bookmarks: Vec::new(),

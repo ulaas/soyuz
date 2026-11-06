@@ -5,6 +5,7 @@
 use std::io;
 
 pub(crate) mod process;
+pub(crate) mod sysmon;
 pub(crate) mod wayland_dnd;
 pub(crate) mod xdnd;
 

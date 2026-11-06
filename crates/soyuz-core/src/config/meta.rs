@@ -56,6 +56,7 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("config/fonts.rs", include_str!("fonts.rs")),
     ("config/keys.rs", include_str!("keys.rs")),
     ("config/mcp.rs", include_str!("mcp.rs")),
+    ("config/monitor.rs", include_str!("monitor.rs")),
     ("config/schema.rs", include_str!("schema.rs")),
     ("entry.rs", include_str!("../entry.rs")),
     ("error.rs", include_str!("../error.rs")),

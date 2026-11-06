@@ -6,6 +6,7 @@ pub(crate) mod cf;
 pub(crate) mod fonts;
 pub(crate) mod launch;
 pub(crate) mod pasteboard;
+pub(crate) mod sysmon;
 
 use std::ffi::CString;
 use std::fs::File;

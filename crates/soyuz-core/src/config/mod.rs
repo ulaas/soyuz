@@ -12,6 +12,7 @@ pub mod keys;
 pub mod mcp;
 pub mod meta;
 pub mod migrate;
+pub mod monitor;
 pub mod preserve;
 pub mod schema;
 
@@ -31,6 +32,9 @@ pub use keys::{
 };
 pub use mcp::{AiMcp, AiMcpApprovalUi, AiMcpClient, AiMcpServer, AiRisk};
 pub use migrate::{MigrateOutcome, migrate_file};
+pub use monitor::{
+    CoreView, CpuScale, Monitor, MonitorPage, ProcColumn, ProcColumnConfig, ProcView, TempUnit, default_proc_columns,
+};
 pub use preserve::{rebase, to_string_preserving};
 pub use schema::*;
 

@@ -59,6 +59,8 @@ pub struct Config {
     pub linux: LinuxSection,
     /// The terminal UI (`soyuz --tui`).
     pub tui: TuiSection,
+    /// The system monitor (`monitor:` tabs).
+    pub monitor: super::monitor::Monitor,
     pub keys: Keys,
     pub ai: super::ai::Ai,
     pub bookmarks: Vec<Bookmark>,
