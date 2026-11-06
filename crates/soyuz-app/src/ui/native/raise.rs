@@ -1,9 +1,11 @@
 //! `WindowCmd::Raise`: bring a window to the front for a launch another `soyuz` process
 //! handed over (`services::instance`). On Windows the launcher granted this process the
 //! foreground (`AllowSetForegroundWindow`), so a plain `SetForegroundWindow` on the
-//! viewport's window works; egui's `ViewportCommand::Focus` would not do: winit forces
-//! the activation by injecting an Alt key press. A window created this frame has no
-//! native handle yet, so requests wait (up to [`PATIENCE`]) for [`super::hwnd_of`].
+//! viewport's window usually works; the grant ends with the user's next input, and only a
+//! launch still in step with the user then insists (`take_foreground_from`). egui's
+//! `ViewportCommand::Focus` would not do: winit forces the activation by injecting an Alt
+//! key press. A window created this frame has no native handle yet, so requests wait (up
+//! to [`PATIENCE`]) for [`super::hwnd_of`].
 //! Elsewhere it is un-minimize + focus (no synthetic input there; Wayland compositors
 //! may only flash the window: the launcher's activation token cannot reach winit).
 
@@ -50,7 +52,11 @@ pub(super) fn poll(ctx: &Context) {
     for (vp, until) in pending {
         match super::hwnd_of(ctx, vp) {
             Some(h) => {
-                let ok = soyuz_fs::instance::foreground(h);
+                // A launch the user just made may insist, while what they launched it
+                // from is still in front (`services::instance::launch_front`).
+                let front = crate::services::instance::take_launch_front();
+                let ok = soyuz_fs::instance::foreground(h)
+                    || front.is_some_and(|f| soyuz_fs::instance::take_foreground_from(h, f));
                 log::info!("instance: raised window {h:#x} ({})", if ok { "foreground" } else { "refused" });
             }
             None if now < until => keep.push((vp, until)),

@@ -8,10 +8,11 @@ use windows_sys::Win32::Foundation::{HANDLE, HWND};
 use windows_sys::Win32::Security::{
     GetTokenInformation, TOKEN_ELEVATION, TOKEN_INFORMATION_CLASS, TOKEN_QUERY, TokenElevation, TokenSessionId,
 };
+use windows_sys::Win32::System::SystemInformation::GetTickCount;
 use windows_sys::Win32::System::Threading::{
     AttachThreadInput, GetCurrentProcess, GetCurrentThreadId, OpenProcessToken,
 };
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO, SetFocus};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsIconic, SW_RESTORE,
     SetForegroundWindow, ShowWindow,
@@ -56,31 +57,55 @@ pub(crate) fn allow_set_foreground(pid: u32) -> bool {
 }
 
 /// Restore `hwnd` if minimized and make it the foreground window (no synthetic input).
-///
-/// The launcher's grant is gone as soon as the user touches the mouse or keyboard, and a
-/// refusal leaves the keyboard with the other program while our window sits on screen. So
-/// a refused request shares the input queue of the foreground window's thread for the
-/// moment it takes to move the focus. Only for launches the user asked for.
-/// `true` when `hwnd` is the foreground window afterwards.
+/// `true` when it is the foreground window afterwards.
 pub(crate) fn foreground(hwnd: isize) -> bool {
     if hwnd == 0 {
         return false;
     }
     let h = hwnd as HWND;
-    // SAFETY: plain window and thread calls on a handle of this process (stale handles fail
-    // harmlessly); the input queues are detached again before returning.
+    // SAFETY: plain window calls on a handle of this process (stale handles fail harmlessly).
     unsafe {
         if IsIconic(h) != 0 {
             ShowWindow(h, SW_RESTORE);
         }
-        if SetForegroundWindow(h) != 0 && GetForegroundWindow() == h {
-            return true;
+        SetForegroundWindow(h) != 0 && GetForegroundWindow() == h
+    }
+}
+
+/// The foreground window (0: none).
+pub(crate) fn foreground_window() -> isize {
+    // SAFETY: plain query.
+    unsafe { GetForegroundWindow() as isize }
+}
+
+/// Milliseconds since the last keyboard or mouse input in this session.
+pub(crate) fn ms_since_input() -> Option<u32> {
+    let mut info = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+    // SAFETY: `info` is a valid out structure with its size set.
+    unsafe { (GetLastInputInfo(&mut info) != 0).then(|| GetTickCount().wrapping_sub(info.dwTime)) }
+}
+
+/// A refused [`foreground`], for a launch the user asked for: if `front` still has the
+/// foreground, share its thread's input queue for the moment it takes to move the focus.
+/// Without this the window sits on screen while the keys go to the other program. No
+/// synthetic input. `true` when `hwnd` is the foreground window afterwards.
+pub(crate) fn take_foreground_from(hwnd: isize, front: isize) -> bool {
+    if hwnd == 0 || front == 0 {
+        return false;
+    }
+    let h = hwnd as HWND;
+    // SAFETY: plain window and thread calls (stale handles fail harmlessly); the input
+    // queues are detached again before returning.
+    unsafe {
+        let now = GetForegroundWindow();
+        if now as isize != front {
+            log::info!("instance: not taking the foreground: {:#x} is in front, not {front:#x}", now as isize);
+            return false;
         }
-        let front = GetForegroundWindow();
-        let front_thread = if front.is_null() { 0 } else { GetWindowThreadProcessId(front, null_mut()) };
+        let front_thread = GetWindowThreadProcessId(now, null_mut());
         let ours = GetCurrentThreadId();
         if front_thread == 0 || front_thread == ours {
-            return GetForegroundWindow() == h;
+            return false;
         }
         let attached = AttachThreadInput(ours, front_thread, 1) != 0;
         SetForegroundWindow(h);
@@ -89,6 +114,8 @@ pub(crate) fn foreground(hwnd: isize) -> bool {
         if attached {
             AttachThreadInput(ours, front_thread, 0);
         }
-        GetForegroundWindow() == h
+        let took = GetForegroundWindow() == h;
+        log::info!("instance: took the foreground from {front:#x}: {took} (input queues shared: {attached})");
+        took
     }
 }

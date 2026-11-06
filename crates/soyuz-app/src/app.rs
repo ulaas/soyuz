@@ -119,6 +119,7 @@ impl SoyuzApp {
     }
 
     pub(crate) fn handle_input(&mut self, ctx: &egui::Context) {
+        crate::ui::workspaces::windows::raise_blocker(self, ctx);
         if self.dialog_open()
             || crate::palette::owns_keyboard(&self.core)
             || crate::ui::widgets::dropdown::any_open(ctx)

@@ -261,6 +261,54 @@ log:
     assert!(dirs >= 2, "{lang}: no new folder: {names:?}");
 }
 
+/// A context menu in the main window must not take the keyboard of a window opened later.
+/// Menus marked themselves with a frame number, which counts each window's own frames: to
+/// a newer window, far behind, the menu looked open, and every shortcut there did nothing.
+#[test]
+#[ignore = "launches the GUI; run manually or in a desktop CI job"]
+fn a_menu_in_one_window_leaves_the_keyboard_of_a_newer_one() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (a, b) = (tmp.path().join("a"), tmp.path().join("b"));
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    std::fs::write(a.join("one.txt"), b"one").unwrap();
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let exe = bin.join(if cfg!(windows) { "soyuz.exe" } else { "soyuz" });
+    std::fs::copy(env!("CARGO_BIN_EXE_soyuz"), &exe).unwrap();
+    std::fs::write(bin.join("portable"), b"").unwrap();
+    // Frames in the main window first, so that its count is well ahead of a new window's.
+    let frames = "mark:frame;".repeat(3000);
+    let pasted = b.join("one.txt");
+    let script = format!(
+        "welcome:off;cd:{b};wait_for:cwd=b;{frames}click:640,420,right;wait:400;keys:{{Escape}};wait:400;\
+         new_window;wait:2500;win:0 cd:{a};wait:1200;win:0 select:one.txt;win:0 keys:{{Copy}};wait:600;\
+         keys:{{Paste:x}};wait_for:exists={pasted};quit",
+        a = a.display(),
+        b = b.display(),
+        pasted = pasted.display(),
+    );
+    let log_path = tmp.path().join("log.txt");
+    let mut child = Command::new(&exe)
+        .env("SOYUZ_SCRIPT", script)
+        .env("SOYUZ_NO_SYSTEM_CLIPBOARD", "1")
+        .env("XDG_CACHE_HOME", tmp.path().join("cache"))
+        .env("RUST_LOG", "info,wgpu=warn,naga=warn,wgpu_hal=error")
+        .stdout(Stdio::null())
+        .stderr(std::fs::File::create(&log_path).unwrap())
+        .spawn()
+        .expect("launch soyuz");
+    let limit = if std::env::var_os("CI").is_some() { 240 } else { 90 };
+    let status = wait_or_kill(&mut child, Duration::from_secs(limit));
+    let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+    if !gui_came_up(&log) {
+        return skip_or_fail("windows", "no frame", &log);
+    }
+    assert!(status.is_some(), "soyuz did not quit within {limit} s\n\nlog:\n{log}");
+    let failed = failures(&log);
+    assert!(failed.is_empty(), "the second window's Ctrl+C did nothing:\n{}\n\nlog:\n{log}", failed.join("\n"));
+}
+
 #[test]
 #[ignore = "launches the GUI; run manually or in a desktop CI job"]
 fn keyboard_only_english() {

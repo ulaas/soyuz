@@ -351,8 +351,11 @@ struct PopupState {
     fresh: bool,
 }
 
-fn any_open_id() -> Id {
-    Id::unique("soyuz.dropdown.any_open")
+/// Per window: a popup owns the keyboard of its own window only, and pass numbers count
+/// each window's own frames, so they mean nothing to another window. Take it before
+/// `ctx.data`: it needs the context's lock.
+fn any_open_id(ctx: &egui::Context) -> Id {
+    Id::unique("soyuz.dropdown.any_open").with(ctx.viewport_id())
 }
 
 fn active_id() -> Id {
@@ -366,13 +369,15 @@ fn open_request_id() -> Id {
 /// Whether a dropdown popup was open last frame. Window-level key handlers (Esc closes
 /// Settings, global shortcuts) leave the keyboard to it while this is true.
 pub fn any_open(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<(u64, bool)>(any_open_id()))
+    let id = any_open_id(ctx);
+    ctx.data(|d| d.get_temp::<(u64, bool)>(id))
         .is_some_and(|(pass, open)| open && ctx.cumulative_pass_nr().saturating_sub(pass) <= 1)
 }
 
 fn mark_open(ctx: &egui::Context) {
     let pass = ctx.cumulative_pass_nr();
-    ctx.data_mut(|d| d.insert_temp(any_open_id(), (pass, true)));
+    let id = any_open_id(ctx);
+    ctx.data_mut(|d| d.insert_temp(id, (pass, true)));
 }
 
 /// Open the dropdown with `key` on its next frame, with `query` typed into its search

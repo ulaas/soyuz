@@ -152,7 +152,9 @@ pub fn take_audio_play_request() -> bool {
 /// Register the player's focusable widgets drawn this pass (the video view and the
 /// audio card): while one of them has focus the player owns the keyboard.
 pub fn register_focus_ids(ctx: &egui::Context, ids: impl IntoIterator<Item = Id>) {
-    let pass = ctx.cumulative_pass_nr();
+    // The main window's count: every window draws within its frame, and each window's own
+    // count is not comparable with another's.
+    let pass = ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT);
     FOCUS_IDS.with_borrow_mut(|(p, v)| {
         if *p != pass {
             *p = pass;
@@ -168,7 +170,7 @@ pub fn owns_keyboard(app: &SoyuzApp, ctx: &egui::Context) -> bool {
     if !app.core.ui.preview.open {
         return false;
     }
-    let pass = ctx.cumulative_pass_nr();
+    let pass = ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT);
     ctx.memory(|m| m.focused())
         .is_some_and(|f| FOCUS_IDS.with_borrow(|(p, ids)| pass.saturating_sub(*p) <= 1 && ids.contains(&f)))
 }

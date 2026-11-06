@@ -55,6 +55,14 @@ pub const MERGE: Duration = Duration::from_millis(300);
 /// neither the launcher nor the window touches the foreground then.
 pub const TEST_ENV: &str = "SOYUZ_INSTANCE_TEST";
 
+/// Tests: what the launcher reports for [`launch_front`] (`input`: the user just gave
+/// input; `idle`: they did not; `changed`: the window in front has changed since).
+const FOCUS_TEST_ENV: &str = "SOYUZ_INSTANCE_FOCUS_TEST";
+
+/// Input this recent before the launcher started means the user launched it (a double-click;
+/// a cold start of the launcher can take seconds).
+const USER_LAUNCH: Duration = Duration::from_secs(5);
+
 /// How long the launcher waits for `applied` (and the window keeps the request): a
 /// window that is still starting needs its first frame (≥ 355 ms after `main`, more on a
 /// cold start).
@@ -170,6 +178,10 @@ pub struct LaunchRequest {
     /// Linux startup notification (`XDG_ACTIVATION_TOKEN` / `DESKTOP_STARTUP_ID`).
     #[serde(default)]
     pub activation_token: Option<String>,
+    /// The window in front when the launcher started, if the user had just given input
+    /// ([`launch_front`]). Windows.
+    #[serde(default)]
+    pub front: Option<i64>,
 }
 
 impl LaunchRequest {
@@ -183,11 +195,30 @@ impl LaunchRequest {
             open: open.map(absolutize),
             extra: extra.iter().map(|p| absolutize(p)).collect(),
             activation_token: token,
+            front: launch_front(
+                std::env::var(FOCUS_TEST_ENV).ok().as_deref(),
+                soyuz_fs::instance::ms_since_input(),
+                soyuz_fs::instance::foreground_window(),
+            ),
         }
     }
 
     fn paths(&self) -> impl Iterator<Item = &PathBuf> {
         self.open.iter().chain(&self.extra)
+    }
+}
+
+/// May this launch take the foreground if Windows refuses it? Only when the user just did
+/// something ([`USER_LAUNCH`]: a scheduled task or a script starting `soyuz` must not take
+/// the keyboard from whoever is typing), and later only while the window in front then is
+/// still in front (the user has not moved on). `Some`: that window. `test`: [`FOCUS_TEST_ENV`].
+fn launch_front(test: Option<&str>, since_input_ms: Option<u32>, front: isize) -> Option<i64> {
+    let front = i64::try_from(front).ok().filter(|f| *f != 0);
+    match test {
+        Some("input") => front,
+        Some("idle") => None,
+        Some("changed") => Some(1),
+        _ => since_input_ms.is_some_and(|ms| u128::from(ms) <= USER_LAUNCH.as_millis()).then_some(front).flatten(),
     }
 }
 
@@ -230,6 +261,7 @@ fn line<T: Serialize>(v: &T) -> String {
 /// A launch waiting for the UI.
 struct Pending {
     targets: Vec<(Location, Option<String>)>,
+    front: Option<i64>,
     deadline: Instant,
     reply: Sender<Event>,
 }
@@ -373,7 +405,7 @@ fn serve_connection<S: std::io::Read + Write + Clone>(shared: &Shared, stream: S
     let starting = !shared.started.load(Ordering::SeqCst);
     let wait = apply_wait(starting);
     let (tx, rx) = crossbeam_channel::bounded(1);
-    let pending = Pending { targets, deadline: Instant::now() + wait, reply: tx };
+    let pending = Pending { targets, front: req.front, deadline: Instant::now() + wait, reply: tx };
     if shared.push(pending).is_err() {
         let _ = out.write_all(line(&Event::Closing).as_bytes());
         return;
@@ -426,6 +458,17 @@ struct PumpState {
 
 static PUMP: Mutex<PumpState> = Mutex::new(PumpState { recent: None, raise: None });
 
+/// The latest launch's [`LaunchRequest::front`], until its window was raised.
+static LAUNCH_FRONT: Mutex<Option<(isize, Instant)>> = Mutex::new(None);
+
+/// A launch's window appears within this (like the raise it waits for).
+const LAUNCH_FRONT_PATIENCE: Duration = Duration::from_secs(3);
+
+/// The window the latest launch may take the foreground from, once ([`launch_front`]).
+pub fn take_launch_front() -> Option<isize> {
+    LAUNCH_FRONT.lock().take().filter(|(_, until)| Instant::now() <= *until).map(|(f, _)| f)
+}
+
 /// Every window of this process is minimized (set by the frontend each frame).
 static NONE_SHOWN: AtomicBool = AtomicBool::new(false);
 
@@ -466,7 +509,7 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
             let _ = p.reply.send(Event::Expired);
             continue;
         }
-        apply(app, host, &mut st, p.targets, now);
+        apply(app, host, &mut st, p.targets, p.front, now);
         let _ = p.reply.send(Event::Applied);
     }
 }
@@ -476,6 +519,7 @@ fn apply(
     host: &dyn Host,
     st: &mut PumpState,
     targets: Vec<(Location, Option<String>)>,
+    front: Option<i64>,
     now: Instant,
 ) {
     let targets = if targets.is_empty() { vec![(crate::core::start_location(&app.config), None)] } else { targets };
@@ -488,6 +532,7 @@ fn apply(
         log::info!("instance: launch merged into the previous launch's window");
         return;
     }
+    *LAUNCH_FRONT.lock() = front.and_then(|f| isize::try_from(f).ok()).map(|f| (f, now + LAUNCH_FRONT_PATIENCE));
     let none_shown = NONE_SHOWN.load(Ordering::Relaxed);
     let mode = effective_mode(app.config.workspace.launch, none_shown);
     if mode != app.config.workspace.launch {
@@ -815,11 +860,11 @@ mod tests {
             closing: AtomicBool::new(false),
         };
         let (tx, rx) = crossbeam_channel::bounded(1);
-        assert!(s.push(Pending { targets: Vec::new(), deadline: Instant::now(), reply: tx }).is_ok());
+        assert!(s.push(Pending { targets: Vec::new(), front: None, deadline: Instant::now(), reply: tx }).is_ok());
         s.close();
         assert_eq!(rx.try_recv(), Ok(Event::Closing), "queued launches hear `closing`");
         let (tx, _rx) = crossbeam_channel::bounded(1);
-        assert!(s.push(Pending { targets: Vec::new(), deadline: Instant::now(), reply: tx }).is_err());
+        assert!(s.push(Pending { targets: Vec::new(), front: None, deadline: Instant::now(), reply: tx }).is_err());
     }
 
     /// Several launchers at once (Explorer multi-select): exactly one primary, the others
@@ -902,6 +947,19 @@ mod tests {
             assert_eq!(normalize_dir(Path::new("/home/a/.config/soyuz/")), "/home/a/.config/soyuz");
             assert_eq!(normalize_dir(Path::new("/")), "/");
         }
+    }
+
+    #[test]
+    fn a_launch_insists_only_right_after_user_input() {
+        let recent = Some(800);
+        assert_eq!(launch_front(None, recent, 42), Some(42), "just double-clicked");
+        assert_eq!(launch_front(None, Some(5_000), 42), Some(42));
+        assert_eq!(launch_front(None, Some(5_001), 42), None, "a script, nobody at the keyboard");
+        assert_eq!(launch_front(None, None, 42), None, "no input information");
+        assert_eq!(launch_front(None, recent, 0), None, "nothing in front");
+        assert_eq!(launch_front(Some("idle"), recent, 42), None);
+        assert_eq!(launch_front(Some("input"), None, 42), Some(42));
+        assert_eq!(launch_front(Some("changed"), recent, 42), Some(1));
     }
 
     #[test]

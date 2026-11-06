@@ -59,6 +59,44 @@ pub fn foreground(hwnd: isize) -> bool {
     }
 }
 
+/// The foreground window (Windows; 0 elsewhere or when there is none).
+pub fn foreground_window() -> isize {
+    #[cfg(windows)]
+    {
+        crate::sys::windows::instance::foreground_window()
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
+/// Milliseconds since the last keyboard or mouse input (Windows; `None` elsewhere).
+pub fn ms_since_input() -> Option<u32> {
+    #[cfg(windows)]
+    {
+        crate::sys::windows::instance::ms_since_input()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+/// [`foreground`] was refused: take the foreground from `front` if it still has it, for a
+/// launch the user asked for, without synthetic input (Windows; `false` elsewhere).
+pub fn take_foreground_from(hwnd: isize, front: isize) -> bool {
+    #[cfg(windows)]
+    {
+        crate::sys::windows::instance::take_foreground_from(hwnd, front)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (hwnd, front);
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

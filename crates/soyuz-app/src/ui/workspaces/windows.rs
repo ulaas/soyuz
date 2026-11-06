@@ -76,6 +76,16 @@ pub fn begin_main_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
 
 fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context, id: WindowId) {
     let (focused, inner) = ctx.input(|i| (i.viewport().focused, i.viewport().inner_rect));
+    // The palette is a passing thing: going to another window dismisses it, rather than
+    // leaving it open out of sight, holding the keyboard of every window.
+    if focused == Some(true)
+        && app.core.palette.open
+        && !app.dialog_open()
+        && !app.gui.settings.is_open()
+        && !super::overlays_here(&app.core)
+    {
+        crate::palette::close(&mut app.core);
+    }
     if focused == Some(true) && !modal_open(app) {
         app.core.workspaces.owner = id;
     }
@@ -86,6 +96,36 @@ fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context, id: WindowId) {
             strip: crate::geom::Rect::NOTHING,
             tabs: Vec::new(),
         });
+    }
+}
+
+/// A dialog or Settings waits in another window and holds the keyboard of every window: a
+/// key pressed here brings it to the front instead of doing nothing. Typing in this
+/// window's own text field is left alone.
+pub fn raise_blocker(app: &SoyuzApp, ctx: &egui::Context) {
+    if !(app.dialog_open() || app.gui.settings.is_open()) || super::overlays_here(&app.core) {
+        return;
+    }
+    let pressed = ctx.input(|i| {
+        i.events.iter().any(|e| {
+            matches!(
+                e,
+                egui::Event::Key { pressed: true, repeat: false, .. }
+                    | egui::Event::Copy
+                    | egui::Event::Cut
+                    | egui::Event::Paste(_)
+            )
+        })
+    });
+    let typing = ctx.memory(|m| m.focused()).is_some_and(|f| egui::TextEdit::load_state(ctx, f).is_some());
+    if !pressed || typing {
+        return;
+    }
+    let host = crate::host::EguiHost::new(ctx);
+    // The window first, then what it holds: a dialog in its own window sits above it.
+    model::raise(&host, app.core.workspaces.owner);
+    if let Some(dialog) = crate::ui::native::newest_dialog() {
+        crate::ui::native::raise::request(ctx, dialog);
     }
 }
 

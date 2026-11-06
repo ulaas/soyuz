@@ -78,26 +78,29 @@ pub fn show_pane_menu(
         anchor(pane)
     });
     if crate::ui::native::popup::context_menu_at(bg, open_at, |ui| pane_menu(ui, pane, v)).is_some() {
-        let pass = ctx.cumulative_pass_nr();
-        ctx.data_mut(|d| d.insert_temp(open_key(), pass));
+        mark_open(&ctx);
     }
 }
 
-fn open_key() -> egui::Id {
-    egui::Id::unique("soyuz.ctx_menu.open")
+/// Per window: a menu owns the keyboard of its own window only, and pass numbers count
+/// each window's own frames, so they mean nothing to another window. Take it before
+/// `ctx.data`: it needs the context's lock.
+fn open_key(ctx: &egui::Context) -> egui::Id {
+    egui::Id::unique("soyuz.ctx_menu.open").with(ctx.viewport_id())
 }
 
 /// Another view's context menu is open this pass: it owns the keyboard like a pane menu
 /// (see [`owns_keyboard`]).
 pub fn mark_open(ctx: &egui::Context) {
-    let pass = ctx.cumulative_pass_nr();
-    ctx.data_mut(|d| d.insert_temp(open_key(), pass));
+    let (key, pass) = (open_key(ctx), ctx.cumulative_pass_nr());
+    ctx.data_mut(|d| d.insert_temp(key, pass));
 }
 
 /// A pane's context menu was shown this pass or the last: it owns the keyboard (arrows,
 /// Enter and Esc go to the menu, not the file list).
 pub fn owns_keyboard(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<u64>(open_key())).is_some_and(|pass| ctx.cumulative_pass_nr().saturating_sub(pass) <= 1)
+    let key = open_key(ctx);
+    ctx.data(|d| d.get_temp::<u64>(key)).is_some_and(|pass| ctx.cumulative_pass_nr().saturating_sub(pass) <= 1)
 }
 
 /// The Phosphor glyph of a catalogue icon (`None`: no icon).

@@ -53,7 +53,9 @@ of the *Explorer* preset; the command palette always shows the active ones.
   `new_window` (default), `new_tab` (a tab in the focused window) or `new_process` (a
   separate process every time); it takes effect at the next start. While every Soyuz
   window is minimized, a launch opens as a tab of the last-used window, which comes back
-  to the front. `soyuz --new-window`
+  to the front. A launch takes the keyboard if you just started it from the window that
+  is still in front; a script starting Soyuz, or you having moved on, leaves your focus
+  alone. `soyuz --new-window`
   always starts a separate process that leaves the saved session alone, as do
   `--safe-mode` and `--renderer`. A portable copy, an elevated (administrator) Soyuz and
   each Remote Desktop session have their own running instance.

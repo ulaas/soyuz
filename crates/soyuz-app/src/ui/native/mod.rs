@@ -131,6 +131,11 @@ pub fn end_frame(ctx: &Context) {
     raise::poll(ctx);
 }
 
+/// The newest dialog in its own window, if any.
+pub fn newest_dialog() -> Option<ViewportId> {
+    with_reg(|r| r.slots.iter().filter(|(_, s)| s.kind == Kind::Dialog).max_by_key(|(_, s)| s.seq).map(|(id, _)| *id))
+}
+
 fn any_modal_on(owner: isize) -> bool {
     with_reg(|r| r.slots.values().any(|s| s.disabled_owner == owner))
 }

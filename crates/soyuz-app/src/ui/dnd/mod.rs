@@ -114,7 +114,7 @@ fn spring(ui: &Ui, rect: Rect, dest: &Path, rounding: u8, open: Cmd, cmds: &mut 
     let fire = timer.update(dest, now, delay);
     let progress = timer.progress(now, delay);
     let fired = timer.fired;
-    let pass = ctx.cumulative_pass_nr();
+    let pass = ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT);
     ctx.data_mut(|d| {
         d.insert_temp(spring_id(), timer);
         d.insert_temp(spring_id().with("pass"), pass);
@@ -258,7 +258,7 @@ pub fn item_target(ui: &Ui, pane: &Pane, hit: Option<(usize, Rect)>, frame: &mut
 /// Floating badge next to the pointer: item count, effect and target.
 pub fn paint_badge(ctx: &egui::Context) {
     let hover: Option<HoverInfo> = ctx.data_mut(|d| d.remove_temp(hover_id()));
-    let pass = ctx.cumulative_pass_nr();
+    let pass = ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT);
     if ctx.data(|d| d.get_temp::<u64>(spring_id().with("pass"))) != Some(pass) {
         ctx.data_mut(|d| d.remove::<crate::ui::motion::HoverTimer>(spring_id()));
     }

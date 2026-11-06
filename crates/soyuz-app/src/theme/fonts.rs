@@ -660,7 +660,9 @@ pub fn enable_previews(ctx: &Context) {
 /// caller draws the name in the interface font).
 pub fn preview_family(ctx: &Context, name: &str) -> Option<FontFamily> {
     let from = PREVIEWS_FROM.load(std::sync::atomic::Ordering::Relaxed);
-    if from == u64::MAX || ctx.cumulative_pass_nr() <= from {
+    // The main window's count: the dropdown asking may be in a newer window, whose own count
+    // is far behind.
+    if from == u64::MAX || ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT) <= from {
         return None;
     }
     if let Some(e) = Embedded::find(name).filter(|e| e.usable()) {
@@ -720,7 +722,7 @@ pub fn install(ctx: &Context, fonts: &Fonts) -> Vec<String> {
     if PREVIEWS_WANTED.load(std::sync::atomic::Ordering::Relaxed)
         && PREVIEWS_FROM.load(std::sync::atomic::Ordering::Relaxed) == u64::MAX
     {
-        PREVIEWS_FROM.store(ctx.cumulative_pass_nr(), std::sync::atomic::Ordering::Relaxed);
+        PREVIEWS_FROM.store(ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT), std::sync::atomic::Ordering::Relaxed);
     }
     let offsets: [f32; 6] = std::array::from_fn(|i| fonts.role(FontRoleKind::ALL[i]).offset());
     ctx.data_mut(|d| d.insert_temp(offsets_id(), offsets));
