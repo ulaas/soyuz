@@ -87,6 +87,15 @@
   </requires>
 
   <releases>
+    <release version="0.7.1" date="2026-11-07" type="development">
+      <description>
+        <p>Fixes for working with several windows. Dragging a folder to another Soyuz window
+          now moves or copies it like a drag between panes, instead of sending the original to
+          the trash. A menu or dropdown in one window no longer stops every keyboard shortcut in
+          windows opened later. A window opened from the file manager gets the keyboard, and a
+          dialog waiting in another window comes to the front when you press a key.</p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-11-06" type="development">
       <description>
         <p>Sharper text: LCD subpixel smoothing by default, with normal hinting and a softer text
