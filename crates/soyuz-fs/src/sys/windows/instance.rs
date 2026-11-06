@@ -8,9 +8,13 @@ use windows_sys::Win32::Foundation::{HANDLE, HWND};
 use windows_sys::Win32::Security::{
     GetTokenInformation, TOKEN_ELEVATION, TOKEN_INFORMATION_CLASS, TOKEN_QUERY, TokenElevation, TokenSessionId,
 };
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::Threading::{
+    AttachThreadInput, GetCurrentProcess, GetCurrentThreadId, OpenProcessToken,
+};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, IsIconic, SW_RESTORE, SetForegroundWindow, ShowWindow,
+    AllowSetForegroundWindow, BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsIconic, SW_RESTORE,
+    SetForegroundWindow, ShowWindow,
 };
 
 use super::Handle;
@@ -52,15 +56,39 @@ pub(crate) fn allow_set_foreground(pid: u32) -> bool {
 }
 
 /// Restore `hwnd` if minimized and make it the foreground window (no synthetic input).
+///
+/// The launcher's grant is gone as soon as the user touches the mouse or keyboard, and a
+/// refusal leaves the keyboard with the other program while our window sits on screen. So
+/// a refused request shares the input queue of the foreground window's thread for the
+/// moment it takes to move the focus. Only for launches the user asked for.
+/// `true` when `hwnd` is the foreground window afterwards.
 pub(crate) fn foreground(hwnd: isize) -> bool {
     if hwnd == 0 {
         return false;
     }
-    // SAFETY: plain window calls on a handle of this process (stale handles fail harmlessly).
+    let h = hwnd as HWND;
+    // SAFETY: plain window and thread calls on a handle of this process (stale handles fail
+    // harmlessly); the input queues are detached again before returning.
     unsafe {
-        if IsIconic(hwnd as HWND) != 0 {
-            ShowWindow(hwnd as HWND, SW_RESTORE);
+        if IsIconic(h) != 0 {
+            ShowWindow(h, SW_RESTORE);
         }
-        SetForegroundWindow(hwnd as HWND) != 0
+        if SetForegroundWindow(h) != 0 && GetForegroundWindow() == h {
+            return true;
+        }
+        let front = GetForegroundWindow();
+        let front_thread = if front.is_null() { 0 } else { GetWindowThreadProcessId(front, null_mut()) };
+        let ours = GetCurrentThreadId();
+        if front_thread == 0 || front_thread == ours {
+            return GetForegroundWindow() == h;
+        }
+        let attached = AttachThreadInput(ours, front_thread, 1) != 0;
+        SetForegroundWindow(h);
+        BringWindowToTop(h);
+        SetFocus(h);
+        if attached {
+            AttachThreadInput(ours, front_thread, 0);
+        }
+        GetForegroundWindow() == h
     }
 }

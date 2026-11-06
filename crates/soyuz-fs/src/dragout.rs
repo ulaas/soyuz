@@ -62,6 +62,23 @@ pub enum Outcome {
     Cancelled,
     /// The pointer came back over the app's own window (the internal drag resumes).
     Returned,
+    /// Released over another window of this process. The OS drag was cancelled, so the
+    /// window's generic file drop never ran: the app performs the drop itself.
+    OwnWindow(OwnWindowDrop),
+}
+
+/// Where a drag ended on one of the app's own windows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OwnWindowDrop {
+    /// The top-level window under the pointer.
+    pub hwnd: isize,
+    /// The pointer in that window's client area, physical pixels.
+    pub x: i32,
+    pub y: i32,
+    /// Modifiers held at the release.
+    pub ctrl: bool,
+    pub shift: bool,
+    pub alt: bool,
 }
 
 /// What a drag-out did, including the formats the target wrote back.
@@ -102,7 +119,9 @@ pub fn do_drag(data: &DragData, allowed: u32, return_hwnd: isize) -> io::Result<
                 .find(|(cf, _)| *cf == id && id != 0)
                 .and_then(|(_, b)| Some(u32::from_le_bytes(b.get(..4)?.try_into().ok()?)))
         };
-        let outcome = if r.dropped {
+        let outcome = if let Some(own) = r.own_window {
+            Outcome::OwnWindow(own)
+        } else if r.dropped {
             Outcome::Dropped
         } else if r.returned {
             Outcome::Returned

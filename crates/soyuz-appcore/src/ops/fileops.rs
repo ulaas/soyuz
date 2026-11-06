@@ -970,13 +970,45 @@ pub fn drop_external(app: &mut AppCore, dropped: Vec<PathBuf>, pointer: Option<P
         return;
     }
     let focused = app.ws.pane().id;
-    match drop::external_target(&app.fileops.dnd, pointer, focused) {
+    let here = app.fileops.dnd.only_panes(&shown_panes(app));
+    match drop::external_target(&here, pointer, focused) {
         Some(dest) => {
             transfer(app, dropped, dest, DropEffect::Copy);
         }
         None => {
             app.ui.toasts.push(Toast::info(tr!("ops-drop-onto-folder")));
         }
+    }
+}
+
+/// The panes this frame's window shows.
+fn shown_panes(app: &AppCore) -> Vec<PaneId> {
+    let tab = app.ws.tab();
+    tab.panes.iter().take(tab.shown().max(1)).map(|p| p.id).collect()
+}
+
+/// A drag released over this frame's window: the same transfer as a drag between panes.
+/// A drop waiting for a window that closed meanwhile is forgotten.
+pub fn perform_own_drop(app: &mut AppCore) {
+    let Some(window) = app.fileops.dnd.own_drop.as_ref().map(|o| o.window) else { return };
+    let open = window.is_main() || app.workspaces.windows.iter().any(|w| w.id == window);
+    if open && window != app.workspaces.current {
+        return;
+    }
+    let Some(own) = app.fileops.dnd.own_drop.take() else { return };
+    if !open {
+        return;
+    }
+    let here = app.fileops.dnd.only_panes(&shown_panes(app));
+    let Some(dest) = drop::pane_under(&here, own.pos) else {
+        app.ui.toasts.push(Toast::info(tr!("ops-drop-onto-folder")));
+        return;
+    };
+    match drop::effect_for(own.mods, &own.payload, &dest) {
+        Some(effect) => {
+            transfer(app, own.payload.paths, dest, effect);
+        }
+        None => app.fileops.dnd.ask = Some(drop::AskMenu { paths: own.payload.paths, dest, pos: own.ask_pos }),
     }
 }
 

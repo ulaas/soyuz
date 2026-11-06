@@ -169,10 +169,11 @@ pub fn dispatch(
 }
 
 /// The Ctrl+V-without-paste-event fallback ([`crate::services::os_clipboard::paste_key_fallback`])
-/// fed from egui: its state lives in the context's temp data.
+/// fed from egui: its state lives in the context's temp data, one per window (temp data is
+/// shared by all viewports).
 pub fn paste_key_fallback(ctx: &egui::Context, keymap: &Keymap, dispatched: &mut Vec<Dispatched>) {
     use crate::services::os_clipboard::{PasteKeyInput, PasteKeyState};
-    let id = egui::Id::unique("soyuz.os_clipboard.paste_key");
+    let id = egui::Id::unique("soyuz.os_clipboard.paste_key").with(ctx.viewport_id());
     let mut st: PasteKeyState = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
     let input = ctx.input(|i| PasteKeyInput {
         now: i.time,
@@ -182,6 +183,11 @@ pub fn paste_key_fallback(ctx: &egui::Context, keymap: &Keymap, dispatched: &mut
             _ => None,
         }),
     });
+    // A V released after the window lost focus never reaches it: don't let that press
+    // count as "already handled" when the user comes back and pastes.
+    if !input.focused && input.v_released.is_none() {
+        st = PasteKeyState::default();
+    }
     crate::services::os_clipboard::paste_key_fallback(&mut st, input, keymap, dispatched);
     ctx.data_mut(|d| d.insert_temp(id, st));
 }

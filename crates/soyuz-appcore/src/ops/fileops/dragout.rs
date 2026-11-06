@@ -17,11 +17,15 @@
 //!   button-up went to the OLE loop. Coming back over the Soyuz window cancels the OLE
 //!   drag and resumes the internal one (payload restored, no release injected: the
 //!   button is still down).
+//! * **Onto another Soyuz window**: releasing over a window of this process cancels the
+//!   OLE drag and the frontend queues an [`OwnDrop`](super::drop::OwnDrop), so it is the
+//!   same move / copy / link as a drag between panes. The window's generic file drop
+//!   would only ever copy, and cannot tell the source what it did.
 //! * **After the drop** ([`after_drop`]): copy / link need nothing. A move the target
 //!   performed itself (optimized move: `DROPEFFECT_NONE` + "Logical Performed DropEffect"
 //!   = move, or the sources are gone) only refreshes the panes; nothing is recorded in
-//!   undo. Only an *unoptimized* move (the target returned `DROPEFFECT_MOVE`, did not
-//!   report a different performed effect, and every source still exists) makes Soyuz
+//!   undo. Only an *unoptimized* move (the target returned exactly `DROPEFFECT_MOVE`, did
+//!   not report a different performed effect, and every source still exists) makes Soyuz
 //!   remove the sources itself, through a normal **trash** job (undoable). When unsure,
 //!   nothing is deleted.
 //! * **Linux** (non-modal, `ui::dnd::dragout::supported` says where): X11 / XWayland runs
@@ -40,7 +44,7 @@
 use std::path::{Path, PathBuf};
 
 use soyuz_core::config::DragDefault;
-use soyuz_fs::dragout::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DragData, DragReport, Format, Outcome};
+use soyuz_fs::dragout::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DragData, DragReport, Format, Outcome, OwnWindowDrop};
 
 use crate::core::AppCore;
 use crate::geom::{Point, Rect, vec2};
@@ -105,6 +109,8 @@ pub enum AfterDrop {
     TrashSources(Vec<PathBuf>),
     /// The pointer came back: resume the internal drag.
     Resume,
+    /// Released over another Soyuz window: the frontend performs the drop there.
+    OwnWindow(OwnWindowDrop),
 }
 
 /// Decide the follow-up from the target's report (conservative: never delete when unsure).
@@ -112,10 +118,14 @@ pub fn after_drop(report: &DragReport, paths: &[PathBuf], exists: impl Fn(&Path)
     match report.outcome {
         Outcome::Returned => return AfterDrop::Resume,
         Outcome::Cancelled => return AfterDrop::Nothing,
+        Outcome::OwnWindow(own) => return AfterDrop::OwnWindow(own),
         Outcome::Dropped => {}
     }
     let moved_logically = report.logical_performed.is_some_and(|e| e & DROPEFFECT_MOVE != 0);
-    if report.effect & DROPEFFECT_MOVE == 0 {
+    // A target answers with exactly one effect. One that leaves the value alone hands back
+    // everything we allowed (winit's file drop does, so does any lazy target), which says
+    // nothing about a move: only an exact MOVE can make us delete.
+    if report.effect != DROPEFFECT_MOVE {
         // Copy / link / none. "None" with a logical move = optimized move.
         return if moved_logically { AfterDrop::Refresh } else { AfterDrop::Nothing };
     }
@@ -133,10 +143,10 @@ pub fn after_drop(report: &DragReport, paths: &[PathBuf], exists: impl Fn(&Path)
 }
 
 /// Act on the follow-up of a finished OS drag (refresh, or trash the sources of an
-/// unoptimized move). `Nothing` and `Resume` are the frontend's business.
+/// unoptimized move). `Nothing`, `Resume` and `OwnWindow` are the frontend's business.
 pub fn apply_after_drop(app: &mut AppCore, action: AfterDrop, paths: &[PathBuf]) {
     match action {
-        AfterDrop::Nothing | AfterDrop::Resume => {}
+        AfterDrop::Nothing | AfterDrop::Resume | AfterDrop::OwnWindow(_) => {}
         // The target moved the files itself: relist the panes showing the sources.
         AfterDrop::Refresh => crate::ops::refresh_affected(app, paths),
         AfterDrop::TrashSources(p) => {
@@ -215,6 +225,28 @@ mod tests {
         confirmed.performed = Some(DROPEFFECT_MOVE);
         assert_eq!(after_drop(&confirmed, &paths, all), AfterDrop::TrashSources(paths.clone()));
         assert_eq!(after_drop(&report(Outcome::Dropped, DROPEFFECT_MOVE), &[], all), AfterDrop::Refresh);
+    }
+
+    /// A target that never answers hands back the whole allowed mask, MOVE bit included.
+    /// This trashed the sources of drags onto other Soyuz windows (winit's file drop).
+    #[test]
+    fn an_unanswered_effect_never_deletes() {
+        let paths = vec![PathBuf::from(r"C:\a")];
+        let all = |_: &Path| true;
+        let allowed = DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK;
+        assert_eq!(after_drop(&report(Outcome::Dropped, allowed), &paths, all), AfterDrop::Nothing);
+        let two = DROPEFFECT_COPY | DROPEFFECT_MOVE;
+        assert_eq!(after_drop(&report(Outcome::Dropped, two), &paths, all), AfterDrop::Nothing);
+        let mut logical = report(Outcome::Dropped, allowed);
+        logical.logical_performed = Some(DROPEFFECT_MOVE);
+        assert_eq!(after_drop(&logical, &paths, all), AfterDrop::Refresh);
+    }
+
+    #[test]
+    fn a_drop_on_our_own_window_is_ours_to_perform() {
+        let own = OwnWindowDrop { hwnd: 7, x: 1, y: 2, ctrl: false, shift: false, alt: false };
+        let r = report(Outcome::OwnWindow(own), DROPEFFECT_NONE);
+        assert_eq!(after_drop(&r, &[PathBuf::from(r"C:\a")], |_| true), AfterDrop::OwnWindow(own));
     }
 
     #[cfg(windows)]

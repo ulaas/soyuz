@@ -1,6 +1,8 @@
 //! Drag and drop, the egui side. Internal drags carry a [`DragPayload`] through egui's
 //! `DragAndDrop` (panes, tabs, sidebar favorites/devices/trash and breadcrumb segments
-//! are drop targets); external drops come from `raw.dropped_files` and always copy.
+//! are drop targets); external drops come from `raw.dropped_files` and always copy. A
+//! drag released over another Soyuz window moves or copies like one between panes, into
+//! the folder of the pane under the pointer ([`dragout`]).
 //! Effects, valid targets and the external drop target are decided in
 //! [`crate::ops::fileops::drop`] (modifier semantics there).
 //!
@@ -222,7 +224,7 @@ pub fn pane_zone(ui: &Ui, rect: Rect, pane: &Pane, frame: &mut DndFrame, cmds: &
         soyuz_core::Location::Dir(d) => Some(d.clone()),
         _ => None,
     };
-    frame.panes.push((pane.id, geom::area(rect), dir.clone()));
+    frame.record_pane(pane.id, geom::area(rect), dir.clone());
     let Some(dir) = dir else { return };
     let ctx = ui.ctx();
     let external = ctx.input(|i| !i.raw.hovered_files.is_empty());
@@ -404,9 +406,11 @@ fn ask_menu(app: &mut SoyuzApp, ctx: &egui::Context) {
     }
 }
 
-/// Files dropped onto the window from other apps this frame: copied into the pane under
-/// the pointer (else the focused one).
+/// Start of every window's frame. A drag released over this window from another Soyuz
+/// window runs like a drag between panes. Files dropped from other apps this frame are
+/// copied into the pane under the pointer (else the focused one).
 pub fn external_drops(app: &mut SoyuzApp, ctx: &egui::Context) {
+    fileops::perform_own_drop(&mut app.core);
     let (dropped, pointer) = ctx.input(|i| {
         (
             i.raw

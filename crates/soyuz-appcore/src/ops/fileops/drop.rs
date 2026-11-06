@@ -15,6 +15,7 @@ use soyuz_core::config::DragDefault;
 
 use crate::geom::{Point, Rect};
 use crate::state::pane::PaneId;
+use crate::state::workspace_windows::WindowId;
 
 /// What an internal drag carries.
 #[derive(Clone, Debug)]
@@ -125,16 +126,47 @@ pub struct DndFrame {
     /// A folder item claimed the hover this frame (the pane background yields).
     pub item_claimed: bool,
     pub ask: Option<AskMenu>,
+    /// A drag released over another window, waiting for that window's frame.
+    pub own_drop: Option<OwnDrop>,
 }
 
 impl DndFrame {
-    /// End of frame: pane rects are re-recorded by the next frame's draw; an open "ask"
-    /// menu stays.
+    /// End of frame: pane rects stay until the next draw replaces them (external drops
+    /// read them at the start of a frame); an open "ask" menu and a waiting drop stay.
     pub fn next_frame(&mut self) {
-        let ask = self.ask.take();
-        let panes = std::mem::take(&mut self.panes);
-        *self = DndFrame { panes, item_claimed: false, ask };
+        self.item_claimed = false;
     }
+
+    /// Where pane `id` was drawn. Every pane has one entry, whichever window it is in.
+    pub fn record_pane(&mut self, id: PaneId, rect: Rect, dir: Option<PathBuf>) {
+        self.panes.retain(|(p, _, _)| *p != id);
+        self.panes.push((id, rect, dir));
+    }
+
+    /// The rects of `shown` only: rects are per window, and other windows' panes (or this
+    /// window's other tabs) can sit at the same coordinates.
+    pub fn only_panes(&self, shown: &[PaneId]) -> DndFrame {
+        let panes = self.panes.iter().filter(|(id, _, _)| shown.contains(id)).cloned().collect();
+        DndFrame { panes, ..Default::default() }
+    }
+}
+
+/// A drag released over another Soyuz window (`ops::fileops::dragout`).
+#[derive(Clone, Debug)]
+pub struct OwnDrop {
+    /// The window under the pointer.
+    pub window: WindowId,
+    /// The pointer in that window, points.
+    pub pos: Point,
+    pub payload: DragPayload,
+    pub mods: DropMods,
+    /// Where the "ask" menu opens (the focused window draws it).
+    pub ask_pos: Point,
+}
+
+/// The folder of the pane under `pos`, if it has one.
+pub fn pane_under(frame: &DndFrame, pos: Point) -> Option<PathBuf> {
+    frame.panes.iter().find(|(_, r, _)| r.contains(pos)).and_then(|(_, _, dir)| dir.clone())
 }
 
 /// "Copy here / Move here / Link here" menu for `drag_default = "ask"`.
@@ -228,10 +260,44 @@ mod tests {
             panes: vec![(PaneId(1), Rect::from_min_size(pt(0.0, 0.0), vec2(1.0, 1.0)), None)],
             item_claimed: true,
             ask: Some(AskMenu { paths: vec![], dest: "/d".into(), pos: pt(1.0, 2.0) }),
+            own_drop: Some(OwnDrop {
+                window: WindowId(3),
+                pos: pt(0.0, 0.0),
+                payload: DragPayload { paths: vec![], source_pane: None, default: DragDefault::Auto },
+                mods: NONE,
+                ask_pos: pt(0.0, 0.0),
+            }),
         };
         f.next_frame();
         assert!(!f.item_claimed);
         assert_eq!(f.panes.len(), 1, "rects stay until the next draw records new ones");
+        assert!(f.own_drop.is_some(), "a drop waits for its window's frame");
         assert_eq!(f.ask.map(|a| a.pos), Some(pt(1.0, 2.0)));
+    }
+
+    #[test]
+    fn a_pane_has_one_rect_the_newest() {
+        let mut f = DndFrame::default();
+        let a = PaneId(1);
+        for x in 0..1000 {
+            f.record_pane(a, Rect::from_min_size(pt(x as f32, 0.0), vec2(10.0, 10.0)), Some("/a".into()));
+        }
+        assert_eq!(f.panes.len(), 1, "does not grow per frame");
+        assert_eq!(pane_under(&f, pt(5.0, 5.0)), None, "an old rect is forgotten");
+        assert_eq!(pane_under(&f, pt(1002.0, 5.0)), Some("/a".into()));
+    }
+
+    #[test]
+    fn panes_of_other_windows_are_not_targets() {
+        let mut f = DndFrame::default();
+        let here = PaneId(1);
+        let elsewhere = PaneId(2);
+        let r = Rect::from_min_size(pt(0.0, 0.0), vec2(100.0, 100.0));
+        // The other window recorded its pane first, at the same window coordinates.
+        f.record_pane(elsewhere, r, Some("/elsewhere".into()));
+        f.record_pane(here, r, Some("/here".into()));
+        assert_eq!(pane_under(&f.only_panes(&[here]), pt(5.0, 5.0)), Some("/here".into()));
+        assert_eq!(external_target(&f.only_panes(&[here]), None, here), Some("/here".into()));
+        assert_eq!(pane_under(&f.only_panes(&[]), pt(5.0, 5.0)), None);
     }
 }

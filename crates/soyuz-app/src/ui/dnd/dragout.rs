@@ -125,8 +125,40 @@ fn finish(app: &mut SoyuzApp, ctx: &egui::Context, report: &DragReport, payload:
     }
     match action {
         AfterDrop::Resume => egui::DragAndDrop::set_payload(ctx, DragPayload::clone(payload)),
+        AfterDrop::OwnWindow(own) => queue_own_drop(app, ctx, own, payload),
         action => crate::ops::fileops::dragout::apply_after_drop(&mut app.core, action, paths),
     }
+}
+
+/// A drag ended on one of our windows: that window's next frame performs it, with its
+/// workspace swapped in. Nothing happens over a window that shows no panes.
+#[cfg(any(windows, target_os = "linux"))]
+fn queue_own_drop(
+    app: &mut SoyuzApp,
+    ctx: &egui::Context,
+    own: soyuz_fs::dragout::OwnWindowDrop,
+    payload: &DragPayload,
+) {
+    #[cfg(windows)]
+    {
+        use crate::state::workspace_windows::WindowId;
+        use crate::ui::workspaces::windows::viewport_id;
+        let mut ids = std::iter::once(WindowId::MAIN).chain(app.core.workspaces.windows.iter().map(|w| w.id));
+        let Some(window) = ids.find(|id| crate::ui::native::hwnd_of(ctx, viewport_id(*id)) == Some(own.hwnd)) else {
+            return;
+        };
+        let ppp = ctx.input_for(viewport_id(window), |i| i.pixels_per_point).max(0.1);
+        app.core.fileops.dnd.own_drop = Some(crate::ops::fileops::drop::OwnDrop {
+            window,
+            pos: geom::point(egui::pos2(own.x as f32 / ppp, own.y as f32 / ppp)),
+            payload: DragPayload::clone(payload),
+            mods: super::DropMods { ctrl: own.ctrl, shift: own.shift, alt: own.alt },
+            ask_pos: geom::point(ctx.content_rect().center()),
+        });
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+    }
+    #[cfg(not(windows))]
+    let _ = (app, ctx, own, payload);
 }
 
 /// The running non-modal Linux drag-out and what it carries.

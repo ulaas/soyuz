@@ -61,6 +61,10 @@ impl SoyuzApp {
         crate::ui::dnd::linux_dnd::init(cc);
         crate::ui::preview::video_gpu::init(cc);
         crate::ui::text_clipboard::install(&cc.egui_ctx);
+        // Debug hook: scripted runs that copy and paste leave the user's clipboard alone.
+        if std::env::var_os("SOYUZ_NO_SYSTEM_CLIPBOARD").is_some() {
+            crate::services::os_clipboard::set_system_clipboard(false);
+        }
         soyuz_fs::register_ui_thread();
         Self::with_startup(&cc.egui_ctx, config, renderer, startup)
     }

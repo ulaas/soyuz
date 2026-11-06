@@ -27,11 +27,16 @@ use windows_sys::Win32::System::Com::{DATADIR_GET, DVASPECT_CONTENT, FORMATETC, 
 use windows_sys::Win32::System::DataExchange::RegisterClipboardFormatW;
 use windows_sys::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock};
 use windows_sys::Win32::System::Ole::{DoDragDrop, OleInitialize, OleUninitialize, ReleaseStgMedium};
-use windows_sys::Win32::System::SystemServices::MK_LBUTTON;
+use windows_sys::Win32::System::SystemServices::{MK_CONTROL, MK_LBUTTON, MK_SHIFT};
+use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GA_ROOT, GetAncestor, GetCursorPos, GetSystemMetrics, PostMessageW, SM_SWAPBUTTON, WM_LBUTTONUP, WindowFromPoint,
+    GA_ROOT, GetAncestor, GetCursorPos, GetSystemMetrics, GetWindowThreadProcessId, PostMessageW, SM_SWAPBUTTON,
+    WM_LBUTTONUP, WindowFromPoint,
 };
+
+/// `MK_ALT`: not exported with the other `MK_*` values (`grfKeyState` of OLE drag and drop).
+const MK_ALT: u32 = 0x20;
 use windows_sys::core::{BOOL, GUID, HRESULT};
 
 /// Register (or look up) a named clipboard format. 0 on failure.
@@ -58,6 +63,9 @@ pub(crate) struct DragResult {
     /// The pointer came back over `return_hwnd`: the drag was cancelled to resume the
     /// app's own drag.
     pub returned: bool,
+    /// Released over a window of this process: the drag was cancelled so that the app
+    /// performs the drop itself.
+    pub own_window: Option<crate::dragout::OwnWindowDrop>,
     /// The effect `DoDragDrop` reported.
     pub effect: u32,
     /// Formats the target wrote back with `SetData` (`(format id, bytes)`).
@@ -80,18 +88,19 @@ pub(crate) fn do_drag(formats: Vec<(u16, Vec<u8>)>, allowed: u32, return_hwnd: i
     // call; `effect` outlives it. `DoDragDrop` runs a modal loop on this thread.
     let hr = unsafe { DoDragDrop(data.cast(), source.cast(), allowed, &mut effect) };
     // SAFETY: we still own one reference each (targets may keep their own).
-    let (written, returned) = unsafe {
+    let (written, returned, own_window) = unsafe {
         let written = (*data).written.lock().map(|w| w.clone()).unwrap_or_default();
         let returned = (*source).returned.load(Ordering::SeqCst);
+        let own_window = (*source).own_window.lock().ok().and_then(|o| *o);
         release(data.cast());
         release(source.cast());
-        (written, returned)
+        (written, returned, own_window)
     };
     // SAFETY: balances the successful OleInitialize above.
     unsafe { OleUninitialize() };
     match hr {
-        DRAGDROP_S_DROP => Ok(DragResult { dropped: true, returned: false, effect, written }),
-        DRAGDROP_S_CANCEL => Ok(DragResult { dropped: false, returned, effect: 0, written }),
+        DRAGDROP_S_DROP => Ok(DragResult { dropped: true, returned: false, own_window: None, effect, written }),
+        DRAGDROP_S_CANCEL => Ok(DragResult { dropped: false, returned, own_window, effect: 0, written }),
         e => Err(io::Error::other(format!("DoDragDrop failed: {e:#x}"))),
     }
 }
@@ -598,6 +607,7 @@ struct DropSource {
     refs: AtomicU32,
     return_hwnd: isize,
     returned: AtomicBool,
+    own_window: Mutex<Option<crate::dragout::OwnWindowDrop>>,
 }
 
 static DROP_SOURCE_VTBL: DropSourceVtbl = DropSourceVtbl {
@@ -613,6 +623,7 @@ impl DropSource {
             refs: AtomicU32::new(1),
             return_hwnd,
             returned: AtomicBool::new(false),
+            own_window: Mutex::new(None),
         }))
     }
 }
@@ -684,13 +695,60 @@ fn pointer_over(hwnd: isize) -> bool {
     }
 }
 
+/// The top-level window of this process under the pointer and the pointer in its client
+/// area (physical pixels). `None` over other programs and the desktop.
+fn own_window_under_pointer() -> Option<(isize, i32, i32)> {
+    let mut pt = POINT { x: 0, y: 0 };
+    // SAFETY: plain user32 / kernel32 queries with valid out pointers.
+    unsafe {
+        if GetCursorPos(&mut pt) == 0 {
+            return None;
+        }
+        let under = WindowFromPoint(pt);
+        if under.is_null() {
+            return None;
+        }
+        let root = GetAncestor(under, GA_ROOT);
+        let mut pid = 0u32;
+        if root.is_null() || GetWindowThreadProcessId(root, &mut pid) == 0 || pid != GetCurrentProcessId() {
+            return None;
+        }
+        if ScreenToClient(root, &mut pt) == 0 {
+            return None;
+        }
+        Some((root as isize, pt.x, pt.y))
+    }
+}
+
+/// `keys` of `QueryContinueDrag` as a drop on one of our windows.
+fn own_window_drop((hwnd, x, y): (isize, i32, i32), keys: u32) -> crate::dragout::OwnWindowDrop {
+    crate::dragout::OwnWindowDrop {
+        hwnd,
+        x,
+        y,
+        ctrl: keys & MK_CONTROL != 0,
+        shift: keys & MK_SHIFT != 0,
+        alt: keys & MK_ALT != 0,
+    }
+}
+
 unsafe extern "system" fn src_query_continue(this: *mut c_void, escape: BOOL, keys: u32) -> HRESULT {
     // SAFETY: `this` is our drop source.
     let src = unsafe { &*(this as *const DropSource) };
     let decision = continue_decision(escape != 0, keys & MK_LBUTTON != 0, pointer_over(src.return_hwnd));
     match decision {
         Continue::Go => S_OK,
-        Continue::Drop => DRAGDROP_S_DROP,
+        Continue::Drop => {
+            // Our own windows would only see a generic file drop, and could not tell the
+            // source what they did. Cancel it: the app performs the drop.
+            if let Some(under) = own_window_under_pointer() {
+                if let Ok(mut own) = src.own_window.lock() {
+                    *own = Some(own_window_drop(under, keys));
+                }
+                return DRAGDROP_S_CANCEL;
+            }
+            DRAGDROP_S_DROP
+        }
         Continue::Cancel => DRAGDROP_S_CANCEL,
         Continue::Return => {
             src.returned.store(true, Ordering::SeqCst);
@@ -737,6 +795,14 @@ mod tests {
         assert_eq!(continue_decision(false, false, true), Continue::Drop, "release drops even over us");
         assert_eq!(continue_decision(false, true, true), Continue::Return);
         assert_eq!(continue_decision(false, true, false), Continue::Go);
+    }
+
+    #[test]
+    fn own_window_drop_reads_the_modifiers() {
+        let d = own_window_drop((7, 10, 20), MK_SHIFT);
+        assert_eq!((d.hwnd, d.x, d.y, d.ctrl, d.shift, d.alt), (7, 10, 20, false, true, false));
+        let d = own_window_drop((7, 0, 0), MK_CONTROL | MK_ALT);
+        assert_eq!((d.ctrl, d.shift, d.alt), (true, false, true));
     }
 
     #[test]

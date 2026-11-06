@@ -1533,7 +1533,8 @@ you install system-wide yourself.
   `text/uri-list` and the GNOME file list; `Ctrl` copies and `Shift` moves. After a move
   under Wayland Soyuz only refreshes the folder (the target app moves the files), and under
   X11 the sources go to the trash only when the target asks for it. Dragging out of Soyuz
-  and back in again works once per drag under Wayland.
+  and back in again works once per drag under Wayland. A drag from one Soyuz window to
+  another is a copy on Linux; on Windows it moves or copies like a drag between panes.
 - **Windows shares (SMB)** — type `smb://server/share/folder` or `\\server\share\folder` in
   the path bar, or use *Connect to server* with SMB. `smb://server` lists the server's
   shares (turn off with *Remote → List shares for \\\\server*). Sign in as `user` or `DOMAIN\user`, or as a

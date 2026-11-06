@@ -83,7 +83,7 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     versions::begin_frame(app);
     crate::models::tools::debug_open_once();
     let cmds = crate::models::tools::take_queue_for(&mut app.core);
-    // OS drops reach the main window only (its viewport is this frame's input).
+    // The shelf collects OS drops in the main window only (its viewport is this frame's input).
     if crate::models::owners::owner(&app.core, crate::models::owners::Panel::Shelf).is_main() {
         TOOLS.with_borrow_mut(|t| crate::models::tools::with_shelf(|d| t.shelf.external_drops(ctx, d)));
     }

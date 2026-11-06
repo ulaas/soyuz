@@ -190,6 +190,7 @@ fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
     if close {
         model::request_close(&mut app.core, id);
     }
+    crate::ui::dnd::external_drops(app, &ctx);
     crate::ui::ai::escape_stops_task(app, &ctx);
     app.handle_input(&ctx);
     app.apply_cmds(&crate::host::EguiHost::new(&ctx));
