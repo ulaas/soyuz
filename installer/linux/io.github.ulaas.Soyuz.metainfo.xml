@@ -87,6 +87,15 @@
   </requires>
 
   <releases>
+    <release version="0.6.0" date="2026-11-06" type="development">
+      <description>
+        <p>System monitor, in a tab of the window and of the terminal UI: processes as a list or a
+          tree with your own columns and text, regular expression and column filters; CPU, memory,
+          disk, network, GPU and sensor graphs; open connections, services and startup programs;
+          optional recorded history, snapshots and comparisons; alerts. Also: quieter scrollbars,
+          and filter and search fields center their text.</p>
+      </description>
+    </release>
     <release version="0.5.12" date="2026-11-05" type="development">
       <description>
         <p>Security update: zip, russh and pageant are updated for published advisories, including
