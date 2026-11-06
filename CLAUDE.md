@@ -83,5 +83,6 @@ Read first: `docs/PLAN.md` (architecture, APIs, design tokens), `docs/INTEGRATIO
   - RAR volume sets are unsupported (single RAR archives read via pure-Rust `rars`). PKWARE spanned zips (`.z01` … `.zip`) are read (read-only), like byte-split `.001` sets.
   - PDF page rendering and PDF thumbnails need `pdfium.dll` next to the exe or in the config dir (text-only preview and the PDF icon otherwise).
   - Hand-built `$Recycle.Bin` entries not yet checked against Explorer's Recycle Bin window.
+  - The system monitor's macOS readers (`soyuz-fs/src/sys/macos/sysmon/`) are compile-checked only, not yet run on a Mac; on Linux, GPU sysfs, hwmon and batteries are tested on fixture text (WSL has none). Windows has no CPU package temperature without a driver.
   - Two single checks on a click still run on the UI thread: Create archive's "name taken" check and Open with's typed program path (debug builds log every `soyuz_fs` call made on the UI thread). Extract to folder picks its free name on a worker.
 - **License:** MIT OR Apache-2.0.

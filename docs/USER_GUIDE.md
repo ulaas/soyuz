@@ -701,6 +701,25 @@ close; on Windows it works for programs with a window, and Soyuz offers Kill for
 Without administrator rights, Windows hides some details of other accounts' processes and
 Linux hides their I/O.
 
+### Keys
+
+In the process table of either interface: arrows, Page Up / Down and Home / End move; Left and
+Right fold and unfold; Space marks a process, and end, kill and suspend then act on all marked
+ones. `/` starts filtering and Esc clears the filter. In the window, Delete ends and Shift+Delete
+kills. In the terminal UI, press `?` on any page for its keys:
+
+| Key | Terminal UI |
+|---|---|
+| Tab, Shift+Tab, 1-9, 0 | other pages |
+| P, i | pause, next reading interval |
+| V, c, d | list / tree / by program / by user, choose columns, details panel |
+| `<`, `>`, I | sort column, turn the order around |
+| F9 or k, K, t | end, kill, end with everything it started (asks first) |
+| s, r, p, a, o | suspend, resume, priority, processors, open the program's folder |
+| x, X, R | Services: start, stop, restart |
+| +, -, Left, Right, L, comma, period | History: range, back and forward, live, cursor |
+| n, F2, Del, e, a, b, Enter | Snapshots: new, rename, delete, export, left side, right side, compare |
+
 ### History
 
 History is kept in `monitor/history/` under the config folder, one file per day for
