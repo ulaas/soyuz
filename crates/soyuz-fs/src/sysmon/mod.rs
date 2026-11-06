@@ -8,6 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod parse;
 mod types_proc;
 pub use types_proc::*;
 
