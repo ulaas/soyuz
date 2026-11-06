@@ -283,6 +283,7 @@ fn devices(core: &AppCore, out: &mut Vec<Entry>) {
     }
     let computer = if cfg!(windows) { tr!("app-sidebar-this-pc") } else { tr!("app-sidebar-computer") };
     place(core, out, computer.to_string(), Location::Computer);
+    place(core, out, tr!("action-open-monitor").to_string(), Location::Monitor);
     let vols = drive_volumes(&core.ui.volumes, &core.ui.cloud);
     for v in vols.iter() {
         let location = Location::Dir(v.mount.clone());

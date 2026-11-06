@@ -110,6 +110,9 @@ fn lead(m: &ViewModel, focus: Option<TuiFocus>) -> Option<String> {
     match focus.unwrap_or(TuiFocus::List) {
         TuiFocus::List => {
             let p = m.focused_pane()?;
+            if let Some(mv) = &p.monitor {
+                return Some(mv.announce.clone());
+            }
             if let Some(pl) = &p.places {
                 return pl.rows.iter().find(|r| r.cursor).map(|r| r.name.clone()).or_else(|| Some(pl.title.clone()));
             }

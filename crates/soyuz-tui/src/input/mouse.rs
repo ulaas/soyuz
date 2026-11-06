@@ -231,6 +231,7 @@ fn phase_t56(app: &mut App, m: &MouseEvent) -> bool {
         HitTarget::PlacesRow { .. } | HitTarget::PlacesButton { .. } | HitTarget::PlacesArea { .. } => {
             super::list::places::on_mouse(app, t, m)
         }
+        HitTarget::Monitor { .. } => super::monitor::on_mouse(app, t, m),
         _ => false,
     }
 }
@@ -426,7 +427,8 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
             | HitTarget::ConfirmBar(_)
             | HitTarget::PlacesRow { .. }
             | HitTarget::PlacesButton { .. }
-            | HitTarget::PlacesArea { .. },
+            | HitTarget::PlacesArea { .. }
+            | HitTarget::Monitor { .. },
             _,
         ) => {}
     }

@@ -45,6 +45,7 @@ pub mod filter;
 pub mod jobs;
 pub mod list;
 pub mod menu;
+pub mod monitor;
 pub mod mouse;
 pub mod palette;
 pub mod preview;
@@ -117,6 +118,8 @@ pub struct InputState {
     pub screens: screens::State,
     /// The media player (Phase V3b, `crate::player`).
     pub player: crate::player::State,
+    /// The system monitor's scroll positions and page models (`monitor:` panes).
+    pub monitor: monitor::State,
 }
 
 /// The focus for the core's state and the TUI's own input state.

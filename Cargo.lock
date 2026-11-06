@@ -7159,6 +7159,7 @@ dependencies = [
  "soyuz-mcp",
  "soyuz-media",
  "soyuz-script",
+ "soyuz-sysmon",
  "soyuz-term",
  "tempfile",
  "toml",

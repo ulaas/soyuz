@@ -1,0 +1,31 @@
+# soyuz-tui snapshot: monitor_disks (100x30, ratatui 0.30.2)
+| data ×  System monitor ×  +                                                                        |
+|System monitor                                                                                      |
+|Over  Proc  CPU  Mem  Disk  Net  GPU  Sens  Conn  Svc  Boot  Hist  Snap                    every 1 s|
+|nvme0 · Fake NVMe · 1 TiB · SSD                                                                     |
+|Busy 35.0% ###########...................                                                           |
+|# Read 26.8 MiB/s   * Write 1.9 MiB/s                                                               |
+| 100 MiB/s|                                                                                         |
+|          |                                                                                         |
+|          |                                                                                         |
+|          |                                                  ...                         ...        |
+|          |                                               .#######.                   .#######      |
+|50.0 MiB/s|                                              ###########                 ###########    |
+|          |                                            .#############.             .#############   |
+|          |                                            ################           ################# |
+|          |                                            #################.       .###################|
+|          |                                            ###################.. ..#####################|
+|     0 B/s|                                            *********************************************|
+|120 reads/s, 40 writes/s · 5 GiB read, 2 GiB written · Queue 1.5                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+| Disks                                                             ? keys · Tab pages · Ctrl+Q quit |

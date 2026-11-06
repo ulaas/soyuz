@@ -8,6 +8,7 @@
 //! |---|---|
 //! | `Confirm` | `input::dialogs::confirm::open` |
 //! | `SelectByPattern` | `input::dialogs::pattern::open` |
+//! | `MonitorColumns` | `input::monitor::dialogs::open_columns` |
 //! | `ChooseColumns` | `input::dialogs::columns::open` |
 //! | `OpenWith` | `input::dialogs::open_with::open` |
 //! | `MetaDialog(BatchRename / Attributes / Link)` | `input::dialogs::{batch_rename, attributes, link}::open` |
@@ -64,7 +65,7 @@ pub fn handle(app: &mut App, c: FrontendCmd) {
         }
         FrontendCmd::SelectByPattern(pane) => dialogs::pattern::open(app, pane),
         FrontendCmd::ChooseColumns(pane) => dialogs::columns::open(app, pane),
-        FrontendCmd::MonitorColumns(_) => {}
+        FrontendCmd::MonitorColumns(pane) => crate::input::monitor::dialogs::open_columns(app, pane),
         FrontendCmd::OpenWith(path) => dialogs::open_with::open(app, path),
         FrontendCmd::MetaDialog(MetaDialog::BatchRename) => dialogs::batch_rename::open(app),
         FrontendCmd::MetaDialog(MetaDialog::Attributes) => dialogs::attributes::open(app),
