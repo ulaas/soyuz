@@ -193,7 +193,10 @@ fn remove_running_job_cancels_then_removes() {
     h.wait_state(id, |s| *s == JobState::Running);
     h.engine.remove(id);
     wait_for(Duration::from_secs(5), || h.engine.snapshot(id).is_none().then_some(()));
-    assert!(h.events().iter().any(|e| matches!(e, JobEvent::Removed(x) if *x == id)));
+    // The event is sent just after the job leaves the list.
+    wait_for(Duration::from_secs(5), || {
+        h.events().iter().any(|e| matches!(e, JobEvent::Removed(x) if *x == id)).then_some(())
+    });
 }
 
 #[test]
