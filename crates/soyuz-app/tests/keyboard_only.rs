@@ -261,12 +261,13 @@ log:
     assert!(dirs >= 2, "{lang}: no new folder: {names:?}");
 }
 
-/// A context menu in the main window must not take the keyboard of a window opened later.
-/// Menus marked themselves with a frame number, which counts each window's own frames: to
-/// a newer window, far behind, the menu looked open, and every shortcut there did nothing.
+/// Copy in a window opened after a context menu was used in the main window, paste in the
+/// main window. This depends on frame counts, so it does not reliably catch a menu holding
+/// the keyboard of a newer window: `ui::context_menu` and `ui::widgets::dropdown` have the
+/// tests that do.
 #[test]
 #[ignore = "launches the GUI; run manually or in a desktop CI job"]
-fn a_menu_in_one_window_leaves_the_keyboard_of_a_newer_one() {
+fn copy_and_paste_between_windows_after_a_menu() {
     let tmp = tempfile::tempdir().unwrap();
     let (a, b) = (tmp.path().join("a"), tmp.path().join("b"));
     std::fs::create_dir_all(&a).unwrap();
@@ -277,12 +278,12 @@ fn a_menu_in_one_window_leaves_the_keyboard_of_a_newer_one() {
     let exe = bin.join(if cfg!(windows) { "soyuz.exe" } else { "soyuz" });
     std::fs::copy(env!("CARGO_BIN_EXE_soyuz"), &exe).unwrap();
     std::fs::write(bin.join("portable"), b"").unwrap();
-    // Frames in the main window first, so that its count is well ahead of a new window's.
+    // Frames in the main window first, so that its count is ahead of a new window's.
     let frames = "mark:frame;".repeat(3000);
     let pasted = b.join("one.txt");
     let script = format!(
-        "welcome:off;cd:{b};wait_for:cwd=b;{frames}click:640,420,right;wait:400;keys:{{Escape}};wait:400;\
-         new_window;wait:2500;win:0 cd:{a};wait:1200;win:0 select:one.txt;win:0 keys:{{Copy}};wait:600;\
+        "welcome:off;cd:{b};wait_for:cwd=b;{frames}click:640,420,right;wait:300;keys:{{Escape}};wait:300;\
+         new_window;wait:1200;win:0 cd:{a};wait:400;win:0 select:one.txt;win:0 keys:{{Copy}};wait:300;\
          keys:{{Paste:x}};wait_for:exists={pasted};quit",
         a = a.display(),
         b = b.display(),
@@ -292,6 +293,7 @@ fn a_menu_in_one_window_leaves_the_keyboard_of_a_newer_one() {
     let mut child = Command::new(&exe)
         .env("SOYUZ_SCRIPT", script)
         .env("SOYUZ_NO_SYSTEM_CLIPBOARD", "1")
+        .env("SOYUZ_WINDOW_POS", "-4000,-4000")
         .env("XDG_CACHE_HOME", tmp.path().join("cache"))
         .env("RUST_LOG", "info,wgpu=warn,naga=warn,wgpu_hal=error")
         .stdout(Stdio::null())

@@ -1351,3 +1351,36 @@ mod tests {
         assert_eq!(type_ahead(&rows, &m, "x"), None);
     }
 }
+
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+
+    /// One frame of viewport `vp`, returning what `f` says inside it.
+    fn frame<R>(ctx: &egui::Context, vp: egui::ViewportId, f: impl Fn(&egui::Context) -> R) -> R {
+        let mut out = None;
+        let mut raw = egui::RawInput { viewport_id: vp, ..Default::default() };
+        raw.viewports.insert(vp, egui::ViewportInfo::default());
+        ctx.run_ui(raw, |ui| out = Some(f(ui.ctx()))).textures_delta.clear();
+        out.unwrap()
+    }
+
+    /// Frame numbers count each window's own frames: a mark from a window far ahead must
+    /// not look current in a newer window, which would lose its whole keyboard.
+    #[test]
+    fn open_in_one_window_says_nothing_about_another() {
+        let ctx = egui::Context::default();
+        let (main, newer) = (egui::ViewportId::ROOT, egui::ViewportId::from_hash_of("newer"));
+        for _ in 0..20 {
+            frame(&ctx, main, |_| ());
+        }
+        frame(&ctx, main, mark_open);
+        assert!(frame(&ctx, main, any_open), "its own window sees it");
+        assert!(!frame(&ctx, newer, any_open), "the newer window, 20 frames behind, does not");
+        assert!(!frame(&ctx, newer, any_open));
+        for _ in 0..3 {
+            frame(&ctx, main, |_| ());
+        }
+        assert!(!frame(&ctx, main, any_open), "it ends when it is not drawn");
+    }
+}
