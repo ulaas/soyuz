@@ -252,7 +252,6 @@ mod tests {
 
     #[test]
     fn every_column_and_page_has_words() {
-        crate::i18n::set_locale(soyuz_core::Locale::EnUs);
         for c in ProcColumn::ALL {
             assert!(!column_title(c).is_empty());
             assert!(!column_desc(c).is_empty());

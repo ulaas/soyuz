@@ -736,6 +736,7 @@ mod tests {
     #[test]
     fn process_gpu_stays_off_unless_the_settings_allow_it() {
         let (hub, fake) = hub();
+        hub.configure(HubConfig { process_gpu: false, ..Default::default() });
         let _a = hub.subscribe(100, Want::default(), Arc::new(|| {}));
         wait_until("a sample", || !fake.calls.lock().is_empty());
         assert!(!fake.calls.lock()[0].1.process_gpu);
