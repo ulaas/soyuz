@@ -303,18 +303,8 @@ mod tests {
     #[test]
     fn stat_guest_columns_are_not_added() {
         // 8 fields (old kernels) and 10 fields: guest time is already inside user and nice.
-        let eight = parse_stat(
-            "cpu  10 20 30 40 50 60 70 80
-",
-            100,
-        )
-        .total;
-        let ten = parse_stat(
-            "cpu  10 20 30 40 50 60 70 80 9000 9000
-",
-            100,
-        )
-        .total;
+        let eight = parse_stat("cpu  10 20 30 40 50 60 70 80\n", 100).total;
+        let ten = parse_stat("cpu  10 20 30 40 50 60 70 80 9000 9000\n", 100).total;
         assert_eq!(eight, ten);
         assert_eq!(eight.user, 100);
         assert_eq!(eight.nice, 200);

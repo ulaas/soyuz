@@ -513,8 +513,8 @@ mod tests {
         assert_eq!(state_from_char(s.state), ProcState::Zombie);
         assert_eq!((s.vsize, s.rss_pages), (0, 0));
         assert_eq!(cmdline_or_comm(b"", s.comm), "[a) b]");
-        assert_eq!(cmdline_or_comm(b" ", "x"), "[x]");
-        assert_eq!(cmdline_or_comm(b"/bin/x -y ", "x"), "/bin/x -y");
+        assert_eq!(cmdline_or_comm(b"\0", "x"), "[x]");
+        assert_eq!(cmdline_or_comm(b"/bin/x\0-y\0", "x"), "/bin/x -y");
     }
 
     #[test]

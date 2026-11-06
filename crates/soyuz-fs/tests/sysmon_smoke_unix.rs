@@ -6,7 +6,9 @@
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use soyuz_fs::sysmon::{self, ControlError, Probe, ProcKey, ProcPriority, ProcRaw, ProcSignal, ProcState, Want};
+use soyuz_fs::sysmon::{
+    self, ControlError, DetailsWant, Probe, ProcKey, ProcPriority, ProcRaw, ProcSignal, ProcState, Want,
+};
 
 /// A child that sleeps until killed; reaped on drop, whatever a test did.
 struct Sleeper(Child);
@@ -62,6 +64,7 @@ fn sysmon_sample_is_sane() {
 
     let me = b.processes.iter().find(|p| p.key.pid == std::process::id()).expect("this process is listed");
     assert!(me.key.start_ms > 1_500_000_000_000);
+    assert!(me.key.start_raw > 0);
     assert!(me.rss > 0);
     assert!(me.threads >= 1);
     assert!(!me.name.is_empty());
@@ -139,13 +142,19 @@ fn sysmon_finds_own_listening_socket() {
 fn sysmon_details_of_self() {
     let mut probe = Probe::new();
     let me = find(&mut probe, std::process::id()).unwrap();
-    let d = sysmon::process_details(me.key).unwrap();
+    let all = DetailsWant { threads: true, modules: true, open_files: true, environment: true };
+    let d = sysmon::process_details(me.key, all).unwrap();
     assert!(d.exe.is_some());
     assert!(d.cwd.is_some());
     assert!(d.cmdline.is_some());
     assert!(!d.threads.is_empty());
     assert!(!d.environment.is_empty());
-    assert_eq!(sysmon::exe_path(me.key), d.exe);
+    assert_eq!(me.exe.as_deref(), d.exe.as_deref());
+    // Only what is asked for gets read.
+    let bare = sysmon::process_details(me.key, DetailsWant::default()).unwrap();
+    assert!(bare.exe.is_some() && bare.cmdline.is_some());
+    assert!(bare.threads.is_empty() && bare.modules.is_empty() && bare.open_files.is_empty());
+    assert!(bare.environment.is_empty());
     println!("details: {} threads, {} modules, {} files", d.threads.len(), d.modules.len(), d.open_files.len());
 }
 
@@ -165,7 +174,7 @@ fn sysmon_control_of_own_child() {
     };
 
     // A wrong start time must refuse, and leave the child alone.
-    let stale = ProcKey { pid, start_ms: key.start_ms - 1000 };
+    let stale = ProcKey { start_raw: key.start_raw - 1, ..key };
     assert_eq!(sysmon::signal(stale, ProcSignal::Kill), Err(ControlError::Gone));
     assert!(find(&mut probe, pid).is_some());
 
@@ -199,12 +208,12 @@ fn sysmon_control_of_own_child() {
 fn sysmon_control_refuses_dangerous_pids() {
     // 0 and values that turn negative would address process groups or everything.
     for pid in [0, u32::MAX, i32::MAX as u32 + 1, u32::MAX - 1] {
-        let key = ProcKey { pid, start_ms: 0 };
+        let key = ProcKey { pid, ..ProcKey::default() };
         assert_eq!(sysmon::signal(key, ProcSignal::Hangup), Err(ControlError::Gone), "pid {pid}");
     }
-    let gone = ProcKey { pid: i32::MAX as u32, start_ms: 1 };
+    let gone = ProcKey { pid: i32::MAX as u32, start_ms: 1, start_raw: 1 };
     assert_eq!(sysmon::signal(gone, ProcSignal::Kill), Err(ControlError::Gone));
-    assert!(sysmon::process_details(gone).is_err());
+    assert!(sysmon::process_details(gone, DetailsWant::default()).is_err());
 }
 
 #[test]
@@ -236,4 +245,36 @@ fn sysmon_cost_with_400_processes() {
         println!("cost {label}: {:?} per sample, {n} processes", started.elapsed() / 10);
     }
     drop(children);
+}
+
+#[test]
+fn sysmon_text_is_shared_between_samples() {
+    let mut probe = Probe::new();
+    let a = find(&mut probe, std::process::id()).unwrap();
+    let b = find(&mut probe, std::process::id()).unwrap();
+    // Reference counts, not copies: the point of the per-process cache.
+    assert!(std::sync::Arc::ptr_eq(&a.name, &b.name));
+    assert!(std::sync::Arc::ptr_eq(a.cmdline.as_ref().unwrap(), b.cmdline.as_ref().unwrap()));
+    assert!(std::sync::Arc::ptr_eq(a.exe.as_ref().unwrap(), b.exe.as_ref().unwrap()));
+    assert!(std::sync::Arc::ptr_eq(a.user.as_ref().unwrap(), b.user.as_ref().unwrap()));
+}
+
+#[test]
+fn sysmon_signal_after_exit_is_gone() {
+    let mut child = Sleeper::spawn();
+    let pid = child.pid();
+    let mut probe = Probe::new();
+    let end = Instant::now() + Duration::from_secs(5);
+    let key = loop {
+        if let Some(p) = find(&mut probe, pid).filter(|p| p.name.contains("sleep")) {
+            break p.key;
+        }
+        assert!(Instant::now() < end, "child not listed");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    sysmon::signal(key, ProcSignal::Kill).unwrap();
+    child.0.wait().unwrap();
+    // Reaped: the PID is free, and whatever may reuse it must not get the signal.
+    assert_eq!(sysmon::signal(key, ProcSignal::Kill), Err(ControlError::Gone));
+    assert_eq!(sysmon::set_priority(key, ProcPriority::Normal), Err(ControlError::Gone));
 }

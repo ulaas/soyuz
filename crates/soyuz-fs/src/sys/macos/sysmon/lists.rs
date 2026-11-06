@@ -12,12 +12,12 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::propertylist::{CFPropertyList, create_with_data, kCFPropertyListImmutable};
 use core_foundation::string::CFString;
 
-use super::procs::{all_pids, c_chars, fds, pid_path, proc_args, start_ms};
+use super::procs::{all_pids, c_chars, fds, pid_path, proc_args, start_raw};
 use crate::sysmon::parse::net::decode_in_sockinfo;
 use crate::sysmon::parse::priority_to_nice;
 use crate::sysmon::{
-    Connection, ControlError, OpenFile, ProcDetails, ProcKey, ProcPriority, ProcSignal, ProcState, ServiceInfo,
-    ServiceOp, ServiceState, StartupItem, ThreadInfo,
+    Connection, ControlError, DetailsWant, OpenFile, ProcDetails, ProcKey, ProcPriority, ProcSignal, ProcState,
+    ServiceInfo, ServiceOp, ServiceState, StartupItem, ThreadInfo,
 };
 
 /// `proc_pidfdinfo` flavors and `socket_info.soi_kind` of `sys/proc_info.h`.
@@ -222,8 +222,7 @@ fn verify(key: ProcKey) -> Result<libc::pid_t, ControlError> {
     if pid <= 0 {
         return Err(ControlError::Gone);
     }
-    let start = start_ms(pid).ok_or(ControlError::Gone)?;
-    if key.start_ms != 0 && start != key.start_ms {
+    if start_raw(pid) != Some(key.start_raw) {
         return Err(ControlError::Gone);
     }
     Ok(pid)
@@ -306,22 +305,28 @@ fn threads(pid: c_int) -> Option<Vec<ThreadInfo>> {
     Some(out)
 }
 
-pub fn process_details(key: ProcKey) -> Result<ProcDetails, ControlError> {
+/// The executable, working folder and command line always; the lists only when `want` asks.
+/// Listing modules would need a task port, so `modules` stays empty on macOS.
+pub fn process_details(key: ProcKey, want: DetailsWant) -> Result<ProcDetails, ControlError> {
     let pid = verify(key)?;
     let mut d = ProcDetails { exe: pid_path(pid), ..ProcDetails::default() };
     match proc_args(pid) {
         Some(a) => {
             d.cmdline = Some(a.args.join(" ")).filter(|c| !c.is_empty());
-            d.environment = a.env;
+            if want.environment {
+                d.environment = a.env;
+            }
             if d.exe.is_none() && !a.exe.is_empty() {
                 d.exe = Some(PathBuf::from(a.exe));
             }
         }
         None => d.limited = true,
     }
-    match threads(pid) {
-        Some(t) => d.threads = t,
-        None => d.limited = true,
+    if want.threads {
+        match threads(pid) {
+            Some(t) => d.threads = t,
+            None => d.limited = true,
+        }
     }
     let mut vn = std::mem::MaybeUninit::<libc::proc_vnodepathinfo>::zeroed();
     let size = size_of::<libc::proc_vnodepathinfo>() as c_int;
@@ -337,20 +342,22 @@ pub fn process_details(key: ProcKey) -> Result<ProcDetails, ControlError> {
     } else {
         d.limited = true;
     }
-    match fds(pid) {
-        Some(list) => {
-            for f in list {
-                let path = if f.proc_fdtype == libc::PROX_FDTYPE_VNODE as u32 {
-                    fd_info::<VnodeFdInfo>(pid, f.proc_fd, PROC_PIDFDVNODEPATHINFO)
-                        .map(|v| c_chars(v.pvip.vip_path.as_flattened()))
-                } else {
-                    None
-                };
-                let label = path.filter(|p| !p.is_empty()).unwrap_or_else(|| fd_kind(f.proc_fdtype).to_owned());
-                d.open_files.push(OpenFile { fd: u32::try_from(f.proc_fd).ok(), path: label });
+    if want.open_files {
+        match fds(pid) {
+            Some(list) => {
+                for f in list {
+                    let path = if f.proc_fdtype == libc::PROX_FDTYPE_VNODE as u32 {
+                        fd_info::<VnodeFdInfo>(pid, f.proc_fd, PROC_PIDFDVNODEPATHINFO)
+                            .map(|v| c_chars(v.pvip.vip_path.as_flattened()))
+                    } else {
+                        None
+                    };
+                    let label = path.filter(|p| !p.is_empty()).unwrap_or_else(|| fd_kind(f.proc_fdtype).to_owned());
+                    d.open_files.push(OpenFile { fd: u32::try_from(f.proc_fd).ok(), path: label });
+                }
             }
+            None => d.limited = true,
         }
-        None => d.limited = true,
     }
     Ok(d)
 }

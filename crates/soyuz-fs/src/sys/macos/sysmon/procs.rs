@@ -3,13 +3,16 @@
 
 use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_int, c_void};
-use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use crate::sysmon::parse::misc::{ProcArgs, parse_procargs2};
 use crate::sysmon::parse::nice_to_priority;
 use crate::sysmon::{ProcKey, ProcRaw, ProcState, Want};
 
+/// How often a process's command line is read again.
+const CMDLINE_REFRESH: Duration = Duration::from_secs(30);
 /// `P_TRANSLATED` of `sys/proc.h`: running under Rosetta.
 const P_TRANSLATED: i32 = 0x0002_0000;
 /// `sizeof(struct kinfo_proc)` on 64-bit macOS, which the `libc` crate does not declare. Only
@@ -53,8 +56,13 @@ fn pid_info<T: Copy>(pid: c_int, flavor: c_int, arg: u64) -> Option<T> {
     (got == size).then(|| unsafe { v.assume_init() })
 }
 
-/// `(start time in unix ms, p_flag)` from `sysctl(KERN_PROC_PID)`, open for any user's process.
-pub(super) fn kinfo(pid: c_int) -> Option<(i64, i32)> {
+/// The process start `timeval` as one number: `ProcKey::start_raw` on macOS (microseconds).
+fn raw_of(sec: u64, usec: u64) -> u64 {
+    sec.saturating_mul(1_000_000).saturating_add(usec)
+}
+
+/// `(start_raw, p_flag)` from `sysctl(KERN_PROC_PID)`, open for any user's process.
+pub(super) fn kinfo(pid: c_int) -> Option<(u64, i32)> {
     let mut mib = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
     let mut buf = [0u8; KINFO_PROC_SIZE];
     let mut len = buf.len();
@@ -64,20 +72,16 @@ pub(super) fn kinfo(pid: c_int) -> Option<(i64, i32)> {
     if rc != 0 || len != KINFO_PROC_SIZE {
         return None;
     }
-    let sec = i64::from_ne_bytes(buf[0..8].try_into().ok()?);
+    let sec = u64::from_ne_bytes(buf[0..8].try_into().ok()?);
     let usec = i32::from_ne_bytes(buf[8..12].try_into().ok()?);
     let flags = i32::from_ne_bytes(buf[32..36].try_into().ok()?);
-    Some((sec.saturating_mul(1000).saturating_add(i64::from(usec) / 1000), flags))
+    Some((raw_of(sec, u64::try_from(usec).unwrap_or(0)), flags))
 }
 
-/// A process's start time, unix milliseconds.
-pub(super) fn start_ms(pid: c_int) -> Option<i64> {
-    match pid_info::<libc::proc_bsdinfo>(pid, libc::PROC_PIDTBSDINFO, 0) {
-        Some(b) => {
-            Some((b.pbi_start_tvsec as i64).saturating_mul(1000).saturating_add(b.pbi_start_tvusec as i64 / 1000))
-        }
-        None => kinfo(pid).map(|k| k.0),
-    }
+/// A process's identity value, the same whichever call answers: `kinfo` reads the `timeval` that
+/// `proc_bsdinfo` reports, and is open for every user's process.
+pub(super) fn start_raw(pid: c_int) -> Option<u64> {
+    kinfo(pid).map(|k| k.0)
 }
 
 pub(super) fn c_chars(s: &[c_char]) -> String {
@@ -132,8 +136,8 @@ pub(super) fn fds(pid: c_int) -> Option<Vec<libc::proc_fdinfo>> {
     Some(v)
 }
 
-fn user_name(uid: u32, users: &mut HashMap<u32, String>) -> String {
-    users.entry(uid).or_insert_with(|| lookup_user(uid).unwrap_or_else(|| uid.to_string())).clone()
+fn user_name(uid: u32, users: &mut HashMap<u32, Arc<str>>) -> Arc<str> {
+    users.entry(uid).or_insert_with(|| Arc::from(lookup_user(uid).unwrap_or_else(|| uid.to_string()))).clone()
 }
 
 fn lookup_user(uid: u32) -> Option<String> {
@@ -167,18 +171,22 @@ fn state(status: u32, running_threads: Option<i32>) -> ProcState {
     }
 }
 
+/// Text of one process between samples, handed out as `Arc`s.
 #[derive(Default)]
 struct Cached {
-    exe: Option<PathBuf>,
-    cmdline: Option<String>,
-    name: String,
-    arch: Option<String>,
+    comm: String,
+    name: Arc<str>,
+    exe: Option<Arc<Path>>,
+    cmdline: Option<Arc<str>>,
+    arch: Option<Arc<str>>,
+    refreshed: Option<Instant>,
+    filled: bool,
     seen: u64,
 }
 
 pub(super) struct ProcTable {
     cache: HashMap<ProcKey, Cached>,
-    users: HashMap<u32, String>,
+    users: HashMap<u32, Arc<str>>,
     tick: u64,
 }
 
@@ -189,9 +197,10 @@ impl ProcTable {
 
     pub(super) fn read(&mut self, want: Want) -> Vec<ProcRaw> {
         self.tick = self.tick.wrapping_add(1);
+        let now = Instant::now();
         let mut out = Vec::new();
         for pid in all_pids() {
-            if let Some(p) = self.read_one(pid, want) {
+            if let Some(p) = self.read_one(pid, want, now) {
                 out.push(p);
             }
         }
@@ -200,30 +209,30 @@ impl ProcTable {
         out
     }
 
-    fn read_one(&mut self, pid: c_int, want: Want) -> Option<ProcRaw> {
+    fn read_one(&mut self, pid: c_int, want: Want, now: Instant) -> Option<ProcRaw> {
         let upid = u32::try_from(pid).ok()?;
         let bsd = pid_info::<libc::proc_bsdinfo>(pid, libc::PROC_PIDTBSDINFO, 0);
         let task = pid_info::<libc::proc_taskinfo>(pid, libc::PROC_PIDTASKINFO, 0);
         let mut p = ProcRaw { kernel: pid == 0, ..ProcRaw::default() };
         let uid;
+        let comm;
         if let Some(b) = bsd {
             let name = c_chars(&b.pbi_name);
-            p.name = if name.is_empty() { c_chars(&b.pbi_comm) } else { name };
+            comm = if name.is_empty() { c_chars(&b.pbi_comm) } else { name };
             p.parent = (b.pbi_ppid != 0).then_some(b.pbi_ppid);
             p.state = state(b.pbi_status, task.map(|t| t.pti_numrunning));
             p.nice = Some(b.pbi_nice);
             p.priority = Some(nice_to_priority(b.pbi_nice));
-            let sec = i64::try_from(b.pbi_start_tvsec).unwrap_or(0);
-            let usec = i64::try_from(b.pbi_start_tvusec).unwrap_or(0);
-            p.key = ProcKey { pid: upid, start_ms: sec.saturating_mul(1000).saturating_add(usec / 1000) };
+            let raw = raw_of(b.pbi_start_tvsec, b.pbi_start_tvusec);
+            p.key = ProcKey { pid: upid, start_ms: (raw / 1000) as i64, start_raw: raw };
             uid = b.pbi_uid;
         } else {
             let s = pid_info::<libc::proc_bsdshortinfo>(pid, libc::PROC_PIDT_SHORTBSDINFO, 0)?;
-            let start = kinfo(pid).map_or(0, |k| k.0);
-            p.name = c_chars(&s.pbsi_comm);
+            let raw = start_raw(pid).unwrap_or(0);
+            comm = c_chars(&s.pbsi_comm);
             p.parent = (s.pbsi_ppid != 0).then_some(s.pbsi_ppid);
             p.state = state(s.pbsi_status, task.map(|t| t.pti_numrunning));
-            p.key = ProcKey { pid: upid, start_ms: start };
+            p.key = ProcKey { pid: upid, start_ms: (raw / 1000) as i64, start_raw: raw };
             uid = s.pbsi_uid;
             // SAFETY: plain integers. -1 is a valid niceness, so errno tells failure apart.
             let nice = unsafe {
@@ -244,19 +253,29 @@ impl ProcTable {
             p.threads = u32::try_from(t.pti_threadnum).unwrap_or(0);
             p.page_faults = u64::try_from(t.pti_faults).ok();
         }
-        if want.process_details {
-            self.details(&mut p, pid, uid);
+        let mut c = self.cache.remove(&p.key).unwrap_or_default();
+        // After `exec` the key stays the same and the name changes: everything is stale then.
+        if c.comm != comm {
+            c = Cached { name: Arc::from(comm.as_str()), comm, ..Cached::default() };
         }
+        c.seen = self.tick;
+        if want.process_details {
+            self.details(&mut p, &mut c, pid, uid, now);
+        }
+        p.name = c.name.clone();
+        self.cache.insert(p.key, c);
         Some(p)
     }
 
-    fn details(&mut self, p: &mut ProcRaw, pid: c_int, uid: u32) {
+    fn details(&mut self, p: &mut ProcRaw, c: &mut Cached, pid: c_int, uid: u32, now: Instant) {
         p.user = Some(user_name(uid, &mut self.users));
         p.elevated = Some(uid == 0);
-        let c = self.cache.entry(p.key).or_insert_with(|| {
+        if !c.filled {
             let exe = pid_path(pid);
-            let args = proc_args(pid);
-            let name = exe.as_ref().and_then(|e| e.file_name()).map(|n| n.to_string_lossy().into_owned());
+            if let Some(file) = exe.as_ref().and_then(|e| e.file_name()) {
+                c.name = Arc::from(file.to_string_lossy().as_ref());
+            }
+            c.exe = exe.map(Arc::from);
             let translated = kinfo(pid).is_some_and(|k| k.1 & P_TRANSLATED != 0);
             let arch = match std::env::consts::ARCH {
                 "aarch64" if translated => "x64",
@@ -264,17 +283,16 @@ impl ProcTable {
                 "x86_64" => "x64",
                 other => other,
             };
-            Cached {
-                exe,
-                cmdline: args.map(|a| a.args.join(" ")).filter(|c| !c.is_empty()),
-                name: name.unwrap_or_default(),
-                arch: Some(arch.to_owned()),
-                seen: 0,
+            c.arch = Some(Arc::from(arch));
+        }
+        // Programs change their title after start.
+        if !c.filled || c.refreshed.is_none_or(|t| now.duration_since(t) >= CMDLINE_REFRESH) {
+            let line = proc_args(pid).map(|a| a.args.join(" ")).filter(|l| !l.is_empty());
+            if c.cmdline.as_deref() != line.as_deref() {
+                c.cmdline = line.map(Arc::from);
             }
-        });
-        c.seen = self.tick;
-        if !c.name.is_empty() {
-            p.name.clone_from(&c.name);
+            c.refreshed = Some(now);
+            c.filled = true;
         }
         p.exe.clone_from(&c.exe);
         p.cmdline.clone_from(&c.cmdline);

@@ -14,13 +14,16 @@ use std::fs::File;
 use std::io::Read;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::OnceLock;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub(crate) use control::{affinity, set_affinity, set_priority, signal};
 pub(crate) use lists::{connections, process_details, service_control, services, startup_items};
 
 use crate::sysmon::parse::{self, net as pnet, system as psys};
 use crate::sysmon::{CoreRaw, DiskRaw, NetRaw, RawSample, SystemInfo, Want};
+
+/// Per-process GPU use reads a file per DRM client and asks NVML: not on every sample.
+const GPU_INTERVAL: Duration = Duration::from_millis(2500);
 
 /// Clock ticks per second of `/proc` times.
 pub(super) fn clk_tck() -> u64 {
@@ -84,6 +87,9 @@ pub struct Probe {
     disks: HashMap<String, Option<DiskStatic>>,
     procs: procs::ProcTable,
     hw: hw::Hardware,
+    /// The last per-process GPU collection: it runs on its own cadence, not every sample.
+    gpu_at: Option<Instant>,
+    engine_totals: procs::EngineTotals,
 }
 
 #[derive(Clone)]
@@ -101,6 +107,8 @@ impl Probe {
             disks: HashMap::new(),
             procs: procs::ProcTable::new(),
             hw: hw::Hardware::new(),
+            gpu_at: None,
+            engine_totals: HashMap::new(),
         }
     }
 
@@ -121,15 +129,22 @@ impl Probe {
         self.read_disks(&mut out);
         self.read_nets(&mut out);
 
-        let nvml_procs = if want.process_gpu { self.hw.nvml_process_usage() } else { HashMap::new() };
-        let mut engine_totals = HashMap::new();
         if want.processes {
-            out.processes = self.procs.read(want, &nvml_procs, &mut engine_totals);
+            let due = want.process_gpu && self.gpu_at.is_none_or(|t| t.elapsed() >= GPU_INTERVAL);
+            let mut pass = due.then(|| procs::GpuPass { nvml: self.hw.nvml_process_usage(), ..Default::default() });
+            out.processes = self.procs.read(want, pass.as_mut());
+            if let Some(pass) = pass {
+                self.gpu_at = Some(Instant::now());
+                self.engine_totals = pass.totals;
+            }
+        }
+        if !want.process_gpu {
+            self.engine_totals.clear();
         }
         if want.hardware {
             out.sensors = self.hw.sensors();
             out.cpu_temp_c = parse::hw::pick_cpu_temp(&out.sensors);
-            out.gpus = self.hw.gpus(&engine_totals);
+            out.gpus = self.hw.gpus(&self.engine_totals);
             out.batteries = hw::batteries();
         }
         self.tick = self.tick.wrapping_add(1);
@@ -197,9 +212,8 @@ impl Probe {
                 if let Some(c) = mm.and_then(|s| psys::parse_zram_mm_stat(&s)) {
                     zram = Some(zram.unwrap_or(0u64).saturating_add(c));
                 }
-                continue;
             }
-            if !psys::is_physical_disk_name(d.name) {
+            if !psys::is_listed_disk_name(d.name) {
                 continue;
             }
             let info = self.disks.entry(d.name.to_owned()).or_insert_with(|| disk_static(d.name));
@@ -273,7 +287,11 @@ fn disk_static(name: &str) -> Option<DiskStatic> {
     // Only whole disks are listed under /sys/block; partitions fall out here.
     let size = read_trimmed(&format!("{base}/size"))?.parse::<u64>().ok().map(|s| s.saturating_mul(512));
     let rotational = read_trimmed(&format!("{base}/queue/rotational")).map(|r| r == "1");
-    let model = read_trimmed(&format!("{base}/device/model")).unwrap_or_default();
+    // Stacked devices have no hardware model; a device-mapper name or RAID level says what they are.
+    let model = read_trimmed(&format!("{base}/device/model"))
+        .or_else(|| read_trimmed(&format!("{base}/dm/name")))
+        .or_else(|| read_trimmed(&format!("{base}/md/level")))
+        .unwrap_or_default();
     Some(DiskStatic { model, rotational, size })
 }
 
