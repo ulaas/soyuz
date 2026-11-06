@@ -1,5 +1,4 @@
-//! The real probe through the rater. The OS readers may return empty data while they are being
-//! written, so this holds any values to sanity, not to being present.
+//! The real probe through the rater, on whichever OS runs the tests.
 
 use soyuz_fs::sysmon::{Probe, Want};
 use soyuz_sysmon::{Filter, History, Metric, Rater, TableOpts, build};
@@ -40,12 +39,8 @@ fn real_probe_gives_sane_frames() {
     let series = history.series(&Metric::CpuTotal, frame.at_ms, frame.at_ms + 1, 10);
     assert!(series.len() <= 1);
 
-    // Once the readers are in: this process is listed and memory has a total.
-    if !frame.procs.is_empty() {
-        let me = std::process::id();
-        assert!(frame.procs.iter().any(|p| p.raw.key.pid == me), "this process is listed");
-    }
-    if frame.memory.raw.total == 0 {
-        eprintln!("the memory reader reports nothing yet");
-    }
+    let me = std::process::id();
+    assert!(frame.procs.iter().any(|p| p.raw.key.pid == me), "this process is listed");
+    assert!(frame.memory.raw.total > 0);
+    assert!(!frame.cpu.cores.is_empty());
 }

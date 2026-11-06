@@ -645,6 +645,86 @@ All from the palette or the context menu:
   (`[tags] names` in `config.toml`). Items stay tagged by color, so renaming changes
   nothing on disk; `tag:red` keeps working in searches.
 
+## System monitor
+
+Ctrl+Shift+Y, "System monitor" in the palette, or the entry under Devices in the sidebar
+opens the monitor in a tab of its own (the address is `monitor:`), in the window and in the
+terminal UI. It reads the system only while a monitor tab is on screen. Two panes can show
+two pages side by side.
+
+| Page | What it shows |
+|---|---|
+| Overview | CPU, memory, disk, network and GPU at a glance, the machine, uptime, top processes |
+| Processes | Every process, see below |
+| CPU | Load over time, each logical CPU as graphs, a heat grid or bars, clocks, load average |
+| Memory | Used, cached and free, swap, commit, paging |
+| Disks | Per physical disk: read and write rates, busy time, queue, operations per second |
+| Network | Per interface: receive and send rates, totals, link speed, addresses, errors |
+| GPU | Per adapter: load, engines, memory, temperature, power, fan, clocks |
+| Sensors | Temperatures, fans, power and batteries |
+| Connections | Open TCP and UDP sockets, with the process that owns each |
+| Services | Services and daemons, which you can start, stop and restart |
+| Startup | Programs that start with the system |
+| History | Everything recorded, over a range from five minutes to a week |
+| Snapshots | Saved system states, and comparing them |
+
+A value your system does not report shows as a dash, never as 0.
+
+### Processes
+
+The table shows a **list**, a **tree** of parents and children, or groups **by program** or
+**by user** with totals. Choose the columns, their order, width and the sort: all of it is
+stored in `[monitor]` and survives a restart. Column values such as "Read/s" cover all of a
+process's input on Windows, including pipes and sockets.
+
+The filter box takes words and tests, all of which must hold:
+
+| Term | Matches |
+|---|---|
+| `firefox` | any of name, command line, path, user, description, PID contains it (any case) |
+| `"two words"` | those words together |
+| `-helper` | leaves out what contains `helper` |
+| `chrome\|edge` | either word |
+| `/render.*gpu/` | a regular expression over the same fields (`/…/i` ignores case) |
+| `user:root`, `name:`, `cmd:`, `path:`, `state:`, `pid:`, `ppid:`, `cgroup:`, `arch:` | text in one column |
+| `cpu>5`, `mem>100M`, `threads>=10`, `read>1M`, `gpu>0`, `handles>1000` | numbers in one column, with K, M, G, T |
+
+The `.*` button (Ctrl+R in the terminal UI) reads the whole box as one regular expression.
+
+Select a process for its details: CPU and memory over time, command line, threads, modules,
+and, where the system allows, open files, environment and sockets. From its menu you can end
+it, kill it, end its whole tree, suspend or resume it, change its priority and processors,
+open the folder of its program, and copy its PID, name, path or command line. Soyuz asks first
+(`confirm_kill`), and warns more clearly about processes the system relies on and about other
+users' processes. It will not suspend critical processes. "End process" asks a program to
+close; on Windows it works for programs with a window, and Soyuz offers Kill for the rest.
+Without administrator rights, Windows hides some details of other accounts' processes and
+Linux hides their I/O.
+
+### History
+
+History is kept in `monitor/history/` under the config folder, one file per day for
+`history_days` days (`history_persist`). Normally it is recorded only while a monitor tab is
+on screen; `background_history` keeps recording while Soyuz runs. Pick a range, drag to go
+back in time, and point at a moment to read every value and the top processes at that moment.
+
+### Snapshots and comparing
+
+A snapshot saves the whole table and all system figures. Compare two snapshots, or one with
+now, by process or by program: totals side by side, then what was added, removed or changed,
+sorted by any difference. Export a snapshot as JSON or CSV, or the current table as CSV; exports
+go to `monitor/exports/` under the config folder.
+
+Command lines can hold passwords. Snapshots and exports therefore mask what looks like a secret
+(`snapshot_commands = "redacted"`, the default); `none` leaves command lines out, and `full`
+keeps them. Environment variables are never saved.
+
+### Alerts
+
+`alert_cpu_percent`, `alert_memory_percent` and `alert_temperature_c` raise a notification when
+a value stays above the limit for `alert_sustain_secs`, and can take a snapshot of that moment
+(`alert_snapshot`). They work with no monitor tab open.
+
 ## Search
 
 `Ctrl+Shift+F` (or `F3`) opens the search bar for the current folder and its subfolders:

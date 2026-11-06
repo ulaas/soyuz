@@ -75,6 +75,7 @@ with 100 000 entries scroll smoothly, and a dead network share cannot hang the w
 - Preview pane and Quick Look (`Space`): code with syntax highlighting, images, Markdown, PDF, Office documents, EPUB, fonts, 3D models, audio waveform and playback, video posters, two-file diff
 - Built-in text, hex and image editors
 - Search by name and content; a background index (SQLite FTS5 + NTFS change journal) with a query language and live smart folders
+- System monitor in a tab, in the window and the terminal UI: processes as list or tree with custom columns and text, regex and column filters; CPU, memory, disk, network, GPU and sensor graphs; sockets, services and startup programs; recorded history, snapshots and comparisons; alerts (Windows and Linux; macOS is built but less tested)
 - Disk-usage treemap, folder compare and two-way sync with scheduled profiles, previous versions, duplicate finder, split / join, checksums
 - Git status column, renameable color tags, folder colors, drop shelf, recent places
 - Automation: sandboxed Rhai scripts, watcher-driven rules, and a `soyuz cp|mv|rm …` CLI that queues jobs in the running window
@@ -199,6 +200,7 @@ unit-tested in isolation.
 | [`soyuz-archive`](crates/soyuz-archive) | Archive readers and writers with an indexed virtual file system. |
 | [`soyuz-search`](crates/soyuz-search) | Parallel name / content search, folder sizes, size trees, duplicate detection, folder compare. |
 | [`soyuz-index`](crates/soyuz-index) | Background index (SQLite + FTS5), query language, smart-folder queries. |
+| [`soyuz-sysmon`](crates/soyuz-sysmon) | System monitor logic: rates, history, snapshots, compare, process filter and tree, alerts, the sampler. |
 | [`soyuz-vfs`](crates/soyuz-vfs) | Remote providers (SFTP, WebDAV, FTP / FTPS, S3) and resumable cross-provider transfers. |
 | [`soyuz-term`](crates/soyuz-term) | Embedded terminal widget (alacritty_terminal + ConPTY / PTY). |
 | [`soyuz-ai`](crates/soyuz-ai) | AI providers, credential store, tool catalog with risk classes and dry-run plans, audit log. |

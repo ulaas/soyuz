@@ -369,6 +369,45 @@ window_backend = "auto"          # auto | wayland | x11 (XWayland: drag and drop
 own_file_manager1 = false        # own org.freedesktop.FileManager1 while running ("Show in folder" opens Soyuz)
 clipboard_fallback_tools = false # run wl-copy / xclip when the built-in clipboard fails
 
+[monitor]                        # the system monitor (monitor: tabs, Ctrl+Shift+Y)
+interval_ms = 1000               # between readings while a monitor tab is on screen (250..10000)
+page = "overview"                # overview | processes | cpu | memory | disks | network | gpu | sensors | connections | services | startup | history | snapshots
+sort_by = "cpu"                  # process table sort column
+sort_descending = true
+view = "list"                    # list | tree | by_name | by_user
+remember_filter = false          # keep the process filter between sessions
+filter = ""                      # words, /regex/, user:root, cpu>5, mem>100M
+filter_regex = false             # the whole filter is one regular expression
+filter_keeps_parents = true      # tree view: keep the parents of matches, dimmed
+show_kernel = false              # list kernel threads and OS-internal pseudo processes
+show_other_users = true
+cpu_scale = "machine"            # machine (100 % = all CPUs) | per_core (100 % = one CPU)
+core_view = "graphs"             # graphs | heat | bars
+graph_seconds = 120              # history the live graphs show (30..3600)
+details_panel = true
+details_height = 260.0
+process_icons = true             # program icons in the process table (window only)
+process_gpu = true               # per-process GPU, read every few seconds
+follow_selected = true           # keep the selected process in view while rows reorder
+snapshot_commands = "redacted"   # command lines in snapshots and exports: none | redacted | full
+heat_cells = true                # tint table cells by load
+temperature_unit = "celsius"     # celsius | fahrenheit
+confirm_kill = true              # ask before ending, killing or suspending
+show_virtual_networks = false    # loopback, tunnels and bridges on the Network page
+background_history = false       # keep recording with no monitor tab open
+background_interval_secs = 10
+history_persist = true           # write history to disk
+history_days = 7                 # 1..90
+snapshots_kept = 50              # oldest automatic ones go first; manual ones stay
+alert_cpu_percent = 0            # notify when CPU stays above this (0 = off)
+alert_memory_percent = 0
+alert_temperature_c = 0
+alert_sustain_secs = 30
+alert_snapshot = true            # take a snapshot when an alert fires
+# [[monitor.columns]]            # process table columns, left to right; width 0 = default
+# id = "name"
+# width = 0.0
+
 [tui]                            # the terminal UI (soyuz --tui)
 mouse = true                     # click / wheel in the terminal UI (off keeps the terminal's own text selection)
 keyboard_protocol = "auto"       # auto | kitty | legacy (auto: kitty keyboard protocol where supported, never on Windows)

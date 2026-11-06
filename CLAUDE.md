@@ -60,6 +60,7 @@ cargo fmt --all --check
 | `soyuz-search` | Streaming search, folder sizes, size tree, duplicates, folder compare. |
 | `soyuz-index` | Background file index (SQLite + FTS5), query language, NTFS USN journal parsing, smart-folder queries. |
 | `soyuz-term` | Embedded terminal (alacritty_terminal 0.26 plus our own egui renderer). |
+| `soyuz-sysmon` | System monitor logic over the raw readers in `soyuz_fs::sysmon`: rates, history in memory and on disk, snapshots, compare, process filter, table and tree, alerts, the process-wide sampler hub. API list: `crates/soyuz-sysmon/README-API.md`. |
 | `soyuz-vfs` | Remote locations: `Provider` trait, SFTP / WebDAV / FTP(S) / S3 providers, resumable cross-provider transfers. |
 | `soyuz-ai` | AI provider layer (Anthropic, OpenAI, OpenAI-compatible local, Gemini, custom), credential store, tool catalog with risk classes and dry-run plans, audit log. |
 | `soyuz-script` | Sandboxed Rhai scripting (actions, menu entries, columns, previewers) for automation. |
