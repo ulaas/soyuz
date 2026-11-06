@@ -48,6 +48,7 @@ fn kind_glyph(c: &Crumb) -> &'static str {
         CrumbKind::Virtual => match c.location {
             Location::Trash => ph::TRASH,
             Location::Computer => ph::DESKTOP_TOWER,
+            Location::Monitor => ph::PULSE,
             Location::Search(_) => ph::MAGNIFYING_GLASS,
             _ => ph::FOLDER,
         },

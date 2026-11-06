@@ -506,6 +506,7 @@ fn paint_tab(
         4 => ph::SQUARES_FOUR,
         2 => ph::SQUARE_SPLIT_HORIZONTAL,
         _ if matches!(pane.location, soyuz_core::Location::Timeline) => ph::CALENDAR_DOTS,
+        _ if matches!(pane.location, soyuz_core::Location::Monitor) => ph::PULSE,
         _ if active => ph::FOLDER_OPEN,
         _ => ph::FOLDER,
     };

@@ -575,6 +575,7 @@ fn common(km: &mut Keymap) {
     b(G, A::Workspaces, CTRL_ALT, KeyName::W);
     b(G, A::ToggleQuadPane, SHIFT, KeyName::F9);
     b(G, A::ToggleTerminal, CTRL, KeyName::Backtick);
+    b(G, A::OpenMonitor, CTRL_SHIFT, KeyName::Y);
     b(G, A::FocusAddressBar, CTRL, KeyName::L);
     b(G, A::Back, ALT, KeyName::ArrowLeft);
     b(G, A::Forward, ALT, KeyName::ArrowRight);

@@ -2,8 +2,8 @@
 //! same names.
 
 use super::{
-    Connection, ControlError, ProcDetails, ProcKey, ProcPriority, ProcSignal, RawSample, ServiceInfo, ServiceOp,
-    StartupItem, SystemInfo, Want,
+    Connection, ControlError, DetailsWant, ProcDetails, ProcKey, ProcPriority, ProcSignal, RawSample, ServiceInfo,
+    ServiceOp, StartupItem, SystemInfo, Want,
 };
 
 pub struct Probe;
@@ -38,7 +38,7 @@ pub fn startup_items() -> Vec<StartupItem> {
     Vec::new()
 }
 
-pub fn process_details(_key: ProcKey) -> Result<ProcDetails, ControlError> {
+pub fn process_details(_key: ProcKey, _want: DetailsWant) -> Result<ProcDetails, ControlError> {
     Err(ControlError::Unsupported)
 }
 

@@ -115,7 +115,7 @@ define_actions! {
     Tools: [
         CommandPalette, Search, SearchContent, FolderSize, DiskUsageTreemap, FindDuplicates,
         CompareFolders, CompareTreemap, SyncFolders, SyncProfiles, Settings, EditConfigFile, ReloadConfig, OpenTrash,
-        EmptyTrash, RestoreFromTrash, Computer, ShowKeybindings, About, Welcome, Quit, QuickLook,
+        EmptyTrash, RestoreFromTrash, Computer, OpenMonitor, ShowKeybindings, About, Welcome, Quit, QuickLook,
         QuickLookNext, QuickLookPrev, ToggleHexPreview,
         AiOrganize, AiSuggestNames, AiSummarize, AiExplainFolder, AiFindRelated, AiSmartSearch,
         AiAuditLog, AiRecipes, AiStop,

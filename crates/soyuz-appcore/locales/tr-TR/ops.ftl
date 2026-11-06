@@ -214,6 +214,7 @@ ops-place-trash = Çöp Kutusu
 ops-place-computer = Bu bilgisayar
 ops-place-computer-unix = Bilgisayar
 ops-place-recent = Son kullanılanlar
+ops-place-monitor = Sistem izleyici
 ops-place-timeline = Zaman çizelgesi
 ops-place-tag = Etiket: { $name }
 ops-place-search = Arama

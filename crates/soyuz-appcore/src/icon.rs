@@ -48,6 +48,7 @@ icon_ids! {
     Calendar,
     CalendarCheck,
     CalendarDots,
+    Pulse,
     CaretDoubleDown,
     CaretDoubleLeft,
     CaretDoubleRight,

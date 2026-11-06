@@ -236,6 +236,7 @@ ops-place-trash = Trash
 ops-place-computer = This PC
 ops-place-computer-unix = Computer
 ops-place-recent = Recent
+ops-place-monitor = System monitor
 ops-place-timeline = Timeline
 # $name: tag name.
 ops-place-tag = Tag: { $name }

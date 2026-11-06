@@ -41,6 +41,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
         }
         A::Computer => ops::navigate(app, pane_id, Location::Computer, NavOpts::user()),
         A::OpenTrash => ops::navigate(app, pane_id, Location::Trash, NavOpts::user()),
+        A::OpenMonitor => crate::models::monitor::open_tab(app),
         A::GoTo | A::EditPath | A::FocusAddressBar => {
             let loc = app.ws.pane().location.display();
             app.ui.address.editing = true;

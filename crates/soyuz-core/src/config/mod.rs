@@ -33,7 +33,8 @@ pub use keys::{
 pub use mcp::{AiMcp, AiMcpApprovalUi, AiMcpClient, AiMcpServer, AiRisk};
 pub use migrate::{MigrateOutcome, migrate_file};
 pub use monitor::{
-    CoreView, CpuScale, Monitor, MonitorPage, ProcColumn, ProcColumnConfig, ProcView, TempUnit, default_proc_columns,
+    CoreView, CpuScale, Monitor, MonitorPage, ProcColumn, ProcColumnConfig, ProcView, SnapshotCommands, TempUnit,
+    default_proc_columns,
 };
 pub use preserve::{rebase, to_string_preserving};
 pub use schema::*;

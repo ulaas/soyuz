@@ -342,6 +342,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::EmptyTrash => (IconId::TrashSimple, "recycle bin"),
         A::RestoreFromTrash => (IconId::ArrowCounterClockwise, "undelete"),
         A::Computer => (IconId::DesktopTower, "this pc volumes"),
+        A::OpenMonitor => (IconId::Pulse, "task manager processes cpu gpu memory resources performance top"),
         A::ShowKeybindings => (IconId::Keyboard, "keys hotkeys"),
         A::About => (IconId::Planet, ""),
         A::DownloadFfmpegRuntime => (IconId::DownloadSimple, "ffmpeg libraries video codecs install media"),

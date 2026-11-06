@@ -188,6 +188,7 @@ fn table(id: IconId) -> (&'static str, &'static str, &'static str) {
         I::Calendar => ("\u{f073}", "☷", "ca"),
         I::CalendarCheck => ("\u{f274}", "☑", "c+"),
         I::CalendarDots => ("\u{f133}", "☷", "c."),
+        I::Pulse => ("\u{f21e}", "∿", "~."),
         I::Clock => ("\u{f017}", "◷", "t"),
         I::ClockCounterClockwise => ("\u{f1da}", "↺", "h"),
         I::Hourglass => ("\u{f252}", "⧗", ".."),

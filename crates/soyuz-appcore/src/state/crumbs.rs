@@ -169,6 +169,7 @@ pub fn location_title(loc: &Location) -> String {
         }
         Location::Recent => tr!("ops-place-recent").into(),
         Location::Timeline => tr!("ops-place-timeline").into(),
+        Location::Monitor => tr!("ops-place-monitor").into(),
         Location::Tags(t) => tr!("ops-place-tag", name = crate::services::tags::display_name(t)),
         // Smart folders show their name.
         Location::Search(id) => {

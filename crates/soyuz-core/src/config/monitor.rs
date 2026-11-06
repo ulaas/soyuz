@@ -33,9 +33,9 @@ pub enum ProcColumn {
     Threads,
     /// Open handles / file descriptors.
     Handles,
-    /// Disk read rate.
+    /// Read rate (on Windows all I/O of the process, including pipes and sockets).
     DiskRead,
-    /// Disk write rate.
+    /// Write rate (on Windows all I/O of the process, including pipes and sockets).
     DiskWrite,
     /// Total bytes read since start.
     DiskReadTotal,
@@ -247,6 +247,19 @@ pub enum TempUnit {
     Fahrenheit,
 }
 
+/// What of a process's command line goes into snapshots and exports.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SnapshotCommands {
+    /// Leave command lines out.
+    None,
+    /// Mask the values of flags that look like secrets (`--password x`, `user:pass@host`).
+    #[default]
+    Redacted,
+    /// Keep them whole.
+    Full,
+}
+
 /// A page of the system monitor.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -351,8 +364,12 @@ pub struct Monitor {
     pub details_height: f32,
     /// Draw program icons in the process table (GUI).
     pub process_icons: bool,
-    /// Read per-process GPU use (the most expensive reading).
+    /// Read per-process GPU use (the most expensive reading; refreshed every few seconds).
     pub process_gpu: bool,
+    /// Keep the selected process in view while rows reorder.
+    pub follow_selected: bool,
+    /// What of a process's command line goes into snapshots and exports.
+    pub snapshot_commands: SnapshotCommands,
     /// Tint table cells by load, like a heat map.
     pub heat_cells: bool,
     /// Temperature unit.
@@ -413,7 +430,7 @@ impl Default for Monitor {
             filter: String::new(),
             filter_regex: false,
             filter_keeps_parents: true,
-            show_kernel: true,
+            show_kernel: false,
             show_other_users: true,
             cpu_scale: CpuScale::Machine,
             core_view: CoreView::Graphs,
@@ -421,7 +438,9 @@ impl Default for Monitor {
             details_panel: true,
             details_height: 260.0,
             process_icons: true,
-            process_gpu: true,
+            process_gpu: false,
+            follow_selected: true,
+            snapshot_commands: SnapshotCommands::Redacted,
             heat_cells: true,
             temperature_unit: TempUnit::Celsius,
             confirm_kill: true,

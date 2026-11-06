@@ -12,7 +12,7 @@ use crate::entry::SearchId;
 /// String form (see [`Location::display`] / [`Location::parse`]):
 /// `Dir` → the path itself, `Archive` → `"<archive>!/<inner>"`, `Trash` → `"trash:"`,
 /// `Computer` → `"computer:"`, `Recent` → `"recent:"`, `Tags(t)` → `"tag:<t>"`,
-/// `Search(id)` → `"search:<id>"`, `Timeline` → `"timeline:"`, `Remote(uri)` → the URI (`sftp://user@host/path`).
+/// `Search(id)` → `"search:<id>"`, `Timeline` → `"timeline:"`, `Monitor` → `"monitor:"`, `Remote(uri)` → the URI (`sftp://user@host/path`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Location {
@@ -32,6 +32,8 @@ pub enum Location {
     Tags(String),
     /// Files changed today / this week across the folders Soyuz knows about.
     Timeline,
+    /// The system monitor page (processes, CPU, memory, disks, network, GPU, history).
+    Monitor,
     /// A folder on a remote server, as a normalized URI string
     /// (`sftp://user@host:port/path`, `webdav(s)://`, `ftp(s)://`, `s3://bucket/…`;
     /// parsed and normalized by `soyuz-vfs`).
@@ -52,6 +54,7 @@ impl Location {
             "computer:" => return Some(Location::Computer),
             "recent:" => return Some(Location::Recent),
             "timeline:" => return Some(Location::Timeline),
+            "monitor:" => return Some(Location::Monitor),
             _ => {}
         }
         if let Some(tag) = strip_prefix_ci(s, "tag:") {
@@ -84,6 +87,7 @@ impl Location {
             Location::Computer => "computer:".into(),
             Location::Recent => "recent:".into(),
             Location::Timeline => "timeline:".into(),
+            Location::Monitor => "monitor:".into(),
             Location::Tags(t) => format!("tag:{t}"),
             Location::Remote(u) => u.clone(),
         }
@@ -125,7 +129,8 @@ impl Location {
             | Location::Computer
             | Location::Recent
             | Location::Tags(_)
-            | Location::Timeline => None,
+            | Location::Timeline
+            | Location::Monitor => None,
         }
     }
 
@@ -294,6 +299,7 @@ mod tests {
             Location::Computer,
             Location::Recent,
             Location::Timeline,
+            Location::Monitor,
             Location::Tags("red".into()),
             Location::Search(SearchId(42)),
             Location::Dir(PathBuf::from("/usr/share")),

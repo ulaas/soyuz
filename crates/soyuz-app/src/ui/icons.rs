@@ -36,6 +36,7 @@ pub fn glyph(id: IconId) -> &'static str {
         IconId::Calendar => ph::CALENDAR,
         IconId::CalendarCheck => ph::CALENDAR_CHECK,
         IconId::CalendarDots => ph::CALENDAR_DOTS,
+        IconId::Pulse => ph::PULSE,
         IconId::CaretDoubleDown => ph::CARET_DOUBLE_DOWN,
         IconId::CaretDoubleLeft => ph::CARET_DOUBLE_LEFT,
         IconId::CaretDoubleRight => ph::CARET_DOUBLE_RIGHT,
