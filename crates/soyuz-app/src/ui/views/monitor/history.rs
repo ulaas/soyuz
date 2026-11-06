@@ -170,14 +170,21 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
                     }
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                 }
-                if let Some(t) = cursor_ms
-                    && let Some(pt) = super::charts::nearest(pts, t)
-                {
-                    let v = fmt_value(unit, pt.avg, fmt);
-                    let v = if pt.max.is_finite() && (pt.max - pt.avg).abs() > f32::EPSILON {
-                        tr!("monitor-gui-avg-max", avg = v.as_str(), max = fmt_value(unit, pt.max, fmt).as_str())
-                    } else {
-                        v
+                if let Some(t) = cursor_ms {
+                    let v = match soyuz_sysmon::Pt::near(pts, t, i64::from(range_secs) * 1000) {
+                        Some(pt) => {
+                            let v = fmt_value(unit, pt.avg, fmt);
+                            if pt.max.is_finite() && (pt.max - pt.avg).abs() > f32::EPSILON {
+                                tr!(
+                                    "monitor-gui-avg-max",
+                                    avg = v.as_str(),
+                                    max = fmt_value(unit, pt.max, fmt).as_str()
+                                )
+                            } else {
+                                v
+                            }
+                        }
+                        None => "–".to_string(),
                     };
                     values.push((title.clone(), hue(&p, h), v));
                 } else if let Some(last) = pts.iter().rev().find(|q| !q.is_break()) {

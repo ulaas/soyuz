@@ -76,9 +76,9 @@ fn charts(frame: &Frame) -> Vec<ChartDef> {
     out
 }
 
-/// The value of `pts` nearest to `t`.
-fn at(pts: &[Pt], t: i64) -> Option<f32> {
-    pts.iter().filter(|p| !p.is_break()).min_by_key(|p| (p.t - t).abs()).map(|p| p.avg)
+/// The value of `pts` near `t`, on a chart spanning `span_ms`.
+fn at(pts: &[Pt], t: i64, span_ms: i64) -> Option<f32> {
+    Pt::near(pts, t, span_ms).map(|p| p.avg)
 }
 
 /// The next cursor position for a key, in screen columns of the window: `dir` -1 or 1.
@@ -142,7 +142,7 @@ pub(super) fn draw(cx: &mut Cx<'_>, v: &mut MonitorView, frame: &Frame, mut a: A
         let mut parts = vec![labels::time(t, cx.config)];
         for (metrics, _, unit) in &list {
             for (m, label) in metrics {
-                if let Some(val) = at(&h.series(m), t) {
+                if let Some(val) = at(&h.series(m), t, i64::from(h.range_secs) * 1000) {
                     parts.push(format!("{label} {}", unit_text(*unit, val, cx.config)));
                 }
             }
@@ -199,11 +199,12 @@ mod tests {
     fn values_come_from_the_nearest_point() {
         let pts = [
             Pt { t: 0, avg: 1.0, max: 1.0 },
-            Pt { t: 10, avg: f32::NAN, max: f32::NAN },
-            Pt { t: 20, avg: 3.0, max: 3.0 },
+            Pt { t: 10_000, avg: f32::NAN, max: f32::NAN },
+            Pt { t: 20_000, avg: 3.0, max: 3.0 },
         ];
-        assert_eq!(at(&pts, 2), Some(1.0));
-        assert_eq!(at(&pts, 11), Some(3.0));
-        assert_eq!(at(&[], 2), None);
+        assert_eq!(at(&pts, 2_000, 60_000), Some(1.0));
+        assert_eq!(at(&pts, 11_000, 60_000), Some(3.0));
+        assert_eq!(at(&pts, 900_000, 60_000), None);
+        assert_eq!(at(&[], 2, 60_000), None);
     }
 }

@@ -49,6 +49,19 @@ pub struct Pt {
 }
 
 impl Pt {
+    /// The drawn point of `pts` nearest to `t`, when there is one close enough to speak for that
+    /// moment on a chart spanning `span_ms`: a cursor over a stretch with no recording has no value.
+    pub fn near(pts: &[Pt], t: i64, span_ms: i64) -> Option<&Pt> {
+        let reach = (span_ms / 40).max(15_000);
+        let i = pts.partition_point(|p| p.t < t);
+        [i.checked_sub(1), (i < pts.len()).then_some(i)]
+            .into_iter()
+            .flatten()
+            .map(|k| &pts[k])
+            .filter(|p| !p.is_break() && p.avg.is_finite() && (p.t - t).abs() <= reach)
+            .min_by_key(|p| (p.t - t).abs())
+    }
+
     pub fn is_break(&self) -> bool {
         self.avg.is_nan()
     }
@@ -971,6 +984,26 @@ impl ProcHistory {
     pub fn clear(&mut self) {
         self.procs.clear();
         self.times.clear();
+    }
+}
+
+#[cfg(test)]
+mod near_tests {
+    use super::Pt;
+
+    #[test]
+    fn near_finds_close_points_only() {
+        let pts = [
+            Pt { t: 0, avg: 1.0, max: 1.0 },
+            Pt { t: 10_000, avg: f32::NAN, max: f32::NAN },
+            Pt { t: 20_000, avg: 3.0, max: 3.0 },
+        ];
+        assert_eq!(Pt::near(&pts, 2_000, 60_000).map(|p| p.t), Some(0));
+        assert_eq!(Pt::near(&pts, 19_000, 60_000).map(|p| p.t), Some(20_000));
+        // Long after the last point, as when pointing at a time before recording began.
+        assert!(Pt::near(&pts, 3_000_000, 3_600_000).is_none());
+        assert!(Pt::near(&pts, 200_000, 3_600_000).is_none());
+        assert!(Pt::near(&[], 5, 60_000).is_none());
     }
 }
 

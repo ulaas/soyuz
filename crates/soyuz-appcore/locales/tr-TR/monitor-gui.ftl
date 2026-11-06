@@ -359,4 +359,4 @@ settings-monitor-alert-sustain-desc = Uyarı verilmeden önce değerin sınırı
 settings-monitor-alert-snapshot = Uyarıda anlık görüntü
 settings-monitor-alert-snapshot-desc = Bir uyarı verildiğinde kendiliğinden anlık görüntü al.
 
-monitor-gui-status = { $page } · { $processes } işlem, { $running } çalışıyor
+monitor-gui-statusbar = { $page } · { $processes } işlem, { $running } çalışıyor

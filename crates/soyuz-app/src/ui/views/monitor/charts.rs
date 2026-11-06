@@ -477,7 +477,7 @@ impl Chart {
             painter.vline(x, plot.y_range(), Stroke::new(1.0, p.border_strong));
             let mut lines: Vec<(Color32, String, String)> = Vec::new();
             for s in series {
-                if let Some(pt) = nearest(s.pts, t) {
+                if let Some(pt) = Pt::near(s.pts, t, (x1 - x0).max(1)) {
                     painter.circle_filled(pos2(to_x(pt.t), to_y(pt.avg)), 3.5, p.bg_surface1);
                     painter.circle_filled(pos2(to_x(pt.t), to_y(pt.avg)), 2.5, s.color);
                     let v = fmt_value(self.unit, pt.avg, self.fmt);
@@ -499,21 +499,6 @@ impl Chart {
         }
         ChartOut { response, hover_t, plot }
     }
-}
-
-/// The point of `pts` nearest to `t` (binary search on time).
-pub fn nearest(pts: &[Pt], t: i64) -> Option<&Pt> {
-    if pts.is_empty() {
-        return None;
-    }
-    let i = pts.partition_point(|p| p.t < t);
-    let cands = [i.checked_sub(1), (i < pts.len()).then_some(i)];
-    cands
-        .into_iter()
-        .flatten()
-        .map(|k| &pts[k])
-        .filter(|p| !p.is_break() && p.avg.is_finite())
-        .min_by_key(|p| (p.t - t).abs())
 }
 
 /// The value tooltip of a crosshair: a small card beside the pointer, flipped to stay inside.
@@ -636,18 +621,6 @@ mod tests {
         assert_eq!(nice_max(Unit::Rate, 1_500_000.0), 1.5 * 1024.0 * 1024.0);
         assert_eq!(nice_max(Unit::Rate, 1_700_000.0), 2.0 * 1024.0 * 1024.0);
         assert_eq!(nice_max(Unit::Bytes, 700.0), 768.0);
-    }
-
-    #[test]
-    fn nearest_skips_breaks() {
-        let pts = [
-            Pt { t: 0, avg: 1.0, max: 1.0 },
-            Pt { t: 10, avg: f32::NAN, max: f32::NAN },
-            Pt { t: 20, avg: 3.0, max: 3.0 },
-        ];
-        assert_eq!(nearest(&pts, 9).map(|p| p.t), Some(0));
-        assert_eq!(nearest(&pts, 19).map(|p| p.t), Some(20));
-        assert!(nearest(&[], 5).is_none());
     }
 
     #[test]

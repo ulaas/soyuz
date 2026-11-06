@@ -359,4 +359,4 @@ settings-monitor-alert-sustain-desc = How long a value must stay above its limit
 settings-monitor-alert-snapshot = Snapshot on alert
 settings-monitor-alert-snapshot-desc = Take a snapshot automatically when an alert fires.
 
-monitor-gui-status = { $page } · { $processes } processes, { $running } running
+monitor-gui-statusbar = { $page } · { $processes } processes, { $running } running

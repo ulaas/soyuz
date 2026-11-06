@@ -162,7 +162,7 @@ fn status_info(app: &SoyuzApp) -> StatusInfo {
         let title = crate::models::monitor::labels::page_title(page);
         match &app.core.ui.monitor.frame {
             Some(f) => tr!(
-                "monitor-gui-status",
+                "monitor-gui-statusbar",
                 page = title,
                 processes = f.counts.processes as usize,
                 running = f.counts.running as usize,
