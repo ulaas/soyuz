@@ -78,6 +78,34 @@ pub(super) fn kinfo(pid: c_int) -> Option<(u64, i32)> {
     Some((raw_of(sec, u64::try_from(usec).unwrap_or(0)), flags))
 }
 
+/// A process that has exited and waits for its parent: `proc_pidinfo` no longer answers for it,
+/// `sysctl` still does. `kp_proc.p_stat` is at offset 36, `p_pid` at 40, `p_comm` at 243.
+fn zombie(pid: c_int) -> Option<ProcRaw> {
+    let upid = u32::try_from(pid).ok()?;
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
+    let mut buf = [0u8; KINFO_PROC_SIZE];
+    let mut len = buf.len();
+    // SAFETY: `mib` holds the 4 names passed, and `buf` is writable for `len` bytes.
+    let rc =
+        unsafe { libc::sysctl(mib.as_mut_ptr(), 4, buf.as_mut_ptr().cast(), &raw mut len, std::ptr::null_mut(), 0) };
+    if rc != 0 || len != KINFO_PROC_SIZE || buf[36] != 5 {
+        return None;
+    }
+    if i32::from_ne_bytes(buf[40..44].try_into().ok()?) != pid {
+        return None;
+    }
+    let comm = &buf[243..260];
+    let end = comm.iter().position(|b| *b == 0).unwrap_or(comm.len());
+    let name = String::from_utf8_lossy(&comm[..end]).into_owned();
+    let raw = kinfo(pid)?.0;
+    Some(ProcRaw {
+        key: ProcKey { pid: upid, start_ms: (raw / 1000) as i64, start_raw: raw },
+        name: format!("[{name}]").into(),
+        state: ProcState::Zombie,
+        ..ProcRaw::default()
+    })
+}
+
 /// A process's identity value, the same whichever call answers: `kinfo` reads the `timeval` that
 /// `proc_bsdinfo` reports, and is open for every user's process.
 pub(super) fn start_raw(pid: c_int) -> Option<u64> {
@@ -227,7 +255,9 @@ impl ProcTable {
             p.key = ProcKey { pid: upid, start_ms: (raw / 1000) as i64, start_raw: raw };
             uid = b.pbi_uid;
         } else {
-            let s = pid_info::<libc::proc_bsdshortinfo>(pid, libc::PROC_PIDT_SHORTBSDINFO, 0)?;
+            let Some(s) = pid_info::<libc::proc_bsdshortinfo>(pid, libc::PROC_PIDT_SHORTBSDINFO, 0) else {
+                return zombie(pid);
+            };
             let raw = start_raw(pid).unwrap_or(0);
             comm = c_chars(&s.pbsi_comm);
             p.parent = (s.pbsi_ppid != 0).then_some(s.pbsi_ppid);
