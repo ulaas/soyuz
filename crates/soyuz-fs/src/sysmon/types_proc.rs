@@ -1,6 +1,7 @@
 //! Process, socket and service records of [`super`].
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -8,8 +9,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ProcKey {
     pub pid: u32,
-    /// Start time, unix milliseconds (0 when unknown).
+    /// Start time for display, unix milliseconds (0 when unknown).
     pub start_ms: i64,
+    /// The OS's own start value (FILETIME creation time, `starttime` ticks): the identity
+    /// check compares this, never a re-derived `start_ms`.
+    pub start_raw: u64,
 }
 
 /// A process's run state, on the union of the OSes' vocabularies.
@@ -45,15 +49,17 @@ pub enum ProcPriority {
 
 /// One process. Counters are since process start. `None`: the OS does not offer the value,
 /// or Soyuz may not read it for this process (another user's, a protected one).
+/// Text that rarely changes is shared (`Arc`) with the probe's per-process cache, so a
+/// sample is reference counts plus counters. The command line is refreshed about every 30 s.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ProcRaw {
     pub key: ProcKey,
     pub parent: Option<u32>,
     /// Short name (`firefox.exe`, `bash`).
-    pub name: String,
-    pub exe: Option<PathBuf>,
-    pub cmdline: Option<String>,
-    pub user: Option<String>,
+    pub name: Arc<str>,
+    pub exe: Option<Arc<Path>>,
+    pub cmdline: Option<Arc<str>>,
+    pub user: Option<Arc<str>>,
     pub state: ProcState,
     /// User and kernel CPU time, milliseconds.
     pub cpu_user_ms: u64,
@@ -81,21 +87,24 @@ pub struct ProcRaw {
     /// Raw nice value (Unix) or base priority number (Windows).
     pub nice: Option<i32>,
     /// Session / terminal (Windows session id, `pts/3`).
-    pub session: Option<String>,
+    pub session: Option<Arc<str>>,
     /// Instantaneous GPU load across engines, percent.
     pub gpu_percent: Option<f32>,
     /// GPU memory used.
     pub gpu_mem: Option<u64>,
     /// `x64`, `x86`, `arm64`.
-    pub arch: Option<String>,
+    pub arch: Option<Arc<str>>,
     /// Running elevated / as root.
     pub elevated: Option<bool>,
     /// Container / control group (Linux).
-    pub cgroup: Option<String>,
+    pub cgroup: Option<Arc<str>>,
     /// Kernel thread or OS-internal pseudo process.
     pub kernel: bool,
+    /// The idle pseudo process (Windows pid 0). Its CPU counters stay 0; it is left out of
+    /// tables, totals and top lists.
+    pub idle: bool,
     /// Product description from the executable when cheaply known; often empty.
-    pub description: Option<String>,
+    pub description: Option<Arc<str>>,
 }
 
 /// TCP / UDP.
@@ -209,6 +218,15 @@ pub struct OpenFile {
     /// fd number (Unix).
     pub fd: Option<u32>,
     pub path: String,
+}
+
+/// Which lists [`super::process_details`] should read; only what a page shows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DetailsWant {
+    pub threads: bool,
+    pub modules: bool,
+    pub open_files: bool,
+    pub environment: bool,
 }
 
 /// On-demand details ([`super::process_details`]); what the OS denies stays empty, with

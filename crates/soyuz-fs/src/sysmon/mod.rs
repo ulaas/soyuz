@@ -6,10 +6,9 @@
 //! The readers themselves are in `crate::sys::<os>::sysmon` (`Probe`, `connections`,
 //! `services`, `process_details`, `signal`, `system_info`, …). Other systems get [`fallback`].
 
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod parse;
 mod types_proc;
 pub use types_proc::*;
 
@@ -324,12 +323,14 @@ pub fn startup_items() -> Vec<StartupItem> {
     imp::startup_items()
 }
 
-/// On-demand details of one process (threads, modules, open files, environment).
-pub fn process_details(key: ProcKey) -> Result<ProcDetails, ControlError> {
-    imp::process_details(key)
+/// On-demand details of one process: the lists `want` asks for (each can take milliseconds
+/// to seconds on a big program, so never per frame).
+pub fn process_details(key: ProcKey, want: DetailsWant) -> Result<ProcDetails, ControlError> {
+    imp::process_details(key, want)
 }
 
-/// Terminate, kill, suspend, resume. Refuses when `key.start_ms` no longer matches the PID.
+/// Terminate, kill, suspend, resume. Refuses with `Gone` when `key.start_raw` no longer matches
+/// the PID. The check and the action use one handle / pidfd where the OS has them.
 pub fn signal(key: ProcKey, sig: ProcSignal) -> Result<(), ControlError> {
     imp::signal(key, sig)
 }
@@ -347,11 +348,6 @@ pub fn affinity(key: ProcKey) -> Result<Vec<u32>, ControlError> {
 /// Restrict a process to `cpus` (logical CPU numbers).
 pub fn set_affinity(key: ProcKey, cpus: &[u32]) -> Result<(), ControlError> {
     imp::set_affinity(key, cpus)
-}
-
-/// A process's executable, for "open file location".
-pub fn exe_path(key: ProcKey) -> Option<PathBuf> {
-    process_details(key).ok().and_then(|d| d.exe)
 }
 
 #[cfg(target_os = "linux")]
