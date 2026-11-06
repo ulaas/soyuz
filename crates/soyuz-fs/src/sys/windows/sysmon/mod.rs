@@ -180,8 +180,9 @@ impl Probe {
         let mut memory = self.cpu.memory();
         let disks = self.disks.read(want.hardware);
         let nets = self.net.read();
-        let (gpus, proc_gpu) = self.gpu.read(want.hardware, want.processes && want.process_gpu);
-        let table = if want.processes { self.procs.read(want, proc_gpu.as_ref()) } else { procs::Table::default() };
+        let gpus = self.gpu.read(want.hardware, want.processes && want.process_gpu);
+        let table =
+            if want.processes { self.procs.read(want, self.gpu.process_use()) } else { procs::Table::default() };
 
         memory.compressed = table.compressed;
         let mut sensors = Vec::new();

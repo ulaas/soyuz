@@ -5,28 +5,26 @@ use std::mem::size_of;
 use std::path::PathBuf;
 
 use windows_sys::Win32::Foundation::{
-    ERROR_ACCESS_DENIED, ERROR_BAD_LENGTH, ERROR_INVALID_PARAMETER, FILETIME, GetLastError, HANDLE, HWND, LPARAM,
-    STILL_ACTIVE,
+    ERROR_ACCESS_DENIED, ERROR_BAD_LENGTH, ERROR_INVALID_PARAMETER, GetLastError, HANDLE, HWND, LPARAM, STILL_ACTIVE,
 };
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, MODULEENTRY32W, Module32FirstW, Module32NextW, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32,
 };
 use windows_sys::Win32::System::Threading::{
     ABOVE_NORMAL_PRIORITY_CLASS, BELOW_NORMAL_PRIORITY_CLASS, GetExitCodeProcess, GetProcessAffinityMask,
-    GetProcessTimes, GetThreadDescription, HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
-    OpenProcess, OpenThread, PROCESS_ACCESS_RIGHTS, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SET_INFORMATION, PROCESS_SUSPEND_RESUME, PROCESS_TERMINATE, QueryFullProcessImageNameW,
-    REALTIME_PRIORITY_CLASS, SetPriorityClass, SetProcessAffinityMask, THREAD_QUERY_LIMITED_INFORMATION,
-    TerminateProcess,
+    GetThreadDescription, HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, OpenProcess, OpenThread,
+    PROCESS_ACCESS_RIGHTS, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
+    PROCESS_SUSPEND_RESUME, PROCESS_TERMINATE, QueryFullProcessImageNameW, REALTIME_PRIORITY_CLASS, SetPriorityClass,
+    SetProcessAffinityMask, THREAD_QUERY_LIMITED_INFORMATION, TerminateProcess,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GW_OWNER, GetWindow, GetWindowThreadProcessId, IsWindowVisible, PostMessageW, WM_CLOSE,
 };
 use windows_sys::core::{BOOL, PWSTR};
 
-use super::super::{Handle, ft_u64};
-use super::{procs, ticks_to_unix_ms};
-use crate::sysmon::{ControlError, ModuleInfo, ProcDetails, ProcKey, ProcPriority, ProcSignal};
+use super::super::Handle;
+use super::procs;
+use crate::sysmon::{ControlError, DetailsWant, ModuleInfo, ProcDetails, ProcKey, ProcPriority, ProcSignal};
 
 #[link(name = "ntdll", kind = "raw-dylib")]
 unsafe extern "system" {
@@ -52,6 +50,8 @@ fn last_error() -> ControlError {
 }
 
 /// Open `key`'s process, refusing a PID that now belongs to another process or has exited.
+/// The caller acts on this handle: while it is open the PID cannot go to another process, so
+/// what was checked is what gets acted on.
 fn open_verified(key: ProcKey, access: PROCESS_ACCESS_RIGHTS) -> Result<Handle, ControlError> {
     // SAFETY: plain call; the result is checked by `Handle::new`.
     let raw = unsafe { OpenProcess(access | PROCESS_QUERY_LIMITED_INFORMATION, 0, key.pid) };
@@ -59,13 +59,8 @@ fn open_verified(key: ProcKey, access: PROCESS_ACCESS_RIGHTS) -> Result<Handle, 
         return Err(last_error());
     }
     let h = Handle::new(raw).map_err(|_| ControlError::Gone)?;
-    let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-    let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
-    // SAFETY: open handle; valid out-pointers.
-    if unsafe { GetProcessTimes(h.raw(), &mut created, &mut exited, &mut kernel, &mut user) } == 0 {
-        return Err(last_error());
-    }
-    if key.start_ms != 0 && ticks_to_unix_ms(ft_u64(&created) as i64) != key.start_ms {
+    let Some(created) = procs::creation_time(h.raw()) else { return Err(last_error()) };
+    if created != key.start_raw {
         return Err(ControlError::Gone);
     }
     let mut code = 0u32;
@@ -122,7 +117,8 @@ pub fn signal(key: ProcKey, sig: ProcSignal) -> Result<(), ControlError> {
     match sig {
         ProcSignal::Hangup | ProcSignal::Interrupt => Err(ControlError::Unsupported),
         ProcSignal::Terminate => {
-            open_verified(key, 0)?;
+            // Held through the window walk, which goes by PID.
+            let _held = open_verified(key, 0)?;
             post_close(key.pid)
         }
         ProcSignal::Kill => {
@@ -278,26 +274,40 @@ fn image_path_of(h: &Handle) -> Option<PathBuf> {
     (ok != 0 && len > 0).then(|| PathBuf::from(String::from_utf16_lossy(&wide[..(len as usize).min(wide.len())])))
 }
 
-/// On-demand details: threads and modules. The working folder and environment would mean
-/// reading the other process's memory, so they stay empty.
-pub fn process_details(key: ProcKey) -> Result<ProcDetails, ControlError> {
-    let Some(mut threads) = procs::threads_of_process(key) else { return Err(ControlError::Gone) };
-    for t in &mut threads {
-        t.name = thread_name(t.tid);
-    }
-    let mut d = ProcDetails { threads, ..ProcDetails::default() };
-    match open_verified(key, 0) {
-        Ok(h) => {
-            d.exe = image_path_of(&h);
-            d.cmdline = procs::command_line_of(h.raw());
-        }
+/// On-demand details: the lists `want` asks for. Open files need a handle walk that can hang
+/// and the working folder and environment would mean reading the other process's memory, so
+/// those stay empty.
+pub fn process_details(key: ProcKey, want: DetailsWant) -> Result<ProcDetails, ControlError> {
+    let mut d = ProcDetails::default();
+    // Held to the end, so the lists below by PID are of this process.
+    let held = match open_verified(key, 0) {
+        Ok(h) => Some(h),
         // The idle process cannot be opened at all; for others this means it just exited.
         Err(ControlError::Gone) if key.pid != 0 => return Err(ControlError::Gone),
-        Err(_) => d.limited = true,
-    }
-    match modules(key.pid) {
-        Some(m) => d.modules = m,
+        Err(_) => None,
+    };
+    match &held {
+        Some(h) => {
+            d.exe = image_path_of(h);
+            d.cmdline = procs::command_line_of(h.raw());
+        }
         None => d.limited = true,
+    }
+    // Without a handle the process table is what proves the identity.
+    if want.threads || held.is_none() {
+        let Some(mut threads) = procs::threads_of_process(key) else { return Err(ControlError::Gone) };
+        if want.threads {
+            for t in &mut threads {
+                t.name = thread_name(t.tid);
+            }
+            d.threads = threads;
+        }
+    }
+    if want.modules {
+        match modules(key.pid) {
+            Some(m) => d.modules = m,
+            None => d.limited = true,
+        }
     }
     Ok(d)
 }

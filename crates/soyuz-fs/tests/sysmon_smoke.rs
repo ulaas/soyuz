@@ -6,7 +6,9 @@ use std::os::windows::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use soyuz_fs::sysmon::{self, ControlError, Probe, ProcKey, ProcPriority, ProcSignal, ProcState, RawSample, Want};
+use soyuz_fs::sysmon::{
+    self, ControlError, DetailsWant, Probe, ProcKey, ProcPriority, ProcSignal, ProcState, RawSample, Want,
+};
 
 const MIB: f64 = 1024.0 * 1024.0;
 /// No console window for the child.
@@ -40,10 +42,17 @@ fn real_sample_is_sane_and_printed() {
     // Idle and System rows.
     let idle = b.processes.iter().find(|p| p.key.pid == 0).expect("idle");
     assert!(idle.kernel);
+    assert!(idle.idle);
     assert_eq!(idle.state, ProcState::Idle);
+    assert_eq!((idle.cpu_user_ms, idle.cpu_system_ms), (0, 0), "idle time is not work");
+    assert_eq!(b.processes.iter().filter(|p| p.idle).count(), 1);
     let system = b.processes.iter().find(|p| p.key.pid == 4).expect("System");
     assert!(system.kernel);
-    assert_eq!(system.name, "System");
+    assert_eq!(&*system.name, "System");
+    assert!(system.cpu_system_ms > 0);
+    assert!(!mine.idle && !system.idle);
+    let threads: u64 = b.processes.iter().filter(|p| !p.idle).map(|p| u64::from(p.threads)).sum();
+    assert_eq!(b.total_threads, Some(threads), "no idle threads in the total");
 
     println!("{} processes, {:?} threads, {:?} handles", b.processes.len(), b.total_threads, b.total_handles);
     println!("uptime {} s, mono delta {} ms", b.uptime_secs, b.mono_ms - a.mono_ms);
@@ -247,11 +256,12 @@ fn control_calls_act_on_our_own_child_only() {
     assert_eq!(row.priority, Some(ProcPriority::Normal));
 
     // A wrong start time must be refused before anything happens.
-    let wrong = ProcKey { pid, start_ms: key.start_ms - 5000 };
+    assert!(key.start_raw > 0);
+    let wrong = ProcKey { start_raw: key.start_raw - 1, ..key };
     assert_eq!(sysmon::signal(wrong, ProcSignal::Kill), Err(ControlError::Gone));
     assert_eq!(sysmon::set_priority(wrong, ProcPriority::Idle), Err(ControlError::Gone));
     assert_eq!(sysmon::affinity(wrong), Err(ControlError::Gone));
-    assert!(matches!(sysmon::process_details(wrong), Err(ControlError::Gone)));
+    assert!(matches!(sysmon::process_details(wrong, DetailsWant::default()), Err(ControlError::Gone)));
 
     assert_eq!(sysmon::signal(key, ProcSignal::Hangup), Err(ControlError::Unsupported));
     assert_eq!(sysmon::signal(key, ProcSignal::Interrupt), Err(ControlError::Unsupported));
@@ -274,7 +284,14 @@ fn control_calls_act_on_our_own_child_only() {
     assert_eq!(sysmon::affinity(key).unwrap(), cpus[..1]);
     assert!(sysmon::set_affinity(key, &[]).is_err());
 
-    let d = sysmon::process_details(key).expect("details");
+    // Only what is asked for.
+    let d = sysmon::process_details(key, DetailsWant::default()).expect("no lists");
+    assert!(d.exe.is_some() && d.threads.is_empty() && d.modules.is_empty() && !d.limited);
+    let only_threads = DetailsWant { threads: true, ..DetailsWant::default() };
+    let d = sysmon::process_details(key, only_threads).expect("threads");
+    assert!(!d.threads.is_empty() && d.modules.is_empty());
+    let d = sysmon::process_details(key, DetailsWant { threads: true, modules: true, ..DetailsWant::default() })
+        .expect("details");
     println!(
         "details: exe {:?}, cmd {:?}, {} threads, {} modules, limited {}",
         d.exe,
@@ -294,7 +311,39 @@ fn control_calls_act_on_our_own_child_only() {
     // Our `Child` still held a handle until the wait; now the process is gone.
     assert_eq!(sysmon::signal(key, ProcSignal::Kill), Err(ControlError::Gone));
     drop(child);
-    assert!(matches!(sysmon::process_details(key), Err(ControlError::Gone)));
+    assert!(matches!(sysmon::process_details(key, DetailsWant::default()), Err(ControlError::Gone)));
+}
+
+/// Per-process GPU use has its own slower cadence and carries over between readings.
+#[test]
+fn process_gpu_keeps_its_own_cadence() {
+    let mut probe = Probe::new();
+    let want = Want::default();
+    let use_of = |s: &RawSample| -> Vec<(u32, Option<u64>)> {
+        let mut v: Vec<_> = s.processes.iter().map(|p| (p.key.pid, p.gpu_mem)).filter(|x| x.1 > Some(0)).collect();
+        v.sort_unstable();
+        v
+    };
+    // The first reading fills memory; rate counters need the second.
+    let _ = probe.sample(want);
+    std::thread::sleep(Duration::from_millis(200));
+    let reading = probe.sample(want);
+    let first = use_of(&reading);
+    assert!(reading.processes.iter().any(|p| p.gpu_percent.is_some()) || reading.gpus.is_empty());
+    let mut same = 0;
+    for _ in 0..4 {
+        std::thread::sleep(Duration::from_millis(100));
+        let s = probe.sample(want);
+        if use_of(&s).iter().filter(|x| first.contains(x)).count() == first.len() {
+            same += 1;
+        }
+    }
+    // Inside 2.5 s nothing is read again, so the values of live processes hold exactly.
+    println!("{} processes with GPU memory, unchanged in {same} of 4 quick samples", first.len());
+    assert_eq!(same, 4);
+    // Off means off.
+    let s = probe.sample(Want { process_gpu: false, ..want });
+    assert!(s.processes.iter().all(|p| p.gpu_percent.is_none() && p.gpu_mem.is_none()));
 }
 
 #[test]
@@ -303,11 +352,12 @@ fn details_of_a_process_we_may_not_open_are_limited() {
     let want = Want { processes: true, process_details: false, process_gpu: false, hardware: false };
     let s = probe.sample(want);
     let idle = s.processes.iter().find(|p| p.key.pid == 0).expect("idle");
-    let d = sysmon::process_details(idle.key).expect("idle details");
+    let lists = DetailsWant { threads: true, modules: true, ..DetailsWant::default() };
+    let d = sysmon::process_details(idle.key, lists).expect("idle details");
     assert!(d.limited);
     assert!(!d.threads.is_empty());
     let system = s.processes.iter().find(|p| p.key.pid == 4).expect("System");
-    let d = sysmon::process_details(system.key).expect("System details");
+    let d = sysmon::process_details(system.key, lists).expect("System details");
     assert!(d.limited);
     assert!(!d.threads.is_empty());
     println!("System: {} threads, first {:?}", d.threads.len(), d.threads[0]);

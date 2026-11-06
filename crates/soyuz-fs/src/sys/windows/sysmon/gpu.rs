@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::mem::size_of;
+use std::time::{Duration, Instant};
 
 use windows_sys::Wdk::Graphics::Direct3D::{
     D3DKMT_ADAPTER_PERFDATA, D3DKMT_ADAPTER_PERFDATACAPS, D3DKMT_ADAPTERINFO, D3DKMT_ADAPTERREGISTRYINFO,
@@ -19,6 +20,11 @@ use crate::sysmon::{GpuEngine, GpuRaw};
 /// `D3DKMT_ADAPTERTYPE` bits.
 const TYPE_RENDER: u32 = 1 << 0;
 const TYPE_SOFTWARE: u32 = 1 << 2;
+
+/// How often per-process use is read; rows carry the last reading in between.
+const PROCESS_CADENCE: Duration = Duration::from_millis(2500);
+/// An engine reading slower than this also moves adapter load to that cadence.
+const SLOW_ENGINE_READ: Duration = Duration::from_millis(10);
 
 /// An adapter's LUID as the counters print it: `(high, low)`.
 type Luid = (u32, u32);
@@ -217,6 +223,12 @@ pub(super) struct GpuReader {
     process_memory_tried: bool,
     adapters: HashMap<Luid, AdapterStatic>,
     limits: HashMap<String, (Option<f32>, Option<f32>)>,
+    /// Load per (adapter, engine number) over processes, with the engine's kind.
+    loads: HashMap<(Luid, u32), (f64, String)>,
+    engine_cost: Duration,
+    engine_at: Option<Instant>,
+    process_use: Option<ProcGpu>,
+    process_at: Option<Instant>,
 }
 
 impl GpuReader {
@@ -225,48 +237,72 @@ impl GpuReader {
         self.limits.get(id).copied().unwrap_or((None, None))
     }
 
-    pub(super) fn read(&mut self, hardware: bool, per_process: bool) -> (Vec<GpuRaw>, Option<ProcGpu>) {
-        if !hardware && !per_process {
-            return (Vec::new(), None);
+    /// The last per-process reading (see [`PROCESS_CADENCE`]).
+    pub(super) fn process_use(&self) -> Option<&ProcGpu> {
+        self.process_use.as_ref()
+    }
+
+    pub(super) fn read(&mut self, hardware: bool, per_process: bool) -> Vec<GpuRaw> {
+        if !per_process {
+            self.process_use = None;
+            self.process_at = None;
         }
-        // Load per (adapter, engine number), summed over processes, with the engine's kind.
-        let mut loads: HashMap<(Luid, u32), (f64, String)> = HashMap::new();
-        let mut process_load: Option<HashMap<u32, f32>> = None;
+        if !hardware && !per_process {
+            return Vec::new();
+        }
         if !self.engines_tried {
             self.engines_tried = true;
             self.engines = Query::with(&[r"\GPU Engine(*)\Utilization Percentage"]);
         }
-        if let Some(q) = &mut self.engines
-            && q.collect()
-        {
-            let mut per_pid: HashMap<(u32, Luid, u32), f64> = HashMap::new();
-            let mut line = String::new();
-            q.values(0, |name, v| {
-                line.clear();
-                line.extend(char::decode_utf16(name.iter().copied()).map(|c| c.unwrap_or('\u{fffd}')));
-                let Some(i) = parse_engine(&line) else { return };
-                let slot = loads.entry((i.luid, i.engine)).or_insert_with(|| (0.0, i.kind.to_string()));
-                slot.0 += v;
-                if per_process {
-                    *per_pid.entry((i.pid, i.luid, i.engine)).or_insert(0.0) += v;
+        let due = |at: Option<Instant>| at.is_none_or(|t| t.elapsed() >= PROCESS_CADENCE);
+        let process_due = per_process && due(self.process_at);
+        let load_due = hardware && (self.engine_cost < SLOW_ENGINE_READ || due(self.engine_at));
+        if process_due || load_due {
+            let began = Instant::now();
+            let process_load = self.read_engines(process_due);
+            self.engine_cost = began.elapsed();
+            self.engine_at = Some(began);
+            if process_due {
+                // Rate counters have no data on their first reading: ask again next sample.
+                if process_load.is_some() || self.engines.is_none() {
+                    self.process_at = Some(began);
                 }
-            });
-            if per_process {
-                // A process's load: its busiest engine, as Task Manager counts it.
-                let mut map: HashMap<u32, f32> = HashMap::new();
-                for ((pid, ..), v) in per_pid {
-                    let e = map.entry(pid).or_insert(0.0);
-                    *e = e.max((v as f32).clamp(0.0, 100.0));
-                }
-                process_load = Some(map);
+                self.process_use = Some(ProcGpu { percent: process_load, mem: self.read_process_memory() });
             }
         }
-        let mut proc_gpu = None;
-        if per_process {
-            proc_gpu = Some(ProcGpu { percent: process_load, mem: self.read_process_memory() });
+        if hardware { self.read_adapters() } else { Vec::new() }
+    }
+
+    /// New engine loads into `self.loads`, and per-process load when asked (`None`: no data).
+    fn read_engines(&mut self, per_process: bool) -> Option<HashMap<u32, f32>> {
+        let q = self.engines.as_mut()?;
+        if !q.collect() {
+            return None;
         }
-        let gpus = if hardware { self.read_adapters(&loads) } else { Vec::new() };
-        (gpus, proc_gpu)
+        let loads = &mut self.loads;
+        loads.clear();
+        let mut per_pid: HashMap<(u32, Luid, u32), f64> = HashMap::new();
+        let mut line = String::new();
+        q.values(0, |name, v| {
+            line.clear();
+            line.extend(char::decode_utf16(name.iter().copied()).map(|c| c.unwrap_or('\u{fffd}')));
+            let Some(i) = parse_engine(&line) else { return };
+            let slot = loads.entry((i.luid, i.engine)).or_insert_with(|| (0.0, i.kind.to_string()));
+            slot.0 += v;
+            if per_process {
+                *per_pid.entry((i.pid, i.luid, i.engine)).or_insert(0.0) += v;
+            }
+        });
+        if per_pid.is_empty() {
+            return None;
+        }
+        // A process's load: its busiest engine, as Task Manager counts it.
+        let mut map: HashMap<u32, f32> = HashMap::new();
+        for ((pid, ..), v) in per_pid {
+            let e = map.entry(pid).or_insert(0.0);
+            *e = e.max((v as f32).clamp(0.0, 100.0));
+        }
+        Some(map)
     }
 
     fn read_process_memory(&mut self) -> Option<HashMap<u32, u64>> {
@@ -287,7 +323,7 @@ impl GpuReader {
         Some(map)
     }
 
-    fn read_adapters(&mut self, loads: &HashMap<(Luid, u32), (f64, String)>) -> Vec<GpuRaw> {
+    fn read_adapters(&mut self) -> Vec<GpuRaw> {
         if !self.memory_tried {
             self.memory_tried = true;
             self.memory =
@@ -328,7 +364,7 @@ impl GpuReader {
 
             // Engines of one kind (several copy engines) show as their busiest.
             let mut by_kind: Vec<GpuEngine> = Vec::new();
-            for ((l, engine), (v, kind)) in loads {
+            for ((l, engine), (v, kind)) in &self.loads {
                 if *l != luid {
                     continue;
                 }
@@ -340,7 +376,8 @@ impl GpuReader {
                 }
             }
             by_kind.sort_by(|a, b| a.name.cmp(&b.name));
-            if self.engines.is_some() {
+            // No engines yet (the counters' first reading) is not the same as an idle GPU.
+            if !by_kind.is_empty() {
                 gpu.percent = Some(by_kind.iter().fold(0.0, |m: f32, e| m.max(e.percent)));
             }
             gpu.engines = by_kind;
