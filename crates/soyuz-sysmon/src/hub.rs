@@ -874,11 +874,13 @@ mod tests {
         hub.configure(cfg);
         let s = hub.subscribe(100, Want::default(), Arc::new(|| {}));
         wait_until("the old point in memory", || hub.with_history(|h| h.range().is_some_and(|r| r.0 <= old_t)));
-        // After the worker ended, memory is free again; the record is on disk.
+        // After the worker ended, the long tier is back on disk only; the recent tiers stay, so
+        // that graphs do not start over when a monitor tab returns.
         drop(s);
         wait_until("the worker to end", || !hub.worker_running());
-        wait_until("the memory to clear", || hub.with_history(|h| h.range().is_none()));
+        wait_until("the long tier to leave", || hub.with_history(|h| h.range().is_none_or(|r| r.0 > old_t)));
         assert!(!store::load(t.path(), 7, now_ms()).unwrap().is_empty());
+        assert!(hub.with_history(|h| h.range().is_some()), "the recent tiers stay");
     }
 
     #[test]
