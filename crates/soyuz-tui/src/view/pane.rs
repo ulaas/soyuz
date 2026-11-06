@@ -384,6 +384,8 @@ pub struct PaneVm {
     pub grid: Option<grid::GridVm>,
     /// The Trash or Computer page drawn instead of the rows (Phase T7).
     pub places: Option<places::PlacesVm>,
+    /// The system monitor page drawn instead of the rows.
+    pub monitor: Option<std::sync::Arc<super::monitor::MonitorVm>>,
 }
 
 impl Default for PaneVm {
@@ -405,6 +407,7 @@ impl Default for PaneVm {
             footer: None,
             grid: None,
             places: None,
+            monitor: None,
         }
     }
 }
@@ -512,6 +515,7 @@ impl PaneVm {
             footer,
             grid,
             places: None,
+            monitor: None,
         }
     }
 }
@@ -724,6 +728,11 @@ pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hi
     } else {
         m
     };
+    if let Some(mv) = &m.monitor {
+        let rect = rect.intersection(f.area());
+        mv.draw(f.buffer_mut(), rect, m.id, theme, hits);
+        return;
+    }
     if let Some(pv) = &m.places {
         let rect = rect.intersection(f.area());
         places::draw(f.buffer_mut(), rect, m.id, pv, theme, hits);

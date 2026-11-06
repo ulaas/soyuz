@@ -1,0 +1,31 @@
+# soyuz-tui snapshot: monitor_overview (100x30, ratatui 0.30.2)
+| data ×  System monitor ×  +                                                                        |
+|System monitor                                                                                      |
+|Over  Proc  CPU  Mem  Disk  Net  GPU  Sens  Conn  Svc  Boot  Hist  Snap                    every 1 s|
+|fakehost · Test OS · 1.0 · x86_64                                                                   |
+|Fake CPU · 4 cores, 8 threads · 16 GiB RAM · up 1d 01:00:00 · load 1.50 1.25 1.00                   |
+|                                                                                                    |
+|CPU               28.1%  Memory            62.5%  Disks        28.7 MiB/s  Network       3.1 MiB/s  |
+|61 °C                    10 GiB / 16 GiB          read 26.8 MiB/s, write…  down 2.9 MiB/s, up 274…  |
+|100%|                    100%|                    # Disks 26.8 MiB/s   *   # Network 2.9 MiB/s   *  |
+|    |        ###   ##.       |        ##########  100 MiB/s|      ..  .    5.0 MiB/s|      .......  |
+|  0%|        ####.#####    0%|        ##########      0 B/s|      *******      0 B/s|      *******  |
+|                                                                                                    |
+|GPU               14.0%  Swap              25.0%  Temperature       61 °C  Processes             6  |
+|2 GiB / 8 GiB            1 GiB / 4 GiB                                     24 threads               |
+|100%|                    100%|                    100|                     10|                      |
+|    |                        |                       |         ##########    |         ###########  |
+|  0%|        ####..###.    0%|        ##########    0|         ##########   0|         ###########  |
+|                                                                                                    |
+|Top by CPU                                         Top by memory                                    |
+|builder                     #.........     11.0%   database                    ###.......     4 GiB |
+|database                    ..........      2.8%   builder                     #.........     2 GiB |
+|db-worker                   ..........      1.4%   editor                      ..........   512 MiB |
+|editor                      ..........      0.8%   db-worker                   ..........   256 MiB |
+|shell                       ..........      0.2%   shell                       ..........    40 MiB |
+|init                        ..........      0.0%   init                        ..........    12 MiB |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+| Overview                                                          ? keys · Tab pages · Ctrl+Q quit |

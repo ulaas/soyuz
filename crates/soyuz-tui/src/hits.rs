@@ -184,6 +184,8 @@ pub enum HitTarget {
     PlacesButton { pane: PaneId, button: u8 },
     /// The rest of pane `pane`'s Trash / Computer page.
     PlacesArea { pane: PaneId },
+    /// Something on pane `pane`'s system monitor page (`input::monitor::on_mouse`).
+    Monitor { pane: PaneId, hit: crate::view::monitor::Hit },
 }
 
 /// A button of the search bar ([`HitTarget::SearchButton`]).

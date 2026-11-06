@@ -274,12 +274,33 @@ pub struct MonitorState {
     series: HashMap<(Metric, u32), Arc<Vec<Pt>>>,
     series_generation: u64,
     pending: Vec<Loader<cmd::Outcome>>,
+    /// Tests: the frames come from [`MonitorState::feed_test_frames`], not the sampler.
+    test_history: Option<soyuz_sysmon::History>,
 }
 
 impl MonitorState {
     /// The view of `pane`, created on first use.
     pub fn view(&mut self, pane: PaneId, cfg: &Monitor) -> &mut MonitorView {
         self.views.entry(pane).or_insert_with(|| MonitorView::new(cfg))
+    }
+
+    /// The view of `pane`, if it has one.
+    pub fn peek(&self, pane: PaneId) -> Option<&MonitorView> {
+        self.views.get(&pane)
+    }
+
+    /// Tests: show `frames` (the last is the current one) instead of the real sampler.
+    #[doc(hidden)]
+    pub fn feed_test_frames(&mut self, frames: Vec<Frame>, info: SystemInfo) {
+        let mut history = soyuz_sysmon::History::new(1);
+        for f in &frames {
+            history.push(f);
+        }
+        self.test_history = Some(history);
+        self.frame = frames.into_iter().last().map(Arc::new);
+        self.info = Arc::new(info);
+        self.generation += 1;
+        self.series.clear();
     }
 
     /// The last `seconds` of `metric`, at most `max_points` wide. Read once per frame of data.
@@ -293,7 +314,10 @@ impl MonitorState {
         }
         let to = self.frame.as_ref().map_or(0, |f| f.at_ms);
         let from = to - i64::from(seconds) * 1000;
-        let s = Arc::new(Hub::global().with_history(|h| h.series(metric, from, to, max_points)));
+        let s = Arc::new(match &self.test_history {
+            Some(h) => h.series(metric, from, to, max_points),
+            None => Hub::global().with_history(|h| h.series(metric, from, to, max_points)),
+        });
         self.series.insert((metric.clone(), seconds), s.clone());
         s
     }
@@ -330,7 +354,7 @@ pub fn pump(app: &mut AppCore) {
     let shown: Vec<PaneId> =
         tab.panes.iter().take(tab.shown()).filter(|p| matches!(p.location, Location::Monitor)).map(|p| p.id).collect();
     let m = &mut app.ui.monitor;
-    if shown.is_empty() {
+    if shown.is_empty() || m.test_history.is_some() {
         m.sub = None;
     } else {
         let interval = app.config.monitor.interval_ms.clamp(Monitor::INTERVAL_MS_MIN, Monitor::INTERVAL_MS_MAX);

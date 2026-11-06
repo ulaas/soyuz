@@ -47,6 +47,10 @@ pub fn split_pastes(events: &[Event]) -> Vec<Part<'_>> {
 }
 
 pub fn route(app: &mut App, events: &[Event]) {
+    if super::monitor::active(&app.core).is_some() {
+        super::monitor::route(app, events);
+        return;
+    }
     if places::active(&app.core).is_some() {
         places::route(app, events);
         return;

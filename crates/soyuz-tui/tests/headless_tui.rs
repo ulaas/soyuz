@@ -14,6 +14,8 @@ mod headless {
     mod config;
     /// T2.5: breadcrumbs and the address field.
     mod crumbs;
+    /// Phase M: the system monitor pages.
+    mod monitor;
     /// T2.9: mouse.
     mod mouse;
     /// T2.7: command palette.

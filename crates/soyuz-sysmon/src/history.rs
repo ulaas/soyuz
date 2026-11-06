@@ -762,13 +762,20 @@ impl History {
         if reaches(coarse) {
             return collect_series(&self.coarse, metric, from_ms, to_ms, max_points);
         }
-        // No tier reaches back that far: the one reaching furthest; the finest on a tie.
-        let oldest = [fine, medium, coarse].into_iter().flatten().min();
-        match oldest {
-            Some(o) if fine == Some(o) => collect_series(&self.fine, metric, from_ms, to_ms, max_points),
-            Some(o) if medium == Some(o) => collect_series(&self.medium, metric, from_ms, to_ms, max_points),
-            Some(_) => collect_series(&self.coarse, metric, from_ms, to_ms, max_points),
-            None => Vec::new(),
+        // No tier reaches back that far: the finest one, unless a coarser tier really reaches
+        // further than its own bucket (whose start is older than the first sample in it).
+        // Otherwise a fresh run would draw 10 s buckets for its first minutes.
+        let beats = |coarser: Option<i64>, finer: Option<i64>, step: i64| match (coarser, finer) {
+            (Some(c), Some(f)) => f - c > step,
+            (Some(_), None) => true,
+            (None, _) => false,
+        };
+        if fine.is_some() && !beats(medium, fine, MEDIUM_STEP_MS) && !beats(coarse, fine, COARSE_STEP_MS) {
+            collect_series(&self.fine, metric, from_ms, to_ms, max_points)
+        } else if medium.is_some() && !beats(coarse, medium, COARSE_STEP_MS) {
+            collect_series(&self.medium, metric, from_ms, to_ms, max_points)
+        } else {
+            collect_series(&self.coarse, metric, from_ms, to_ms, max_points)
         }
     }
 
@@ -972,6 +979,19 @@ mod tests {
     use super::*;
     use crate::frame::{CoreFrame, DiskFrame, MemFrame, NetFrame};
     use crate::testutil::{frame_of, key, row};
+
+    #[test]
+    fn a_fresh_run_reads_the_fine_tier() {
+        let mut h = History::new(1);
+        // The medium bucket starts before the first sample; that alone is no longer reach.
+        for i in 0..8 {
+            let mut f = frame(0, 10.0);
+            f.at_ms = 100_005_000 + i * 1000;
+            h.push(&f);
+        }
+        let pts = h.series(&Metric::CpuTotal, 100_012_000 - 120_000, 100_012_000, 0);
+        assert_eq!(pts.iter().filter(|p| !p.is_break()).count(), 8);
+    }
 
     fn frame(t: i64, cpu: f32) -> Frame {
         let mut f = frame_of(vec![row(1, None, "a", cpu, 1000), row(2, None, "b", cpu / 2.0, 5000)]);

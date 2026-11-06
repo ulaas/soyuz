@@ -36,6 +36,7 @@
 //! | `compare.rs` | [`CompareVm`] | `draw_compare` | T5 |
 //! | `settings.rs` | [`SettingsVm`] | `draw_settings` | T6 |
 //! | `screens/` | [`ScreensVm`] (treemap, duplicate finder) | `draw_screens` | T7 |
+//! | `monitor/` | `MonitorVm` (on `PaneVm::monitor`) | `MonitorVm::draw` (from `draw_pane`) | M |
 //! | `text.rs` | width-aware truncation / wrapping | | shared |
 //!
 //! Drawing order (later on top): tabs, crumbs, sidebar, panes, pane chrome, preview,
@@ -53,6 +54,7 @@ pub mod dialogs;
 pub mod editor;
 pub mod jobs;
 pub mod menu;
+pub mod monitor;
 pub mod palette;
 pub mod pane;
 pub mod preview;
@@ -151,8 +153,10 @@ impl ViewModel {
         let mut status = StatusVm::from_core(core);
         crate::input::filter::decorate(&input.filter, core, &mut status, regions.area.width);
         status::decorate_search(core, input, &mut status);
+        monitor::decorate_status(input, core, &mut status);
         let mut panes: Vec<PaneVm> = regions.panes.iter().filter_map(|p| PaneVm::from_core(core, p.index)).collect();
         rename::decorate(core, input, &mut panes);
+        monitor::decorate(input, &mut panes);
         ViewModel {
             tabs: TabsVm::from_core(core),
             panes,
@@ -187,6 +191,7 @@ impl ViewModel {
 /// `input`) before the model is built.
 pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     pane::prepare(core, regions);
+    monitor::prepare(core, input, regions);
     sidebar::prepare(core, &mut input.sidebar.nav, regions);
     palette::prepare(core, &mut input.palette.view, regions);
     crate::input::filter::prepare(&mut input.filter, core, regions.area.width);
