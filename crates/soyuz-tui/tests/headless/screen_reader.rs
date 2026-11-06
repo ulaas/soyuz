@@ -117,7 +117,12 @@ fn override_child(data: PathBuf) {
         Step::new("the listing", move |a| at(a, &d) && a.view().is_some(), key(KeyCode::F(9))),
         Step::new(
             "dual panes drawn as one",
-            |a| a.core.ws.tab().shown() == 2 && a.view().is_some_and(|v| v.panes.len() == 1 && v.other_pane.is_some()),
+            |a| {
+                // The status sentence below needs the new pane's listing, not "Loading".
+                a.core.ws.tab().shown() == 2
+                    && !a.core.ws.tab().panes.iter().any(|p| p.is_loading())
+                    && a.view().is_some_and(|v| v.panes.len() == 1 && v.other_pane.is_some())
+            },
             ctrl('q'),
         ),
     ];
