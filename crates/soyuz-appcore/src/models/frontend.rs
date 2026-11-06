@@ -45,6 +45,8 @@ pub enum FrontendCmd {
     SelectByPattern(PaneId),
     /// Choose the columns of a pane's details view.
     ChooseColumns(PaneId),
+    /// Choose the columns of the process table of a monitor pane.
+    MonitorColumns(PaneId),
     /// Pick the app a file opens with.
     OpenWith(PathBuf),
     /// The Properties dialog for `entries` of `pane`.

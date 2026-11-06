@@ -68,6 +68,8 @@ pub struct AddressState {
 
 /// Window-level view state shared by every frontend (what is shown, what has focus).
 pub struct UiState {
+    /// The system monitor pages (`models::monitor`).
+    pub monitor: crate::models::monitor::MonitorState,
     pub sidebar: SidebarState,
     pub toasts: Toasts,
     pub show_hidden: bool,
@@ -270,6 +272,7 @@ impl AppCore {
             .unwrap_or_else(|| crate::host::ThemePref::from_config(&config.appearance.theme));
 
         let mut ui = UiState {
+            monitor: Default::default(),
             sidebar,
             toasts: {
                 let mut t = Toasts::default();
@@ -470,6 +473,7 @@ impl AppCore {
         crate::services::crash::pump(self, host);
         crate::models::devices::pump(self);
         crate::models::disk_health::pump(self);
+        crate::models::monitor::pump(self);
         crate::models::properties::pump(self, host);
         ops::drain_watcher(self);
         crate::palette::begin_frame(self, host);

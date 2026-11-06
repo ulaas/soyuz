@@ -35,7 +35,7 @@ For the frontend agents: everything is at the crate root unless a module is name
 ## frame
 `Frame { at_ms, uptime_secs, load, first, gap, elapsed_ms, cpu: CpuFrame, memory: MemFrame, disks: Vec<DiskFrame>, nets: Vec<NetFrame>, gpus: Vec<GpuRaw>, sensors: Vec<SensorRaw>, batteries: Vec<BatteryRaw>, procs: Arc<[ProcRow]>, counts: Counts, added: Vec<ProcKey>, removed: Vec<ProcKey> }`
 - `frame.ncpu()`, `frame.disk_totals() -> (read, write)`, `frame.net_totals() -> (rx, tx)`, `frame.max_temp_c()`, `frame.proc(key) -> Option<&ProcRow>`.
-- `CpuFrame { percent, user, system, iowait, steal, irq, cores: Vec<CoreFrame{percent,user,system,mhz}>, mhz_avg, temp_c, ctx_per_sec, irq_per_sec }`, percent of the machine. `percent = 1 - d(idle)/d(all)`, so iowait counts as busy.
+- `CpuFrame { percent, user, system, iowait, steal, irq, cores: Vec<CoreFrame{percent,user,system,mhz}>, mhz_avg, temp_c, ctx_per_sec, irq_per_sec }`, percent of the machine. `percent = 1 - d(idle + iowait)/d(all)`: waiting for a disk counts as idle, as in htop.
 - `MemFrame { raw: MemoryRaw, used, percent, swap_percent, page_in_rate, page_out_rate }`.
 - `DiskFrame { id, model, read_rate, write_rate, read_iops, write_iops, busy_percent, queue, rotational, size, read_bytes, write_bytes }`; `disk.in_totals()` is false for `dm-*`, `md*`, `zram*`.
 - `NetFrame { id, name, description, rx_rate, tx_rate, rx_packets_rate, tx_packets_rate, rx_bytes, tx_bytes, rx_errors, tx_errors, up, virtual_if, link_bps, addresses, mac }`; `net.in_totals()` is `up && !virtual_if`.

@@ -438,7 +438,7 @@ impl Default for Monitor {
             details_panel: true,
             details_height: 260.0,
             process_icons: true,
-            process_gpu: false,
+            process_gpu: true,
             follow_selected: true,
             snapshot_commands: SnapshotCommands::Redacted,
             heat_cells: true,

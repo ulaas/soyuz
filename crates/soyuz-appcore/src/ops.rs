@@ -888,6 +888,7 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         }
         Cmd::HistoryJump { pane, back, n } => history_jump(app, pane, back, n),
         Cmd::FocusPane(id) => focus_pane(app, id),
+        Cmd::Monitor(pane, c) => crate::models::monitor::apply(app, pane, c, host),
         Cmd::CopyText(t) => {
             let n = t.lines().count();
             host.copy_text(t);

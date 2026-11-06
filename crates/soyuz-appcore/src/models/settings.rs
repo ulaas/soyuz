@@ -25,6 +25,8 @@ pub enum Section {
     TerminalUi,
     Preview,
     Editor,
+    /// `[monitor]`: the system monitor.
+    Monitor,
     Keyboard,
     Commands,
     Bookmarks,
@@ -36,7 +38,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 18] = [
+    pub const ALL: [Section; 19] = [
         Section::General,
         Section::Appearance,
         Section::Fonts,
@@ -47,6 +49,7 @@ impl Section {
         Section::TerminalUi,
         Section::Preview,
         Section::Editor,
+        Section::Monitor,
         Section::Keyboard,
         Section::Commands,
         Section::Bookmarks,
@@ -71,6 +74,7 @@ impl Section {
             Section::TerminalUi => "terminal-ui",
             Section::Preview => "preview",
             Section::Editor => "editor",
+            Section::Monitor => "monitor",
             Section::Keyboard => "keyboard",
             Section::Commands => "commands",
             Section::Bookmarks => "bookmarks",
@@ -133,6 +137,7 @@ impl Section {
             Section::TerminalUi => &["tui"],
             Section::Preview => &["preview", "media", "git", "search"],
             Section::Editor => &["editor"],
+            Section::Monitor => &["monitor"],
             Section::Keyboard => &["keys"],
             Section::Commands => &["custom_commands"],
             Section::Bookmarks => &["bookmarks"],
@@ -205,6 +210,7 @@ impl Section {
                 c.search.saved = saved;
             }
             Section::Editor => c.editor = d.editor,
+            Section::Monitor => c.monitor = d.monitor,
             Section::Keyboard => c.keys = d.keys,
             Section::Commands => c.custom_commands = d.custom_commands,
             Section::Bookmarks => c.bookmarks = d.bookmarks,

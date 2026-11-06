@@ -525,7 +525,8 @@ fn cpu_load(old: Option<CpuTimes>, now: CpuTimes) -> CpuLoad {
     }
     let share = |v: f64| ((v * 100.0 / total) as f32).clamp(0.0, 100.0);
     CpuLoad {
-        percent: share(total - idle),
+        // Waiting for a disk is idle time, as in htop and top.
+        percent: share(total - idle - iowait),
         user: share(user),
         system: share(system),
         iowait: share(iowait),

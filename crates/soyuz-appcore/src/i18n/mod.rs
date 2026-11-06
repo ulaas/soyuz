@@ -87,6 +87,7 @@ pub const FILES: &[(&str, &str, &str)] = &[
     ftl!("tui-treemap"),
     ftl!("tui-dupes"),
     ftl!("tui-places"),
+    ftl!("monitor"),
 ];
 
 /// Translate a key: `tr!("key")` → `&'static str`; `tr!("key", name = value, …)` →

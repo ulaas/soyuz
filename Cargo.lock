@@ -6880,6 +6880,7 @@ dependencies = [
  "soyuz-media",
  "soyuz-script",
  "soyuz-search",
+ "soyuz-sysmon",
  "soyuz-term",
  "soyuz-vfs",
  "symphonia",
