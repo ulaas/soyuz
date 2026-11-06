@@ -137,6 +137,7 @@ extra ones, see [Terminal UI on legacy terminals and in Windows Terminal](#termi
 | Command palette | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>, <kbd>Ctrl</kbd>+<kbd>K</kbd> | same | Search and run any command |
 | Search | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>, <kbd>F3</kbd> | same | Search this folder and its subfolders |
 | Settings | <kbd>Ctrl</kbd>+<kbd>,</kbd> | same | Open the settings |
+| System monitor | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd> | same | Processes, CPU, memory, disks, network and GPU, with history and snapshots |
 | Keyboard shortcuts | <kbd>Ctrl</kbd>+<kbd>/</kbd> | same | Browse and edit keyboard shortcuts |
 | Quit | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | same | Quit Soyuz |
 | Quick Look | <kbd>Space</kbd> *(file list)* | same | Preview the item in a popup |

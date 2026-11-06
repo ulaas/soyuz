@@ -140,6 +140,10 @@ impl SoyuzApp {
             return;
         }
         let (kctx, text_focused) = self.key_context(ctx);
+        // A focused monitor pane takes its own keys first; the rest reach the key map.
+        if !text_focused {
+            crate::ui::views::monitor::keys::handle(self, ctx);
+        }
         if !text_focused {
             self.esc_closes_overlays(ctx);
         }

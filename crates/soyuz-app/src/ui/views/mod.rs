@@ -9,6 +9,7 @@ pub mod icon_pack;
 pub mod icons;
 pub mod layout;
 pub mod miller;
+pub mod monitor;
 pub mod rename;
 pub mod trash;
 
@@ -64,6 +65,8 @@ pub struct ViewCtx<'a> {
     pub dual: bool,
     /// Clipboard (cut dimming), inline rename, drag and drop, trash view state.
     pub fileops: &'a mut crate::ops::fileops::FileOps,
+    /// The system monitor's state (`monitor:` panes).
+    pub monitor: &'a mut crate::models::monitor::MonitorState,
 }
 
 #[cfg(test)]

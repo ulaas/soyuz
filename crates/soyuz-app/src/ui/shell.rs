@@ -214,6 +214,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
             volumes: &drives,
             dual: false,
             fileops: &mut app.core.fileops,
+            monitor: &mut app.core.ui.monitor,
         };
         pane_view::show(ui, area, pane, &mut v, false);
         return;
@@ -275,6 +276,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
             volumes: &drives,
             dual: true,
             fileops: &mut app.core.fileops,
+            monitor: &mut app.core.ui.monitor,
         };
         pane_view::show(ui, rect, pane, &mut v, true);
     }
@@ -352,6 +354,7 @@ fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, 
             volumes: &drives,
             dual: true,
             fileops: &mut app.core.fileops,
+            monitor: &mut app.core.ui.monitor,
         };
         pane_view::show(ui, rect, pane, &mut v, true);
     }

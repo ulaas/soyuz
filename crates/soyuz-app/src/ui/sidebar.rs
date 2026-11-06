@@ -496,6 +496,18 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         c.cmds.push(Cmd::FocusPane(c.pane));
         c.cmds.push(Cmd::Navigate { pane: c.pane, location: Location::Computer, select: None });
     }
+    let monitor_active = matches!(c.current, Location::Monitor);
+    let r = NavRow {
+        icon: ph::PULSE,
+        label: tr!("ops-place-monitor"),
+        active: monitor_active,
+        icon_color: None,
+        usage: None,
+    }
+    .show(ui);
+    if r.clicked() {
+        c.cmds.push(Cmd::Action(soyuz_core::config::Action::OpenMonitor));
+    }
     let vols: Vec<VolumeInfo> = c.volumes.to_vec();
     let desk_devices = devices::block_devices();
     for v in &vols {

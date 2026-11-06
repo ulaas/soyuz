@@ -87,6 +87,11 @@ fn header(ui: &mut Ui, r: Rect, pane: &Pane, v: &mut ViewCtx<'_>) {
 
 fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     let p = palette(ui.ctx());
+    // The system monitor has no listing: its pages draw whatever the status says.
+    if matches!(pane.location, Location::Monitor) {
+        crate::ui::views::monitor::show(ui, rect, pane, v);
+        return;
+    }
     match pane.status.clone() {
         ListingStatus::Virtual => {
             if matches!(pane.location, Location::Computer) {

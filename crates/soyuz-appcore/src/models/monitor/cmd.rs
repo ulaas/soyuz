@@ -87,6 +87,8 @@ pub enum MonitorCmd {
     OpenLocation(ProcKey),
     /// Copy the process's command line, path, pid or a summary line.
     CopyProcess(ProcKey, CopyWhat),
+    /// Copy a text of a page (an address, a command of a startup item).
+    CopyText(String),
     TogglePause,
     SetInterval(u32),
     SetGraphSeconds(u32),
@@ -421,6 +423,7 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
                 host.copy_text(t);
             }
         }
+        C::CopyText(t) => host.copy_text(t),
         C::TogglePause => {
             let hub = Hub::global();
             hub.pause(!hub.is_paused());

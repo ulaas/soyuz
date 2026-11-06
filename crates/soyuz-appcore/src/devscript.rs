@@ -359,6 +359,36 @@ impl Runner {
                 Err(e) => log::warn!("SOYUZ_SCRIPT {step}: {e}"),
             },
             "welcome" => core.ui.welcome = arg.trim() != "off",
+            "monitor" => {
+                // `monitor:<page>` switches the focused monitor pane to a page (`cpu`, `history`, …);
+                // `monitor:view=<list|tree|by_name|by_user>`, `monitor:filter=<text>` and
+                // `monitor:select=<name>` drive its process table.
+                use crate::models::monitor::MonitorCmd as M;
+                use soyuz_core::config::monitor::{MonitorPage, ProcView};
+                let pane = core.ws.pane().id;
+                let want = arg.trim().to_ascii_lowercase();
+                let cmd = match want.split_once('=') {
+                    Some(("view", v)) => match v {
+                        "list" => Some(M::SetView(ProcView::List)),
+                        "tree" => Some(M::SetView(ProcView::Tree)),
+                        "by_name" => Some(M::SetView(ProcView::ByName)),
+                        "by_user" => Some(M::SetView(ProcView::ByUser)),
+                        _ => None,
+                    },
+                    Some(("filter", t)) => Some(M::SetFilter(t.to_string())),
+                    Some(("select", name)) => core.ui.monitor.frame.as_ref().and_then(|f| {
+                        f.procs
+                            .iter()
+                            .find(|p| p.raw.name.to_ascii_lowercase() == name)
+                            .map(|p| M::Select(Some(soyuz_sysmon::RowId::Proc(p.raw.key))))
+                    }),
+                    _ => MonitorPage::ALL.iter().find(|p| p.id() == want).map(|p| M::SetPage(*p)),
+                };
+                match cmd {
+                    Some(c) => core.cmds.push(Cmd::Monitor(pane, c)),
+                    None => log::warn!("SOYUZ_SCRIPT {step}: unknown monitor step"),
+                }
+            }
             "mark" => log::info!("SOYUZ_SCRIPT: mark {}", arg.trim()),
             "panes" => log_panes(core, arg.trim()),
             "toast" => {
