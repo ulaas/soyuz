@@ -126,11 +126,22 @@ jobs:
       - name: Test
         continue-on-error: ${{ runner.os == 'macOS' }}
         run: cargo test --workspace --locked
+      # `cargo test` stops at the first failing crate, and macOS failures above do not fail the
+      # job: run the system monitor's readers on their own, so that every OS really runs them.
+      - name: System monitor readers
+        continue-on-error: ${{ runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          cargo test -p soyuz-sysmon --locked
+          case "$RUNNER_OS" in
+            Windows) cargo test -p soyuz-fs --test sysmon_smoke --locked -- --nocapture ;;
+            *) cargo test -p soyuz-fs --test sysmon_smoke_unix --locked -- --nocapture ;;
+          esac
       - name: Test each crate in isolation
         continue-on-error: ${{ runner.os == 'macOS' }}
         shell: bash
         run: |
-          for c in soyuz-core soyuz-fs soyuz-jobs soyuz-archive soyuz-search soyuz-term soyuz-appcore soyuz-tui soyuz-app; do
+          for c in soyuz-core soyuz-fs soyuz-jobs soyuz-archive soyuz-search soyuz-sysmon soyuz-term soyuz-appcore soyuz-tui soyuz-app; do
             echo "::group::cargo test -p $c"
             cargo test -p "$c" --locked
             echo "::endgroup::"
