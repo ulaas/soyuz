@@ -40,6 +40,7 @@
       <ul>
         <li><a href="#principles">Principles</a></li>
         <li><a href="#features">Features</a></li>
+        <li><a href="#monitor">Monitor</a></li>
         <li><a href="#terminal">Terminal</a></li>
         <li><a href="#ai">Assistant</a></li>
         <li><a href="#download">Download</a></li>
@@ -120,7 +121,7 @@
         <li data-reveal>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l2.5-6 4 12 2.5-6H21"/></svg>
           <h3>Never blocks</h3>
-          <p>Listings, previews, thumbnails and all disk access run off the interface thread. Folders stream in as they are read, and a slow drive never freezes the window.</p>
+          <p>Listings, previews, thumbnails and all disk access run off the interface thread. Folders stream in as they are read, and a slow drive never freezes the window. Every window shares one process, so another window costs little memory.</p>
         </li>
         <li data-reveal>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h10M7 13h6"/><path d="M15.5 13.5v3M18 13.5v3"/></svg>
@@ -178,7 +179,7 @@
       <article class="feat">
         <div class="feat-text">
           <h3>Look before you open</h3>
-          <p>Quick Look and the preview pane display images, syntax-highlighted code, Markdown, PDF pages, Office documents, EPUB, fonts, 3D models, audio with waveform and playback, video frames, binaries in hex and side-by-side diffs. Archives open just like folders.</p>
+          <p>Quick Look and the preview pane display images, syntax-highlighted code, Markdown, PDF pages, Office documents, EPUB, fonts, 3D models, audio with waveform and playback, video with a full player, binaries in hex and side-by-side diffs. A folder's preview shows its README or notes. Archives open just like folders.</p>
           <p class="keys"><span><kbd>Space</kbd> Quick Look</span><span><kbd>Alt</kbd><kbd>P</kbd> preview pane</span></p>
         </div>
         <figure class="shot" data-reveal>
@@ -202,7 +203,7 @@
       <article class="feat">
         <div class="feat-text">
           <h3>Jobs you can steer</h3>
-          <p>The activity panel shows every job with its speed, a live graph and the time remaining. Jobs queue per drive, so two copies to the same disk never compete. Conflicts open a side-by-side comparison, and after a crash or power cut, unfinished jobs resume exactly where they stopped.</p>
+          <p>The activity panel shows every job with its speed, a live graph and the time remaining. Jobs queue per drive, so two copies to the same disk never compete. Conflicts open a side-by-side comparison, and after a crash or power cut, unfinished jobs resume exactly where they stopped. If a job crawls, “Why is this slow?” shows where its time went.</p>
           <p class="keys"><span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> activity panel</span><span><kbd>Ctrl</kbd><kbd>Z</kbd> undo</span></p>
         </div>
         <figure class="shot" data-reveal>
@@ -226,11 +227,23 @@
       <article class="feat">
         <div class="feat-text">
           <h3>Find out where the space went</h3>
-          <p>The disk-usage treemap shows folders by size; click to zoom in. Compare two folders and sync them one way or both ways, with saved and scheduled profiles. Find duplicates by size and content, and send the extra copies to the trash.</p>
+          <p>The disk-usage treemap shows folders by size; click to zoom in. Compare two folders and sync them one way or both ways, with saved and scheduled profiles, or see the differences as a treemap coloured by what changed. Find duplicates by size and content, and send the extra copies to the trash.</p>
         </div>
         <figure class="shot" data-reveal>
           <div class="frame"><img src="assets/shots/treemap.png" width="1600" height="1000" loading="lazy" alt="A disk-usage treemap: nested colored rectangles sized by folder size, with a list of the largest items beside it."></div>
           <figcaption>The treemap tool, with the largest items listed beside it.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Video and audio, built in</h3>
+          <p>Play video and audio in the preview pane or Quick Look, with seeking, volume and hardware decoding. Convert, trim, extract audio or save a frame: each runs as a background job you can pause and cancel like any other.</p>
+          <p class="keys"><span><kbd>Space</kbd> Quick Look</span><span><kbd>Alt</kbd><kbd>P</kbd> preview pane</span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/video-player.png" width="1600" height="1000" loading="lazy" alt="A video in the preview pane beside the file list, with play and pause, a scrubber, volume, mute and loop controls."></div>
+          <figcaption>The player in the preview pane. The FFmpeg libraries ship with Soyuz.</figcaption>
         </figure>
       </article>
 
@@ -243,6 +256,51 @@
         <figure class="shot" data-reveal>
           <div class="frame"><img src="assets/shots/light-grid.png" width="1600" height="1000" loading="lazy" alt="Soyuz in its light theme, showing a folder of photos as a grid of thumbnails, with folder icons that preview their contents."></div>
           <figcaption>The light theme, grid view with thumbnails.</figcaption>
+        </figure>
+      </article>
+    </div>
+  </section>
+
+  <section class="features" id="monitor" aria-labelledby="monitor-title">
+    <div class="wrap">
+      <header class="sec-head" data-reveal>
+        <h2 id="monitor-title">A system monitor in a tab</h2>
+        <p>See what your computer is doing without leaving your files. The monitor opens as an ordinary tab, in the window and in the terminal, and reads the system only while it is on screen.</p>
+      </header>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Everything at a glance</h3>
+          <p>Live graphs for CPU, memory, disks, network and GPU, then a page for each with the detail behind it: every logical CPU, per-disk and per-interface rates, GPU engines, memory and clocks, temperatures, fans, power and batteries. Open connections, services and startup programs have pages of their own. What your system does not report shows as a dash, never as a made-up zero.</p>
+          <p class="keys"><span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Y</kbd> system monitor</span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/monitor.png" width="1600" height="1000" loading="lazy" alt="The system monitor's overview page: cards with live graphs for CPU, memory, disks, network, GPU and temperature, the machine's details, the top processes by CPU and by memory, and volume usage."></div>
+          <figcaption>The overview, with a page of its own for each resource.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Find any process</h3>
+          <p>Show processes as a list, a tree of parents and children, or grouped by program or user. Choose your columns, their order and width from more than thirty, and they stay that way. Filter with plain words, regular expressions and column tests, or any mix of them. End, kill, suspend or re-prioritize, with a clear warning before you touch anything the system relies on.</p>
+          <p class="query"><code>firefox -helper /render.*gpu/ user:ann cpu&gt;5 mem&gt;100M</code></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/monitor-processes.png" width="1600" height="1000" loading="lazy" alt="The process table in tree view, with columns for process id, user, state, CPU, memory, disk rates, GPU, threads and command line, and load shown as a tint in each cell."></div>
+          <figcaption>The process tree, tinted by load.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>History, snapshots and comparing</h3>
+          <p>Nothing is recorded until you press Record. Then look back over what was recorded, kept for as many days as you choose, and see what was running at any moment; pause or stop whenever you like. A snapshot saves the whole system state: compare two, or one with now, to see what appeared, went away or changed. Alerts can warn you when CPU, memory or a temperature stays high, and save a snapshot of that moment.</p>
+          <p class="note">Snapshots and exports mask command-line values that look like passwords. How much you see depends on the system: on macOS, services are read-only and temperature sensors are not read yet, and without administrator rights each system hides some details of other accounts' processes.</p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/monitor-cpu.png" width="1600" height="1000" loading="lazy" alt="The monitor's CPU page: a graph of total, user and system load, figures such as clock, load average and context switches, and a small graph for each of sixteen logical CPUs."></div>
+          <figcaption>The CPU page, with a graph for each logical CPU.</figcaption>
         </figure>
       </article>
     </div>
@@ -270,7 +328,7 @@
       <article class="feat">
         <div class="feat-text">
           <h3>Keyboard and mouse, on any terminal</h3>
-          <p>The command palette, context menus, Quick Look with pictures on terminals that can show them, the preview pane, editors, folder compare and sync, the treemap, remote locations and the assistant. Click, scroll and drag with the mouse, or never touch it. Legacy consoles and Windows Terminal get their own shortcuts, so every command stays reachable.</p>
+          <p>The command palette, context menus, Quick Look with pictures on terminals that can show them, the preview pane, the video player, editors, folder compare and sync, the treemap, the system monitor, remote locations and the assistant. Click, scroll and drag with the mouse, or never touch it. Legacy consoles and Windows Terminal get their own shortcuts, so every command stays reachable.</p>
           <p class="keys"><span><kbd>Ctrl</kbd><kbd>K</kbd> command palette</span><span><kbd>Space</kbd> Quick Look</span><span><kbd>Alt</kbd><kbd>J</kbd> jobs</span></p>
         </div>
         <figure class="shot" data-reveal>
@@ -301,18 +359,34 @@
       </header>
       <div class="more-grid">
         <div class="more-item" data-reveal>
+          <h3>Quick share</h3>
+          <p>Send files to a phone or another computer on your network: Soyuz shows an address and a QR code to open in any browser. Sharing is read-only and stops when you close the window or the time runs out.</p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Disk health</h3>
+          <p>Drive cards show each drive's health, temperature and wear, read from SMART and the NVMe health log without administrator rights. A failing drive raises a warning.</p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Previous versions</h3>
+          <p>Restore a file or folder from Windows shadow copies, and see which lines changed in a text file before you do. Reading shadow copies needs administrator rights.</p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Small things that add up</h3>
+          <p>Clipboard history for file sets, focus mode, a program browser for Open with that remembers your choice, default apps per file type inside Soyuz, and copies that clone duplicate content instead of writing it twice, on volumes that can.</p>
+        </div>
+        <div class="more-item" data-reveal>
           <h3>Search and the index</h3>
-          <p>Search file names and contents with a compact query language. Enable the background index and searches across all your folders return in milliseconds. Save any query as a smart folder that keeps itself up to date.</p>
+          <p>Search file names and contents, PDFs included, with a compact query language. Enable the background index and searches across all your folders return in milliseconds. Save any query as a smart folder that keeps itself up to date.</p>
           <p class="query"><code>kind:image size:&gt;5MB modified:&lt;7d -draft</code></p>
           <p class="query-note">Images over 5 MB changed this week, leaving out drafts.</p>
         </div>
         <div class="more-item" data-reveal>
           <h3>Remote locations</h3>
-          <p>SFTP, WebDAV, FTP and FTPS, S3-compatible storage and SMB network shares, with cached listings. Transfers between any of them are ordinary, resumable jobs.</p>
+          <p>SFTP, WebDAV, FTP and FTPS, S3-compatible storage and SMB network shares, with cached listings. Connect to server finds servers on your network. Transfers between any of them are ordinary, resumable jobs.</p>
         </div>
         <div class="more-item" data-reveal>
           <h3>Archives as folders</h3>
-          <p>Browse zip, 7z, tar, RAR, ISO, CAB, deb and rpm without extracting them. Create and extract archives, including password-protected ones, and edit zip files in place.</p>
+          <p>Browse zip, 7z, tar, RAR, ISO, CAB, deb and rpm without extracting them, split zips and cabinet sets too. Create and extract archives, including password-protected ones, and edit zip, 7z and tar files in place.</p>
         </div>
         <div class="more-item" data-reveal>
           <h3>Tags and folder colors</h3>
@@ -332,7 +406,7 @@
         </div>
         <div class="more-item" data-reveal>
           <h3>Accessible</h3>
-          <p>Screen-reader support, a high-contrast theme, reduced motion, large touch targets, interface zoom and a visible focus indicator everywhere. The terminal UI has a screen-reader mode of its own.</p>
+          <p>Screen-reader support, a high-contrast theme, reduced motion, large touch targets, interface zoom, a text size that reaches every surface and a visible focus indicator everywhere. The terminal UI has a screen-reader mode of its own.</p>
         </div>
       </div>
     </div>
@@ -347,11 +421,11 @@
       <ol class="steps" data-reveal>
         <li>
           <h3>Ask in plain words</h3>
-          <p>“Move last month’s invoices into a folder per client.”</p>
+          <p>“Move last month’s invoices into a folder per client.” Type <kbd>?</kbd> in the command palette, or open the assistant panel.</p>
         </li>
         <li>
           <h3>Review the plan</h3>
-          <p>You receive a dry run listing every move, rename and delete it would make, before anything happens.</p>
+          <p>You receive a dry run listing every move, rename and delete it would make, before anything happens. Edit the plan or uncheck items first.</p>
         </li>
         <li>
           <h3>Approve, and it runs as a job</h3>
