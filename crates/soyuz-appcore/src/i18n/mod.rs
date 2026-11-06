@@ -89,6 +89,7 @@ pub const FILES: &[(&str, &str, &str)] = &[
     ftl!("tui-places"),
     ftl!("monitor"),
     ftl!("tui-monitor"),
+    ftl!("monitor-gui"),
 ];
 
 /// Translate a key: `tr!("key")` → `&'static str`; `tr!("key", name = value, …)` →

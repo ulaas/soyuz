@@ -64,6 +64,8 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[remote]`](#remote)
 - [`[linux]`](#linux)
 - [`[tui]`](#tui)
+- [`[monitor]`](#monitor)
+- [`[[monitor.columns]]`](#monitorcolumns)
 - [`[keys]`](#keys)
 - [`[ai]`](#ai)
 - [`[[ai.profiles]]`](#aiprofiles)
@@ -642,6 +644,58 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `ai_ratio` | float | `0.4` | Share of the width the AI assistant panel takes beside the files. Values outside 0.25–0.6 are clamped when read; below 100 columns the panel takes the whole area. |
 | `editor` | string | `""` | Program that "Edit config file" (and other text edits) runs in the terminal, with its arguments, e.g. `nvim` or `code --wait`. Empty: `$VISUAL`, then `$EDITOR`, then the first of nvim, vim, nano, micro, hx, vi (and edit on Windows) found on `PATH`. |
 | `screen_reader` | boolean | `false` | Screen-reader mode: no box drawing, one pane at a time, plain-text markers, the terminal's cursor on the focused item and a status line that reads as a sentence, for Narrator, NVDA, Orca and VoiceOver. `soyuz --tui --screen-reader` turns it on for one run without saving it. |
+
+## `[monitor]`
+
+`[monitor]`: the system monitor (`monitor:` tabs, "System monitor" in the palette).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `interval_ms` | integer | `1000` | Milliseconds between readings while a monitor tab is on screen. |
+| `page` | `"overview"` \| `"processes"` \| `"cpu"` \| `"memory"` \| `"disks"` \| `"network"` \| `"gpu"` \| `"sensors"` \| `"connections"` \| `"services"` \| `"startup"` \| `"history"` \| `"snapshots"` | `"overview"` | Page shown when a monitor tab opens. |
+| `sort_by` | `"name"` \| `"pid"` \| `"parent"` \| `"user"` \| `"state"` \| `"cpu"` \| `"cpu_time"` \| `"memory"` \| `"private"` \| `"shared"` \| `"virtual"` \| `"peak_memory"` \| `"memory_percent"` \| `"threads"` \| `"handles"` \| `"disk_read"` \| `"disk_write"` \| `"disk_read_total"` \| `"disk_write_total"` \| `"gpu"` \| `"gpu_memory"` \| `"page_faults"` \| `"priority"` \| `"nice"` \| `"session"` \| `"uptime"` \| `"started"` \| `"path"` \| `"command"` \| `"arch"` \| `"elevated"` \| `"cgroup"` \| `"description"` | `"cpu"` | Column the process table sorts by. |
+| `sort_descending` | boolean | `true` | Sort largest first. |
+| `view` | `"list"` \| `"tree"` \| `"by_name"` \| `"by_user"` | `"list"` | How the process table arranges its rows. (`list`: One flat, sorted list; `tree`: Parents above their children; `by_name`: Grouped by program name, with totals; `by_user`: Grouped by user, with totals) |
+| `remember_filter` | boolean | `false` | Keep the process filter between sessions. |
+| `filter` | string | `""` | The remembered process filter. Words match any text column; `/expr/` is a regular expression; `user:root`, `cpu>5`, `mem>100M` test one column. |
+| `filter_regex` | boolean | `false` | Treat the whole filter as one regular expression. |
+| `filter_keeps_parents` | boolean | `true` | Tree view: keep the parents of matching processes on screen, dimmed. |
+| `show_kernel` | boolean | `false` | List kernel threads and OS-internal pseudo processes. |
+| `show_other_users` | boolean | `true` | List other users' processes. |
+| `cpu_scale` | `"machine"` \| `"per_core"` | `"machine"` | The scale of a process's CPU load. (`machine`: 100 % is the whole machine; `per_core`: 100 % is one logical CPU (a busy eight-thread program shows 800 %)) |
+| `core_view` | `"graphs"` \| `"heat"` \| `"bars"` | `"graphs"` | How the CPU page draws its logical CPUs. (`graphs`: One small graph per logical CPU; `heat`: A compact heat grid; `bars`: One bar per logical CPU) |
+| `graph_seconds` | integer | `120` | Seconds of history the live graphs show. |
+| `details_panel` | boolean | `true` | Show the details panel under the process table. |
+| `details_height` | float | `260.0` | Height of the details panel in points (the terminal UI divides by 18). |
+| `process_icons` | boolean | `true` | Draw program icons in the process table (GUI). |
+| `process_gpu` | boolean | `true` | Read per-process GPU use (the most expensive reading; refreshed every few seconds). |
+| `follow_selected` | boolean | `true` | Keep the selected process in view while rows reorder. |
+| `snapshot_commands` | `"none"` \| `"redacted"` \| `"full"` | `"redacted"` | What of a process's command line goes into snapshots and exports. (`none`: Leave command lines out; `redacted`: Mask the values of flags that look like secrets (`--password x`, `user:pass@host`); `full`: Keep them whole) |
+| `heat_cells` | boolean | `true` | Tint table cells by load, like a heat map. |
+| `temperature_unit` | `"celsius"` \| `"fahrenheit"` | `"celsius"` | Temperature unit. |
+| `confirm_kill` | boolean | `true` | Ask before ending, killing or suspending a process. |
+| `show_virtual_networks` | boolean | `false` | List virtual network interfaces (loopback, tunnels, bridges) on the Network page. |
+| `background_history` | boolean | `false` | Keep recording history at `background_interval_secs` while no monitor tab is open. |
+| `background_interval_secs` | integer | `10` | Seconds between readings when recording with no monitor tab open. |
+| `history_persist` | boolean | `true` | Write history to disk, so it survives a restart. |
+| `history_days` | integer | `7` | Days of history kept on disk. |
+| `snapshots_kept` | integer | `50` | Snapshots kept before the oldest automatic ones are removed (manual ones are never removed). |
+| `alert_cpu_percent` | integer | `0` | Raise a notification when total CPU stays above this percentage (0 = off). |
+| `alert_memory_percent` | integer | `0` | Raise a notification when memory stays above this percentage (0 = off). |
+| `alert_temperature_c` | integer | `0` | Raise a notification when any temperature sensor stays above this many °C (0 = off). |
+| `alert_sustain_secs` | integer | `30` | How long a value must stay above its limit before the alert fires (seconds). |
+| `alert_snapshot` | boolean | `true` | Take a snapshot automatically when an alert fires. |
+
+## `[[monitor.columns]]`
+
+A process-table column and its width.
+
+A list of tables; 11 entries by default. The default column shows the first entry.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `id` | `"name"` \| `"pid"` \| `"parent"` \| `"user"` \| `"state"` \| `"cpu"` \| `"cpu_time"` \| `"memory"` \| `"private"` \| `"shared"` \| `"virtual"` \| `"peak_memory"` \| `"memory_percent"` \| `"threads"` \| `"handles"` \| `"disk_read"` \| `"disk_write"` \| `"disk_read_total"` \| `"disk_write_total"` \| `"gpu"` \| `"gpu_memory"` \| `"page_faults"` \| `"priority"` \| `"nice"` \| `"session"` \| `"uptime"` \| `"started"` \| `"path"` \| `"command"` \| `"arch"` \| `"elevated"` \| `"cgroup"` \| `"description"` | `"name"` |  |
+| `width` | float | `0.0` | Width in points in the GUI (the terminal UI divides by 8); 0 = the default. |
 
 ## `[keys]`
 

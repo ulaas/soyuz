@@ -87,6 +87,13 @@ fn open_key() -> egui::Id {
     egui::Id::unique("soyuz.ctx_menu.open")
 }
 
+/// Another view's context menu is open this pass: it owns the keyboard like a pane menu
+/// (see [`owns_keyboard`]).
+pub fn mark_open(ctx: &egui::Context) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(open_key(), pass));
+}
+
 /// A pane's context menu was shown this pass or the last: it owns the keyboard (arrows,
 /// Enter and Esc go to the menu, not the file list).
 pub fn owns_keyboard(ctx: &egui::Context) -> bool {

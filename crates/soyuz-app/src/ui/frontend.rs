@@ -36,6 +36,10 @@ pub fn drain(app: &mut SoyuzApp, host: &EguiHost) {
             }
             FrontendCmd::SelectByPattern(pane) => app.gui.dialogs.push(dialogs::PatternDialog::new(pane)),
             FrontendCmd::ChooseColumns(pane) => app.gui.dialogs.push(dialogs::ColumnsDialog::new(pane)),
+            FrontendCmd::MonitorColumns(pane) => {
+                let shown = app.core.config.monitor.columns.iter().map(|c| c.id).collect();
+                app.gui.dialogs.push(crate::ui::views::monitor::dialogs::MonitorColumnsDialog::new(pane, shown))
+            }
             FrontendCmd::OpenWith(path) => {
                 app.gui.dialogs.push(dialogs::open_with::OpenWithDialog::new(path, app.core.config.open.clone()))
             }

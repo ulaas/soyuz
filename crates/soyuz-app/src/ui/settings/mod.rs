@@ -12,6 +12,7 @@ mod fonts;
 mod keybindings;
 mod lists;
 mod media;
+mod monitor;
 mod pages;
 mod system;
 mod themes_ui;
@@ -65,6 +66,7 @@ pub fn section_icon(sec: Section) -> &'static str {
         Section::TerminalUi => ph::TERMINAL,
         Section::Preview => ph::EYE,
         Section::Editor => ph::NOTE_PENCIL,
+        Section::Monitor => ph::PULSE,
         Section::Keyboard => ph::KEYBOARD,
         Section::Commands => ph::LIGHTNING,
         Section::Bookmarks => ph::BOOKMARK_SIMPLE,
@@ -660,6 +662,7 @@ fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
         Section::TerminalUi => pages::terminal_ui(ui, app, q),
         Section::Preview => pages::preview(ui, app, q),
         Section::Editor => editor::editor(ui, app, q),
+        Section::Monitor => monitor::page(ui, app, q),
         Section::Keyboard => keybindings::page(ui, app, q),
         Section::Commands => lists::commands(ui, app, q),
         Section::Bookmarks => lists::bookmarks(ui, app, q),

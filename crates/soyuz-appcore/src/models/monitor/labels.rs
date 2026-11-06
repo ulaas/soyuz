@@ -252,12 +252,15 @@ mod tests {
 
     #[test]
     fn every_column_and_page_has_words() {
-        for c in ProcColumn::ALL {
-            assert!(!column_title(c).is_empty());
-            assert!(!column_desc(c).is_empty());
-        }
-        for p in MonitorPage::ALL {
-            assert!(!page_title(p).is_empty());
+        for l in [soyuz_core::Locale::EnUs, soyuz_core::Locale::TrTr] {
+            for c in ProcColumn::ALL {
+                let id = c.id().replace('_', "-");
+                assert!(crate::i18n::has_in(&format!("monitor-col-{id}"), l), "monitor-col-{id} ({l:?})");
+                assert!(crate::i18n::has_in(&format!("monitor-coldesc-{id}"), l), "monitor-coldesc-{id} ({l:?})");
+            }
+            for p in MonitorPage::ALL {
+                assert!(crate::i18n::has_in(&format!("monitor-page-{}", p.id()), l), "monitor-page-{} ({l:?})", p.id());
+            }
         }
     }
 }
