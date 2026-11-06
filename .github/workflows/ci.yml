@@ -137,6 +137,7 @@ jobs:
             Windows) cargo test -p soyuz-fs --test sysmon_smoke --locked -- --nocapture ;;
             *) cargo test -p soyuz-fs --test sysmon_smoke_unix --locked -- --nocapture ;;
           esac
+          cargo test -p soyuz-tui --test headless_tui --locked monitor
       - name: Test each crate in isolation
         continue-on-error: ${{ runner.os == 'macOS' }}
         shell: bash
