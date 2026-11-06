@@ -256,6 +256,8 @@ impl Nvml {
                     }
                 }
             }
+            // A process with compute and graphics work is in both lists, each with its total.
+            let mut on_device: HashMap<u32, u64> = HashMap::new();
             for f in [self.api.compute_procs, self.api.graphics_procs].into_iter().flatten() {
                 let mut infos = [ProcessInfo::default(); 128];
                 let mut n = infos.len() as c_uint;
@@ -264,11 +266,15 @@ impl Nvml {
                 if rc == NVML_SUCCESS {
                     for i in &infos[..(n as usize).min(infos.len())] {
                         if i.used_gpu_memory != NOT_AVAILABLE {
-                            let e = out.entry(i.pid).or_default();
-                            e.memory = e.memory.saturating_add(i.used_gpu_memory);
+                            let m = on_device.entry(i.pid).or_default();
+                            *m = (*m).max(i.used_gpu_memory);
                         }
                     }
                 }
+            }
+            for (pid, memory) in on_device {
+                let e = out.entry(pid).or_default();
+                e.memory = e.memory.saturating_add(memory);
             }
         }
         out

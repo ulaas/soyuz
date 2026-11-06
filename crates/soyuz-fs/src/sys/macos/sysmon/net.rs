@@ -82,15 +82,21 @@ fn iflist2() -> Option<Vec<u8>> {
     if rc != 0 || len == 0 {
         return None;
     }
-    let mut buf = vec![0u8; len];
-    // SAFETY: `buf` is writable for `len` bytes.
-    let rc =
-        unsafe { libc::sysctl(mib.as_mut_ptr(), 6, buf.as_mut_ptr().cast(), &raw mut len, std::ptr::null_mut(), 0) };
-    if rc != 0 {
-        return None;
+    // An interface can appear between the two calls: room to spare, and one more try.
+    for _ in 0..2 {
+        let mut buf = vec![0u8; len + len / 4];
+        let mut got = buf.len();
+        // SAFETY: `buf` is writable for `got` bytes.
+        let rc = unsafe {
+            libc::sysctl(mib.as_mut_ptr(), 6, buf.as_mut_ptr().cast(), &raw mut got, std::ptr::null_mut(), 0)
+        };
+        if rc == 0 {
+            buf.truncate(got);
+            return Some(buf);
+        }
+        len += len / 2;
     }
-    buf.truncate(len);
-    Some(buf)
+    None
 }
 
 fn addresses() -> HashMap<String, Addresses> {

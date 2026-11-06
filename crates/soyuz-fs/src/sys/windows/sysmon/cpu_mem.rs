@@ -80,6 +80,8 @@ pub(super) struct CpuRead {
 pub(super) struct CpuReader {
     buf: Vec<u64>,
     perf: Vec<u64>,
+    /// Bytes of `perf` the last read filled (`None`: it failed).
+    perf_len: Option<usize>,
     interrupts: Vec<Wrap32>,
     ctx: Wrap32,
     page_in: Wrap32,
@@ -137,7 +139,8 @@ impl CpuReader {
 
     /// Context switches; also keeps the page counters for [`Self::memory`].
     fn read_perf(&mut self) -> Option<u64> {
-        let len = query_system(SystemPerformanceInformation, &mut self.perf)?;
+        self.perf_len = query_system(SystemPerformanceInformation, &mut self.perf);
+        let len = self.perf_len?;
         if len < PERF_MIN_SIZE {
             return None;
         }
@@ -163,10 +166,16 @@ impl CpuReader {
         // the base clock times `% Processor Performance`.
         self.perf_percent.clear();
         self.perf_percent.resize(n, None);
+        // The power call answers for this thread's processor group only; other groups' CPUs
+        // have their clock from the counter.
+        let mut counter_mhz: Vec<Option<f64>> = vec![None; n];
         if hardware {
             if !self.clock_tried {
                 self.clock_tried = true;
-                self.clock = Query::with(&[r"\Processor Information(*)\% Processor Performance"]);
+                self.clock = Query::with(&[
+                    r"\Processor Information(*)\% Processor Performance",
+                    r"\Processor Information(*)\Processor Frequency",
+                ]);
             }
             if let Some(q) = &mut self.clock
                 && q.collect()
@@ -180,13 +189,21 @@ impl CpuReader {
                         *slot = Some(v);
                     }
                 });
+                q.values(1, |name, v| {
+                    if let Some(i) = cpu_of_instance(name, groups)
+                        && let Some(slot) = counter_mhz.get_mut(i)
+                    {
+                        *slot = Some(v);
+                    }
+                });
             }
         }
         for (i, core) in cores.iter_mut().enumerate() {
             let p = &self.power[i];
             let mhz = match self.perf_percent[i] {
                 Some(pct) if p.MaxMhz > 0 => (f64::from(p.MaxMhz) * pct / 100.0) as u32,
-                _ => p.CurrentMhz,
+                _ if p.CurrentMhz > 0 => p.CurrentMhz,
+                _ => counter_mhz[i].map_or(0, |v| v as u32),
             };
             core.mhz = (mhz > 0).then_some(mhz);
         }
@@ -219,9 +236,8 @@ impl CpuReader {
             m.swap_total = total * page;
             m.swap_used = used * page;
         }
-        let len = self.perf.len() * 8;
-        let b = as_bytes(&self.perf, len);
-        if len >= PERF_MIN_SIZE {
+        if let Some(len) = self.perf_len.filter(|l| *l >= PERF_MIN_SIZE) {
+            let b = as_bytes(&self.perf, len);
             if let Some(v) = u32_at(b, PERF_PAGE_READ_COUNT) {
                 m.page_in = Some(self.page_in.push(v) * page);
             }

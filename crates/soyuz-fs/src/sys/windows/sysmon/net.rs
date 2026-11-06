@@ -91,7 +91,7 @@ impl NetReader {
             tx_errors: r.OutErrors,
             up,
             virtual_if: !shape.hardware,
-            link_bps: link_speed(r.ReceiveLinkSpeed.max(r.TransmitLinkSpeed)),
+            link_bps: link_speed(r.ReceiveLinkSpeed).into_iter().chain(link_speed(r.TransmitLinkSpeed)).max(),
             addresses,
             mac: format_mac(mac),
         })
