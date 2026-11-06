@@ -74,6 +74,20 @@ windows-sys = { workspace = true, features = [
     "Win32_UI_WindowsAndMessaging",
     "Wdk_Storage_FileSystem",
     "Wdk_Foundation",
+    # System monitor (`sys/windows/sysmon/`): ntdll process and CPU tables, D3DKMT adapter
+    # data (gdi32), performance counters (pdh), network tables (iphlpapi), power
+    # (powrprof), service manager (advapi32), module snapshots (kernel32).
+    "Wdk_Graphics_Direct3D",
+    "Wdk_System_SystemInformation",
+    "Wdk_System_Threading",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Performance",
+    "Win32_System_Power",
+    "Win32_System_Services",
+    "Win32_System_SystemInformation",
 ] }
 
 [target.'cfg(unix)'.dependencies]
