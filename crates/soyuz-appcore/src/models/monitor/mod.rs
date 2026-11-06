@@ -189,7 +189,8 @@ pub struct MonitorView {
 
 impl MonitorView {
     fn new(cfg: &Monitor) -> Self {
-        let (text, regex) = if cfg.remember_filter { (cfg.filter.clone(), cfg.filter_regex) } else { Default::default() };
+        let (text, regex) =
+            if cfg.remember_filter { (cfg.filter.clone(), cfg.filter_regex) } else { Default::default() };
         let mut v = MonitorView {
             page: cfg.page,
             filter_text: String::new(),
@@ -326,19 +327,13 @@ pub fn pump(app: &mut AppCore) {
         app.ui.monitor.hub_config = Some(app.config.monitor.clone());
     }
     let tab = app.ws.tab();
-    let shown: Vec<PaneId> = tab
-        .panes
-        .iter()
-        .take(tab.shown())
-        .filter(|p| matches!(p.location, Location::Monitor))
-        .map(|p| p.id)
-        .collect();
+    let shown: Vec<PaneId> =
+        tab.panes.iter().take(tab.shown()).filter(|p| matches!(p.location, Location::Monitor)).map(|p| p.id).collect();
     let m = &mut app.ui.monitor;
     if shown.is_empty() {
         m.sub = None;
     } else {
-        let interval =
-            app.config.monitor.interval_ms.clamp(Monitor::INTERVAL_MS_MIN, Monitor::INTERVAL_MS_MAX);
+        let interval = app.config.monitor.interval_ms.clamp(Monitor::INTERVAL_MS_MIN, Monitor::INTERVAL_MS_MAX);
         let want = Want {
             processes: true,
             process_details: true,

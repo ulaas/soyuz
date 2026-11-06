@@ -14,8 +14,8 @@ use crate::sysmon::parse::misc as pmisc;
 use crate::sysmon::parse::net::{RawSocket, parse_sockets};
 use crate::sysmon::parse::pid as ppid;
 use crate::sysmon::{
-    Connection, ControlError, DetailsWant, OpenFile, ProcDetails, ProcKey, Proto, ServiceInfo, ServiceOp, ServiceState, StartupItem,
-    ThreadInfo,
+    Connection, ControlError, DetailsWant, OpenFile, ProcDetails, ProcKey, Proto, ServiceInfo, ServiceOp, ServiceState,
+    StartupItem, ThreadInfo,
 };
 
 pub fn connections() -> Vec<Connection> {

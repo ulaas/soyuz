@@ -228,8 +228,11 @@ impl ProcTable {
                 let line = ppid::cmdline_or_comm(&self.buf, &c.comm);
                 keep_or_replace(&mut c.cmdline, Some(line.as_str()));
             }
-            let cgroup =
-                if self.read_leaf(pid, "cgroup") { ppid::parse_cgroup(&String::from_utf8_lossy(&self.buf)) } else { None };
+            let cgroup = if self.read_leaf(pid, "cgroup") {
+                ppid::parse_cgroup(&String::from_utf8_lossy(&self.buf))
+            } else {
+                None
+            };
             keep_or_replace(&mut c.cgroup, cgroup.as_deref());
             c.refreshed = Some(now);
             c.filled = true;

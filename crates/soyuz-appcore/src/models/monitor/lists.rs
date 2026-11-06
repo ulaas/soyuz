@@ -36,7 +36,8 @@ impl ListFilter {
         if t.len() >= 2
             && t.starts_with('/')
             && t.ends_with('/')
-            && let Ok(re) = regex::RegexBuilder::new(&t[1..t.len() - 1]).case_insensitive(true).size_limit(1 << 20).build()
+            && let Ok(re) =
+                regex::RegexBuilder::new(&t[1..t.len() - 1]).case_insensitive(true).size_limit(1 << 20).build()
         {
             return ListFilter::Regex(re);
         }
@@ -189,7 +190,7 @@ impl Sortable for Connection {
             endpoint(&self.remote_addr, self.remote_port),
             self.state,
             process_name(frame, self.pid),
-        ) + &self.pid.map_or(String::new(), |p| format!(" {p}"))
+        ) + self.pid.map_or(String::new(), |p| format!(" {p}")).as_str()
     }
 
     fn compare(&self, o: &Self, col: u8, frame: Option<&Frame>) -> Ordering {
@@ -275,13 +276,9 @@ mod tests {
     #[test]
     fn visible_filters_and_sorts() {
         let mut l: ListState<StartupItem> = ListState::new(0, false);
-        l.rows = ["b", "A", "c"]
-            .iter()
-            .map(|n| StartupItem { name: (*n).into(), ..Default::default() })
-            .collect();
-        let names = |l: &ListState<StartupItem>| {
-            l.visible(None).iter().map(|&i| l.rows[i].name.clone()).collect::<Vec<_>>()
-        };
+        l.rows = ["b", "A", "c"].iter().map(|n| StartupItem { name: (*n).into(), ..Default::default() }).collect();
+        let names =
+            |l: &ListState<StartupItem>| l.visible(None).iter().map(|&i| l.rows[i].name.clone()).collect::<Vec<_>>();
         assert_eq!(names(&l), ["A", "b", "c"]);
         l.sort_by(0);
         assert_eq!(names(&l), ["c", "b", "A"]);

@@ -64,6 +64,7 @@ pub fn handle(app: &mut App, c: FrontendCmd) {
         }
         FrontendCmd::SelectByPattern(pane) => dialogs::pattern::open(app, pane),
         FrontendCmd::ChooseColumns(pane) => dialogs::columns::open(app, pane),
+        FrontendCmd::MonitorColumns(_) => {}
         FrontendCmd::OpenWith(path) => dialogs::open_with::open(app, path),
         FrontendCmd::MetaDialog(MetaDialog::BatchRename) => dialogs::batch_rename::open(app),
         FrontendCmd::MetaDialog(MetaDialog::Attributes) => dialogs::attributes::open(app),

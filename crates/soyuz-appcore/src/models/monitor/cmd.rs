@@ -153,7 +153,12 @@ pub enum CopyWhat {
 /// A worker's result.
 pub(super) enum Outcome {
     Toast(Toast),
-    Control { what: String, errors: Vec<(String, ControlError)>, offer_kill: Vec<ProcKey>, done: usize },
+    Control {
+        what: String,
+        errors: Vec<(String, ControlError)>,
+        offer_kill: Vec<ProcKey>,
+        done: usize,
+    },
     Affinity(PaneId, AffinityEdit),
     /// The snapshot list changed.
     SnapshotsChanged(Option<Toast>),
@@ -331,7 +336,11 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
             let name = row.raw.name.to_string();
             let what = labels::priority(p).to_string();
             spawn(app, "priority", move || match soyuz_fs::sysmon::set_priority(key, p) {
-                Ok(()) => Outcome::Toast(Toast::success(tr!("monitor-priority-set", name = name.as_str(), what = what.as_str()))),
+                Ok(()) => Outcome::Toast(Toast::success(tr!(
+                    "monitor-priority-set",
+                    name = name.as_str(),
+                    what = what.as_str()
+                ))),
                 Err(e) => Outcome::Toast(
                     Toast::error(tr!("monitor-priority-failed", name = name.as_str())).body(labels::control_error(&e)),
                 ),
@@ -370,8 +379,7 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
         }
         C::ApplyAffinity => {
             let Some(e) = app.ui.monitor.view(pane, &cfg).affinity.take() else { return };
-            let cpus: Vec<u32> =
-                e.cpus.iter().enumerate().filter(|(_, on)| **on).map(|(i, _)| i as u32).collect();
+            let cpus: Vec<u32> = e.cpus.iter().enumerate().filter(|(_, on)| **on).map(|(i, _)| i as u32).collect();
             let name = e.name.clone();
             if cpus.is_empty() {
                 app.ui.toasts.push(Toast::error(tr!("monitor-affinity-empty")));
@@ -380,7 +388,8 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
             spawn(app, "affinity", move || match soyuz_fs::sysmon::set_affinity(e.key, &cpus) {
                 Ok(()) => Outcome::Toast(Toast::success(tr!("monitor-affinity-set", name = name.as_str()))),
                 Err(err) => Outcome::Toast(
-                    Toast::error(tr!("monitor-affinity-failed", name = name.as_str())).body(labels::control_error(&err)),
+                    Toast::error(tr!("monitor-affinity-failed", name = name.as_str()))
+                        .body(labels::control_error(&err)),
                 ),
             });
         }
@@ -437,7 +446,7 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
             let verb = labels::service_op(op).to_string();
             app.frontend.push(FrontendCmd::Confirm {
                 title: tr!("monitor-service-confirm-title", what = verb.as_str(), name = name.as_str()),
-                message: tr!("monitor-service-confirm"),
+                message: tr!("monitor-service-confirm").to_string(),
                 confirm: verb,
                 on_confirm: Cmd::Monitor(pane, C::ServiceNow(name, op)),
             });
@@ -529,14 +538,16 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
             let Some((id, label)) = app.ui.monitor.view(pane, &cfg).snapshots.renaming.take() else { return };
             spawn(app, "snapshot-rename", move || match snapshot::rename(&data_dir(), &id, &label) {
                 Ok(_) => Outcome::SnapshotsChanged(None),
-                Err(e) => Outcome::SnapshotsChanged(Some(Toast::error(tr!("monitor-snapshot-failed")).body(e.to_string()))),
+                Err(e) => {
+                    Outcome::SnapshotsChanged(Some(Toast::error(tr!("monitor-snapshot-failed")).body(e.to_string())))
+                }
             });
         }
         C::CancelRename => app.ui.monitor.view(pane, &cfg).snapshots.renaming = None,
         C::DeleteSnapshot(id) => {
             let label = app.ui.monitor.view(pane, &cfg).snapshots.label_of(&id).unwrap_or(&id).to_string();
             app.frontend.push(FrontendCmd::Confirm {
-                title: tr!("monitor-snapshot-delete-title"),
+                title: tr!("monitor-snapshot-delete-title").to_string(),
                 message: tr!("monitor-snapshot-delete", label = label.as_str()),
                 confirm: tr!("common-delete").to_string(),
                 on_confirm: Cmd::Monitor(pane, C::DeleteSnapshotNow(id)),
@@ -552,7 +563,9 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
             }
             spawn(app, "snapshot-delete", move || match snapshot::delete(&data_dir(), &id) {
                 Ok(()) => Outcome::SnapshotsChanged(None),
-                Err(e) => Outcome::SnapshotsChanged(Some(Toast::error(tr!("monitor-snapshot-failed")).body(e.to_string()))),
+                Err(e) => {
+                    Outcome::SnapshotsChanged(Some(Toast::error(tr!("monitor-snapshot-failed")).body(e.to_string())))
+                }
             });
         }
         C::ExportSnapshot { id, csv } => export_snapshot(app, id, csv, cfg.snapshot_commands),
@@ -635,7 +648,7 @@ fn run_signal_worker(
         let name = frame.proc(key).map_or_else(|| key.pid.to_string(), |p| p.raw.name.to_string());
         if tree {
             let report = soyuz_sysmon::signal_tree(&frame, key, sig);
-            done += report.done;
+            done += report.done.len();
             errors.extend(report.failed.into_iter().map(|(k, e)| {
                 let n = frame.proc(k).map_or_else(|| k.pid.to_string(), |p| p.raw.name.to_string());
                 (n, e)
@@ -668,7 +681,9 @@ fn take_snapshot(app: &mut AppCore, label: String) {
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
         match result {
-            Ok(Some(m)) => Outcome::SnapshotsChanged(Some(Toast::success(tr!("monitor-snapshot-taken", label = m.label.as_str())))),
+            Ok(Some(m)) => {
+                Outcome::SnapshotsChanged(Some(Toast::success(tr!("monitor-snapshot-taken", label = m.label.as_str()))))
+            }
             Ok(None) => Outcome::SnapshotsChanged(Some(Toast::error(tr!("monitor-no-data")))),
             Err(e) => Outcome::SnapshotsChanged(Some(Toast::error(tr!("monitor-snapshot-failed")).body(e.to_string()))),
         }
