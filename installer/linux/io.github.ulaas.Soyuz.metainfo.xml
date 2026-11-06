@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.7.0" date="2026-11-06" type="development">
+      <description>
+        <p>Sharper text: LCD subpixel smoothing by default, with normal hinting and a softer text
+          colour in the Orbit themes. Text smoothing is a new setting (LCD, LCD with reversed
+          stripes, or Grayscale), and GPUs without per-channel blending stay on Grayscale.
+          Settings that still held the old defaults move to the new ones.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-11-06" type="development">
       <description>
         <p>System monitor, in a tab of the window and of the terminal UI: processes as a list or a
