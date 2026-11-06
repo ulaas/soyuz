@@ -2,17 +2,28 @@
 //! and a sort column. Frontends draw [`ListState::visible`].
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
 
 use soyuz_sysmon::fetch::Loader;
 use soyuz_sysmon::{Connection, Frame, ProcKey, ServiceInfo, StartupItem};
 
+/// Process names by PID, for one pass over a list.
+pub type Names = HashMap<u32, Arc<str>>;
+
 /// One row of a list page.
 pub trait Sortable {
     /// Text the filter searches.
-    fn haystack(&self, frame: Option<&Frame>) -> String;
+    fn haystack(&self, names: &Names) -> String;
     /// Compare by column `col`.
-    fn compare(&self, other: &Self, col: u8, frame: Option<&Frame>) -> Ordering;
+    fn compare(&self, other: &Self, col: u8, names: &Names) -> Ordering;
+    /// Whether the rows show process names.
+    fn uses_names() -> bool {
+        false
+    }
     /// Number of columns.
     fn columns() -> u8;
 }
@@ -73,7 +84,14 @@ pub struct ListState<T> {
     pub cursor: usize,
     /// Ask the frontend to put the keyboard into the filter box.
     pub focus_filter: bool,
+    /// Bumped when `rows` change.
+    version: u64,
+    /// The last [`ListState::visible`]: it is asked for several times per painted frame.
+    shown: Mutex<Option<(ShownKey, Vec<usize>)>>,
 }
+
+/// What [`ListState::visible`] depends on.
+type ShownKey = (u64, i64, String, u8, bool);
 
 impl<T: Send + 'static> ListState<T> {
     pub fn new(sort: u8, descending: bool) -> Self {
@@ -88,6 +106,8 @@ impl<T: Send + 'static> ListState<T> {
             descending,
             cursor: 0,
             focus_filter: false,
+            version: 0,
+            shown: Mutex::new(None),
         }
     }
 
@@ -98,6 +118,7 @@ impl<T: Send + 'static> ListState<T> {
             && let Some(rows) = l.poll()
         {
             self.rows = rows;
+            self.version += 1;
             self.loader = None;
             self.read_at = Some(Instant::now());
         }
@@ -131,15 +152,29 @@ impl<T: Send + 'static> ListState<T> {
 }
 
 impl<T: Sortable + Send + 'static> ListState<T> {
-    /// Indices into `rows`: filtered and sorted.
+    /// Indices into `rows`: filtered and sorted. Cached until the rows, the filter, the sort or
+    /// (for rows that show process names) the frame change.
     pub fn visible(&self, frame: Option<&Frame>) -> Vec<usize> {
+        let at = if T::uses_names() { frame.map_or(0, |f| f.at_ms) } else { 0 };
+        let key = (self.version, at, self.filter_text.clone(), self.sort, self.descending);
+        let mut shown = self.shown.lock();
+        if let Some((k, idx)) = shown.as_ref()
+            && *k == key
+        {
+            return idx.clone();
+        }
+        let names: Names = match frame {
+            Some(f) if T::uses_names() => f.procs.iter().map(|p| (p.raw.key.pid, p.raw.name.clone())).collect(),
+            _ => Names::new(),
+        };
         let mut idx: Vec<usize> = (0..self.rows.len())
-            .filter(|&i| matches!(self.filter, ListFilter::All) || self.filter.matches(&self.rows[i].haystack(frame)))
+            .filter(|&i| matches!(self.filter, ListFilter::All) || self.filter.matches(&self.rows[i].haystack(&names)))
             .collect();
         idx.sort_by(|&a, &b| {
-            let o = self.rows[a].compare(&self.rows[b], self.sort, frame);
+            let o = self.rows[a].compare(&self.rows[b], self.sort, &names);
             if self.descending { o.reverse() } else { o }
         });
+        *shown = Some((key, idx.clone()));
         idx
     }
 }
@@ -181,26 +216,34 @@ pub fn endpoint(addr: &str, port: u16) -> String {
     if addr.contains(':') { format!("[{addr}]:{port}") } else { format!("{addr}:{port}") }
 }
 
+fn name_of(names: &Names, pid: Option<u32>) -> &str {
+    pid.and_then(|p| names.get(&p)).map_or("", |n| n)
+}
+
 impl Sortable for Connection {
-    fn haystack(&self, frame: Option<&Frame>) -> String {
+    fn uses_names() -> bool {
+        true
+    }
+
+    fn haystack(&self, names: &Names) -> String {
         format!(
             "{:?} {} {} {} {}",
             self.proto,
             endpoint(&self.local_addr, self.local_port),
             endpoint(&self.remote_addr, self.remote_port),
             self.state,
-            process_name(frame, self.pid),
+            name_of(names, self.pid),
         ) + self.pid.map_or(String::new(), |p| format!(" {p}")).as_str()
     }
 
-    fn compare(&self, o: &Self, col: u8, frame: Option<&Frame>) -> Ordering {
+    fn compare(&self, o: &Self, col: u8, names: &Names) -> Ordering {
         match col {
             0 => (self.proto as u8).cmp(&(o.proto as u8)),
             1 => (&self.local_addr, self.local_port).cmp(&(&o.local_addr, o.local_port)),
             2 => (&self.remote_addr, self.remote_port).cmp(&(&o.remote_addr, o.remote_port)),
             3 => self.state.cmp(&o.state),
             4 => self.pid.cmp(&o.pid),
-            _ => process_name(frame, self.pid).to_lowercase().cmp(&process_name(frame, o.pid).to_lowercase()),
+            _ => name_of(names, self.pid).to_lowercase().cmp(&name_of(names, o.pid).to_lowercase()),
         }
         .then_with(|| self.local_port.cmp(&o.local_port))
     }
@@ -211,11 +254,11 @@ impl Sortable for Connection {
 }
 
 impl Sortable for ServiceInfo {
-    fn haystack(&self, _frame: Option<&Frame>) -> String {
+    fn haystack(&self, _names: &Names) -> String {
         format!("{} {} {} {} {:?}", self.name, self.display_name, self.description, self.start_mode, self.state)
     }
 
-    fn compare(&self, o: &Self, col: u8, _frame: Option<&Frame>) -> Ordering {
+    fn compare(&self, o: &Self, col: u8, _names: &Names) -> Ordering {
         match col {
             0 => self.display_name.to_lowercase().cmp(&o.display_name.to_lowercase()),
             1 => (self.state as u8).cmp(&(o.state as u8)),
@@ -232,11 +275,11 @@ impl Sortable for ServiceInfo {
 }
 
 impl Sortable for StartupItem {
-    fn haystack(&self, _frame: Option<&Frame>) -> String {
+    fn haystack(&self, _names: &Names) -> String {
         format!("{} {} {}", self.name, self.command, self.source)
     }
 
-    fn compare(&self, o: &Self, col: u8, _frame: Option<&Frame>) -> Ordering {
+    fn compare(&self, o: &Self, col: u8, _names: &Names) -> Ordering {
         match col {
             0 => self.name.to_lowercase().cmp(&o.name.to_lowercase()),
             1 => self.enabled.cmp(&o.enabled),

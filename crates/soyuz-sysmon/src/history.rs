@@ -884,6 +884,11 @@ impl History {
     pub fn clear(&mut self) {
         *self = History::new(self.days);
     }
+
+    /// Drop the long tier from memory (`load_coarse` brings it back from disk).
+    pub fn release_coarse(&mut self) {
+        self.coarse.clear();
+    }
 }
 
 const PROC_CAP: usize = 300;

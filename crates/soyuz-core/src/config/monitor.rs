@@ -406,6 +406,11 @@ impl Monitor {
     pub const GRAPH_SECONDS_MIN: u32 = 30;
     pub const GRAPH_SECONDS_MAX: u32 = 3_600;
     pub const HISTORY_DAYS_MAX: u32 = 90;
+
+    /// `graph_seconds` within its range (a hand-edited file can hold anything).
+    pub fn graph_span(&self) -> u32 {
+        self.graph_seconds.clamp(Self::GRAPH_SECONDS_MIN, Self::GRAPH_SECONDS_MAX)
+    }
 }
 
 /// The column set a fresh config starts with.

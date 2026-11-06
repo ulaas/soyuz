@@ -375,6 +375,9 @@ pub fn pump(app: &mut AppCore) {
         let generation = hub.generation();
         if generation != m.generation {
             if let Some(f) = hub.latest() {
+                for v in m.views.values_mut() {
+                    v.marked.retain(|k| !f.removed.contains(k));
+                }
                 m.frame = Some(f);
                 m.generation = generation;
             }
@@ -471,6 +474,10 @@ fn pump_history(h: &mut HistoryState, frame: Option<&Frame>, generation: u64, wa
     let live_step = u64::from(h.range_secs / 300).max(1);
     if h.built_for == key && generation < h.built_at + live_step {
         return;
+    }
+    // Reads of another window would land in this one.
+    if h.built_for != key {
+        h.loaders.clear();
     }
     h.built_for = key;
     h.built_at = generation;

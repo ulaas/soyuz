@@ -83,14 +83,14 @@ impl PageCtx<'_> {
 
     /// The live series of `metric` over the configured graph span.
     pub fn series(&mut self, metric: &Metric) -> Arc<Vec<Pt>> {
-        let secs = self.config.monitor.graph_seconds.clamp(Monitor::GRAPH_SECONDS_MIN, Monitor::GRAPH_SECONDS_MAX);
+        let secs = self.config.monitor.graph_span();
         self.monitor.series(metric, secs, 0)
     }
 
     /// The time span of the live charts, ending at the newest frame.
     pub fn span(&self) -> (i64, i64) {
         let to = self.frame.as_ref().map_or(0, |f| f.at_ms);
-        let secs = self.config.monitor.graph_seconds.clamp(Monitor::GRAPH_SECONDS_MIN, Monitor::GRAPH_SECONDS_MAX);
+        let secs = self.config.monitor.graph_span();
         (to - i64::from(secs) * 1000, to)
     }
 

@@ -22,7 +22,7 @@ struct Live<'a> {
 
 fn live_chart(cx: &mut Cx<'_>, m: &mut MonitorState, frame: &Frame, a: Area, spec: &Live<'_>) {
     let window = cx.window(frame);
-    let secs = cx.config.monitor.graph_seconds;
+    let secs = cx.config.monitor.graph_span();
     let width = usize::from(a.w) * 2;
     let pts: Vec<_> = spec.metrics.iter().map(|(metric, ..)| m.series(metric, secs, width)).collect();
     let series = spec.metrics.iter().zip(&pts).map(|((_, l, r), p)| series_of(l.clone(), p, *r)).collect();
@@ -106,7 +106,7 @@ pub(super) fn cpu(cx: &mut Cx<'_>, m: &mut MonitorState, frame: &Frame, a: Area)
         let title = r.take_top(1);
         cx.c.bold(title.x, title.y, title.w, tr!("tui-monitor-logical-cpus"), Role::GroupHeader);
         let window = cx.window(frame);
-        let secs = cx.config.monitor.graph_seconds;
+        let secs = cx.config.monitor.graph_span();
         for (i, core) in cores.iter().enumerate() {
             let x = r.x + (i % per_row) as u16 * (cell_w + 2);
             let y = r.y + (i / per_row) as i32;

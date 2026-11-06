@@ -163,7 +163,7 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
 
 fn draw_tile(cx: &mut Cx<'_>, m: &mut MonitorState, frame: &Frame, t: &Tile, role: Role, a: Area) {
     let window = cx.window(frame);
-    let secs = cx.config.monitor.graph_seconds;
+    let secs = cx.config.monitor.graph_span();
     let vw = text::width(&t.value) as u16;
     cx.c.bold(a.x, a.y, a.w.saturating_sub(vw + 1), &t.title, Role::Title);
     cx.c.right(a.x, a.y, a.w, &t.value, Role::Text);

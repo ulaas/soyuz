@@ -142,7 +142,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>, page: MonitorPage) {
             }
             let out = Table {
                 sort: sort_s,
-                scroll_to: Some(cursor),
+                scroll_to: scroll_when_moved(ui, id, cursor),
                 name: labels::page_title(page).to_string(),
                 ..Table::new(id, &cols, idx.len(), row_h)
             }
@@ -244,7 +244,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>, page: MonitorPage) {
             }
             let out = Table {
                 sort: sort_s,
-                scroll_to: Some(cursor),
+                scroll_to: scroll_when_moved(ui, id, cursor),
                 name: labels::page_title(page).to_string(),
                 ..Table::new(id, &cols, idx.len(), row_h)
             }
@@ -357,7 +357,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>, page: MonitorPage) {
             }
             let out = Table {
                 sort: sort_s,
-                scroll_to: Some(cursor),
+                scroll_to: scroll_when_moved(ui, id, cursor),
                 name: labels::page_title(page).to_string(),
                 ..Table::new(id, &cols, idx.len(), row_h)
             }
@@ -440,4 +440,12 @@ fn empty_line(ui: &Ui, body: Rect, p: &crate::theme::Palette, text: &str) {
         font::ui(12.5),
         p.text_tertiary,
     );
+}
+
+/// The row to bring into view: only when the cursor moved, so the wheel can leave it.
+fn scroll_when_moved(ui: &Ui, id: Id, cursor: usize) -> Option<usize> {
+    let key = id.with("last_cursor");
+    let last = ui.ctx().data(|d| d.get_temp::<usize>(key));
+    ui.ctx().data_mut(|d| d.insert_temp(key, cursor));
+    (last != Some(cursor)).then_some(cursor)
 }

@@ -426,13 +426,15 @@ fn history_on_disk(c: &Control) -> bool {
     c.config.history_persist && c.config.data_dir.is_some()
 }
 
-/// With no worker, no big table stays in memory. What is on disk comes back on the next start;
-/// without a disk the record stays. No control lock here: `with_history` closures may call the hub.
-fn release_memory(inner: &Inner, clear_history: bool) {
+/// With no worker, no big table stays in memory. The recent tiers stay, so that graphs do not
+/// start over when a monitor tab comes back; the long tier is on disk and returns on the next
+/// start (without a disk it stays too). No control lock here: `with_history` closures may call
+/// the hub.
+fn release_memory(inner: &Inner, on_disk: bool) {
     *inner.latest.write() = None;
     inner.procs.write().clear();
-    if clear_history {
-        inner.history.write().clear();
+    if on_disk {
+        inner.history.write().release_coarse();
     }
 }
 

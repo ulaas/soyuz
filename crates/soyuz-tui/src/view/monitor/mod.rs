@@ -129,7 +129,7 @@ impl Cx<'_> {
 
     /// The window of the live charts: `(from, to)`.
     pub fn window(&self, frame: &Frame) -> (i64, i64) {
-        (frame.at_ms - i64::from(self.config.monitor.graph_seconds) * 1000, frame.at_ms)
+        (frame.at_ms - i64::from(self.config.monitor.graph_span()) * 1000, frame.at_ms)
     }
 
     /// A chart, or in screen-reader mode one line that says the same.
