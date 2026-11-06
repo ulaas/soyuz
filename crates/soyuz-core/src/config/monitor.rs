@@ -378,8 +378,10 @@ pub struct Monitor {
     pub confirm_kill: bool,
     /// List virtual network interfaces (loopback, tunnels, bridges) on the Network page.
     pub show_virtual_networks: bool,
-    /// Keep recording history at `background_interval_secs` while no monitor tab is open.
+    /// While recording, keep going at `background_interval_secs` with no monitor tab open.
     pub background_history: bool,
+    /// Record history. Off: nothing is kept beyond the live graphs' recent minutes, and nothing is written.
+    pub record_history: bool,
     /// Seconds between readings when recording with no monitor tab open.
     pub background_interval_secs: u32,
     /// Write history to disk, so it survives a restart.
@@ -451,6 +453,7 @@ impl Default for Monitor {
             confirm_kill: true,
             show_virtual_networks: false,
             background_history: false,
+            record_history: false,
             background_interval_secs: 10,
             history_persist: true,
             history_days: 7,

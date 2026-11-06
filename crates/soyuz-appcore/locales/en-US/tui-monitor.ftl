@@ -198,7 +198,7 @@ tui-monitor-hint-network = v virtual · ? keys
 tui-monitor-hint-connections = / filter · < > sort · Enter process
 tui-monitor-hint-services = x start · X stop · R restart · / filter
 tui-monitor-hint-lists = / filter · < > sort · ? keys
-tui-monitor-hint-history = + - range · arrows pan · L live · , . cursor
+tui-monitor-hint-history = r record · Space pause · + - range · arrows pan · L live · , . cursor
 tui-monitor-hint-snapshots = n new · a b sides · Enter compare · ? keys
 tui-monitor-hint-compare = u unchanged · m match · / filter · Esc close
 
@@ -252,6 +252,8 @@ tui-monitor-help-lists =
     / and Esc                filter, clear the filter
     < > and I                sort column, turn the order around
 tui-monitor-help-history =
+    r                        start or stop recording
+    Space                    pause or resume recording
     + and -                  a longer or shorter range
     Left, Right              go back or forward in time
     L                        back to live
@@ -280,3 +282,11 @@ tui-monitor-help-query =
     /expr/ and /expr/i       a regular expression
     user:root                in one column: user name cmd path state pid ppid cgroup arch
     cpu>5  mem>100M          compare: cpu mem rss private threads handles read write gpu nice
+
+## Recording history
+
+tui-monitor-recording = Recording
+tui-monitor-recording-paused = Recording paused
+tui-monitor-not-recording = Not recording
+tui-monitor-rec = rec
+tui-monitor-rec-paused = rec paused

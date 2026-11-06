@@ -378,6 +378,43 @@ fn views_cycle_and_the_tree_folds() {
 }
 
 #[test]
+fn history_records_only_when_asked_and_can_pause_and_stop() {
+    match common::relaunch(module_path!(), "history_records_only_when_asked_and_can_pause_and_stop", |_| {}) {
+        Run::Child(data) => {
+            let mut r = Rig::new(config(), &data, 120, 40);
+            r.open(false);
+            r.goto(MonitorPage::History);
+            assert!(!r.app.core.config.monitor.record_history, "off by default");
+            assert!(r.screen().contains("Not recording"), "{}", r.screen());
+            // Space has nothing to hold yet.
+            r.press(key(KeyCode::Char(' ')));
+            assert!(r.screen().contains("Not recording"), "{}", r.screen());
+
+            r.press(key(KeyCode::Char('r')));
+            r.frame(&[]);
+            assert!(r.app.core.config.monitor.record_history);
+            assert!(r.screen().contains("Recording ·") && r.screen().contains("rec ·"), "{}", r.screen());
+
+            r.press(key(KeyCode::Char(' ')));
+            r.frame(&[]);
+            assert!(r.screen().contains("Recording paused"), "{}", r.screen());
+            assert!(r.app.core.config.monitor.record_history, "a pause is not a stop");
+
+            r.press(key(KeyCode::Char(' ')));
+            r.frame(&[]);
+            assert!(r.screen().contains("Recording ·"), "{}", r.screen());
+
+            r.press(key(KeyCode::Char('r')));
+            r.frame(&[]);
+            assert!(!r.app.core.config.monitor.record_history);
+            assert!(r.screen().contains("Not recording"), "{}", r.screen());
+            common::ok();
+        }
+        Run::Parent(_) => {}
+    }
+}
+
+#[test]
 fn a_column_toggled_in_the_chooser_is_saved() {
     match common::relaunch(module_path!(), "a_column_toggled_in_the_chooser_is_saved", |_| {}) {
         Run::Child(data) => {

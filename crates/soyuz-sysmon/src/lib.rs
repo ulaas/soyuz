@@ -32,7 +32,7 @@ pub use filter::{Filter, FilterError};
 pub use format::{format_duration, format_rate};
 pub use frame::{CoreFrame, Counts, CpuFrame, DiskFrame, Frame, MemFrame, NetFrame, ProcRow, state_id};
 pub use history::{Agg, AggPoint, FinePoint, History, Metric, Point, ProcHistory, ProcSample, Pt, TopProc, Tops};
-pub use hub::{Hub, HubConfig, Source, Subscription};
+pub use hub::{Hub, HubConfig, Recording, Source, Subscription};
 pub use rates::Rater;
 pub use sanitize::sanitize_text;
 pub use snapshot::{Snapshot, SnapshotMeta};

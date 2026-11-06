@@ -97,7 +97,13 @@ pub(super) fn draw(cx: &mut Cx<'_>, v: &mut MonitorView, frame: &Frame, mut a: A
     let live = h.end_ms.is_none();
     let caption = a.take_top(1);
     let when = if live { tr!("tui-monitor-history-live").to_string() } else { labels::time(to, cx.config) };
-    let left = tr!("tui-monitor-history-range", range = range_label(h.range_secs), when = when);
+    let state = match soyuz_sysmon::Hub::global().recording() {
+        soyuz_sysmon::Recording::Off => tr!("tui-monitor-not-recording"),
+        soyuz_sysmon::Recording::On => tr!("tui-monitor-recording"),
+        soyuz_sysmon::Recording::Paused => tr!("tui-monitor-recording-paused"),
+    };
+    let left =
+        format!("{state} · {}", tr!("tui-monitor-history-range", range = range_label(h.range_secs), when = when));
     cx.info(caption, &left, tr!("tui-monitor-hint-history"));
     cx.announce = format!("{}, {left}", labels::page_title(MonitorPage::History));
     // The cursor's reading sits at the bottom.

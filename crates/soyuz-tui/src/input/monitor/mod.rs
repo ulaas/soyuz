@@ -687,6 +687,13 @@ fn history_key(app: &mut App, pane: PaneId, c: KeyChord) -> bool {
     let i = HistoryState::RANGES.iter().position(|r| *r == range).unwrap_or(2);
     let width = app.input.monitor.vms.get(&pane).map_or(80, |v| v.canvas.w);
     match c.key {
+        N::R if plain => {
+            let off = soyuz_sysmon::Hub::global().recording() == soyuz_sysmon::Recording::Off;
+            push(app, pane, if off { MonitorCmd::RecordStart } else { MonitorCmd::RecordStop });
+        }
+        N::Space if plain && soyuz_sysmon::Hub::global().recording() != soyuz_sysmon::Recording::Off => {
+            push(app, pane, MonitorCmd::RecordPause);
+        }
         N::Plus | N::Equals if plain || shifted => {
             // A wider range.
             let to = (i + 1).min(HistoryState::RANGES.len() - 1);

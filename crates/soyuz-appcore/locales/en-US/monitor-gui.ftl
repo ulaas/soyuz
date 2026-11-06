@@ -246,7 +246,6 @@ monitor-gui-disabled = Disabled
 
 monitor-gui-live = Live
 monitor-gui-recorded-since = Recorded since { $time }
-monitor-gui-recording-starts = Recording starts with the first readings.
 monitor-gui-nothing-recorded = Nothing recorded for this span.
 monitor-gui-at-cursor = At the cursor
 monitor-gui-latest = Latest
@@ -360,3 +359,16 @@ settings-monitor-alert-snapshot = Snapshot on alert
 settings-monitor-alert-snapshot-desc = Take a snapshot automatically when an alert fires.
 
 monitor-gui-statusbar = { $page } · { $processes } processes, { $running } running
+
+## Recording history
+
+monitor-gui-record = Record
+monitor-gui-record-tip = Keep readings beyond the live graphs' recent minutes, on disk too. Stays on until you stop it.
+monitor-gui-record-pause = Pause
+monitor-gui-record-resume = Resume
+monitor-gui-record-stop = Stop
+monitor-gui-recording = Recording
+monitor-gui-recording-paused = Recording paused
+monitor-gui-not-recording = Not recording: live readings only
+settings-monitor-record = Record history
+settings-monitor-record-desc = Keep readings beyond the live graphs' recent minutes. The History page starts, pauses and stops it.

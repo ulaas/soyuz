@@ -77,7 +77,9 @@ pub type SourceFactory = Arc<dyn Fn() -> Box<dyn Source> + Send + Sync>;
 /// What the hub does beyond serving subscribers. See [`HubConfig::from_config`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct HubConfig {
-    /// Keep sampling with no subscriber.
+    /// Record history at all (`record_history`).
+    pub record: bool,
+    /// While recording, keep sampling with no subscriber.
     pub background_history: bool,
     pub background_interval_secs: u32,
     /// Write coarse history to `data_dir`.
@@ -104,6 +106,7 @@ impl HubConfig {
     /// The `[monitor]` settings with the app's data folder.
     pub fn from_config(cfg: &Monitor, data_dir: Option<PathBuf>) -> Self {
         HubConfig {
+            record: cfg.record_history,
             background_history: cfg.background_history,
             background_interval_secs: cfg.background_interval_secs,
             history_persist: cfg.history_persist,
@@ -116,10 +119,19 @@ impl HubConfig {
             snapshot_commands: cfg.snapshot_commands,
         }
     }
+}
 
-    fn wants_background(&self) -> bool {
-        self.background_history || self.alerts.any()
-    }
+/// Whether history is being recorded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Recording {
+    Off,
+    On,
+    /// Started and on hold; until the next start of the app at most.
+    Paused,
+}
+
+fn wants_background(c: &Control) -> bool {
+    c.config.alerts.any() || (c.config.record && c.config.background_history && !c.record_paused)
 }
 
 struct Sub {
@@ -134,6 +146,8 @@ struct Control {
     next_id: u64,
     config: HubConfig,
     paused: bool,
+    /// Recording on hold (readings and live graphs go on).
+    record_paused: bool,
     worker_running: bool,
     /// Set when configuration changed, for the worker to pick up.
     config_rev: u64,
@@ -197,6 +211,7 @@ impl Hub {
                     next_id: 1,
                     config,
                     paused: false,
+                    record_paused: false,
                     worker_running: false,
                     config_rev: 0,
                 }),
@@ -285,6 +300,23 @@ impl Hub {
         self.ensure_worker(&mut c);
         drop(c);
         self.inner.changed.notify_all();
+    }
+
+    /// Hold or resume recording. Readings and live graphs go on.
+    pub fn pause_recording(&self, paused: bool) {
+        let mut c = self.inner.control.lock();
+        c.record_paused = paused;
+        self.inner.changed.notify_all();
+    }
+
+    /// Whether history is being recorded now.
+    pub fn recording(&self) -> Recording {
+        let c = self.inner.control.lock();
+        match (c.config.record, c.record_paused) {
+            (false, _) => Recording::Off,
+            (true, false) => Recording::On,
+            (true, true) => Recording::Paused,
+        }
     }
 
     pub fn is_paused(&self) -> bool {
@@ -376,7 +408,7 @@ impl Hub {
 }
 
 fn interested(c: &Control) -> bool {
-    !c.subs.is_empty() || c.config.wants_background()
+    !c.subs.is_empty() || wants_background(c)
 }
 
 /// The combined wish of everyone interested.
@@ -386,7 +418,7 @@ fn plan(c: &Control) -> Option<(u64, Want)> {
     }
     let mut interval = u64::MAX;
     let mut want = Want { processes: false, process_details: false, process_gpu: false, hardware: false };
-    if c.config.wants_background() {
+    if wants_background(c) {
         interval = u64::from(c.config.background_interval_secs.max(1)) * 1000;
         // So that top lists in history still work.
         want.processes = true;
@@ -480,7 +512,7 @@ fn worker(inner: Arc<Inner>) {
     loop {
         // Wait until a sample is due, or leave after a long idle.
         let mut config_changed = false;
-        let (interval, want) = {
+        let (interval, want, record) = {
             let mut c = inner.control.lock();
             loop {
                 let wish = if c.paused { None } else { plan(&c) };
@@ -493,7 +525,7 @@ fn worker(inner: Arc<Inner>) {
                             config = c.config.clone();
                             config_changed = true;
                         }
-                        break (interval, want);
+                        break (interval, want, c.config.record && !c.record_paused);
                     }
                     let _ = inner.changed.wait_until(&mut c, due);
                 } else {
@@ -557,7 +589,7 @@ fn worker(inner: Arc<Inner>) {
             drop(c);
         }
         let frame = rater.push(source.sample(want));
-        publish(&inner, frame, &config, source.as_mut(), &mut watcher, &mut persist);
+        publish(&inner, frame, &config, record, source.as_mut(), &mut watcher, &mut persist);
 
         let spent = started.elapsed();
         let sleep = Duration::from_millis(interval).saturating_sub(spent).max(Duration::from_millis(MIN_SLEEP_MS));
@@ -573,12 +605,13 @@ fn publish(
     inner: &Arc<Inner>,
     frame: Frame,
     config: &HubConfig,
+    record: bool,
     source: &mut dyn Source,
     watcher: &mut AlertWatcher,
     persist: &mut Option<Persist>,
 ) {
     let frame = Arc::new(frame);
-    let finished = inner.history.write().push(&frame);
+    let finished = inner.history.write().push_as(&frame, record);
     inner.procs.write().push(&frame);
 
     if let Some(p) = persist {
@@ -822,7 +855,12 @@ mod tests {
     #[test]
     fn background_history_records_with_no_subscriber_then_stops_when_turned_off() {
         let (hub, _) = hub();
-        hub.configure(HubConfig { background_history: true, background_interval_secs: 1, ..Default::default() });
+        hub.configure(HubConfig {
+            record: true,
+            background_history: true,
+            background_interval_secs: 1,
+            ..Default::default()
+        });
         wait_until("a recorded point", || hub.with_history(|h| h.range().is_some()));
         hub.configure(HubConfig { background_history: false, ..Default::default() });
         wait_until("the worker to end", || !hub.worker_running());
@@ -856,6 +894,58 @@ mod tests {
     }
 
     #[test]
+    fn nothing_is_recorded_unless_asked() {
+        let t = tempfile::tempdir().unwrap();
+        let (hub, _) = hub();
+        hub.configure(HubConfig { data_dir: Some(t.path().to_path_buf()), ..Default::default() });
+        assert_eq!(hub.recording(), Recording::Off);
+        let s = hub.subscribe(10, Want::default(), Arc::new(|| {}));
+        wait_until("live points", || hub.with_history(|h| h.range().is_some()));
+        // The live graphs have their points, and the long tiers and the disk have nothing.
+        let (from, to) = (now_ms() - 60_000, now_ms() + 60_000);
+        assert!(!hub.with_history(|h| h.series(&Metric::CpuTotal, from, to, 0)).is_empty());
+        assert!(hub.with_history(|h| h.tops_near(to)).is_none());
+        drop(s);
+        wait_until("the worker to end", || !hub.worker_running());
+        assert!(store::load(t.path(), 7, now_ms()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn recording_can_be_paused_without_stopping_the_readings() {
+        let (hub, _) = hub();
+        hub.configure(HubConfig { record: true, ..Default::default() });
+        assert_eq!(hub.recording(), Recording::On);
+        hub.pause_recording(true);
+        assert_eq!(hub.recording(), Recording::Paused);
+        let _s = hub.subscribe(10, Want::default(), Arc::new(|| {}));
+        let g = hub.generation();
+        wait_until("readings go on", || hub.generation() > g + 2);
+        assert!(hub.with_history(|h| h.tops_near(now_ms())).is_none(), "paused: nothing recorded");
+        hub.pause_recording(false);
+        wait_until("recording again", || {
+            hub.with_history(|h| h.tops_near(now_ms())).is_some() || hub.generation() > g + 2
+        });
+        assert_eq!(hub.recording(), Recording::On);
+        hub.configure(HubConfig { record: false, ..Default::default() });
+        assert_eq!(hub.recording(), Recording::Off);
+    }
+
+    #[test]
+    fn background_recording_needs_recording_and_no_hold() {
+        let (hub, _) = hub();
+        hub.configure(HubConfig { background_history: true, background_interval_secs: 1, ..Default::default() });
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(!hub.worker_running(), "background alone does not start it");
+        hub.configure(HubConfig {
+            record: true,
+            background_history: true,
+            background_interval_secs: 1,
+            ..Default::default()
+        });
+        wait_until("the worker", || hub.worker_running());
+    }
+
+    #[test]
     fn history_is_persisted_and_loaded_on_start() {
         let t = tempfile::tempdir().unwrap();
         // Write what a previous run left: one point a minute ago.
@@ -867,6 +957,7 @@ mod tests {
         hub.set_linger(Duration::from_millis(50));
         let cfg = HubConfig {
             data_dir: Some(t.path().to_path_buf()),
+            record: true,
             history_persist: true,
             history_days: 7,
             ..Default::default()
@@ -986,7 +1077,13 @@ mod tests {
 
     #[test]
     fn the_config_comes_from_the_settings() {
-        let cfg = Monitor { background_history: true, history_days: 9, process_gpu: true, ..Default::default() };
+        let cfg = Monitor {
+            record_history: true,
+            background_history: true,
+            history_days: 9,
+            process_gpu: true,
+            ..Default::default()
+        };
         let hc = HubConfig::from_config(&cfg, Some(PathBuf::from("x")));
         assert!(hc.background_history && hc.process_gpu);
         assert_eq!(hc.history_days, 9);

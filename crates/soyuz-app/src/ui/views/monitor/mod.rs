@@ -358,6 +358,19 @@ fn draw_topbar(ui: &mut Ui, top: Rect, c: &mut PageCtx<'_>, page: MonitorPage) {
     if crate::ui::widgets::rail_button(&mut bar, glyph, tip, true, paused).clicked() {
         c.cmd(MonitorCmd::TogglePause);
     }
+    let recording = soyuz_sysmon::Hub::global().recording();
+    if recording != soyuz_sysmon::Recording::Off {
+        let on = recording == soyuz_sysmon::Recording::On;
+        let (tip, color) = if on {
+            (tr!("monitor-gui-recording"), p.danger)
+        } else {
+            (tr!("monitor-gui-recording-paused"), p.warning)
+        };
+        let (dot, resp) = bar.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+        bar.painter().circle_filled(dot.center(), 4.0, color);
+        crate::ui::a11y::name(&resp, tip);
+        resp.on_hover_text(tip);
+    }
     if controls.width() > 260.0 {
         let mut ms = c.cfg().interval_ms;
         let items: Vec<Item<u32>> =

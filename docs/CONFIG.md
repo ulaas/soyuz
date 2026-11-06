@@ -675,7 +675,8 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `temperature_unit` | `"celsius"` \| `"fahrenheit"` | `"celsius"` | Temperature unit. |
 | `confirm_kill` | boolean | `true` | Ask before ending, killing or suspending a process. |
 | `show_virtual_networks` | boolean | `false` | List virtual network interfaces (loopback, tunnels, bridges) on the Network page. |
-| `background_history` | boolean | `false` | Keep recording history at `background_interval_secs` while no monitor tab is open. |
+| `background_history` | boolean | `false` | While recording, keep going at `background_interval_secs` with no monitor tab open. |
+| `record_history` | boolean | `false` | Record history. Off: nothing is kept beyond the live graphs' recent minutes, and nothing is written. |
 | `background_interval_secs` | integer | `10` | Seconds between readings when recording with no monitor tab open. |
 | `history_persist` | boolean | `true` | Write history to disk, so it survives a restart. |
 | `history_days` | integer | `7` | Days of history kept on disk. |

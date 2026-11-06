@@ -436,6 +436,12 @@ fn strip(cx: &mut Cx<'_>, a: Area, page: MonitorPage, paused: bool) {
             secs = format!("{:.2}", f64::from(ms) / 1000.0).trim_end_matches('0').trim_end_matches('.').to_string()
         )
     };
+    // Recording shows on every page.
+    let indicator = match soyuz_sysmon::Hub::global().recording() {
+        soyuz_sysmon::Recording::Off => indicator,
+        soyuz_sysmon::Recording::On => format!("{} · {indicator}", tr!("tui-monitor-rec")),
+        soyuz_sysmon::Recording::Paused => format!("{} · {indicator}", tr!("tui-monitor-rec-paused")),
+    };
     let iw = text::width(&indicator) as u16;
     let show_indicator = a.w >= iw + 12;
     if show_indicator {

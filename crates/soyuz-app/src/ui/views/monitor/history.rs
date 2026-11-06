@@ -83,6 +83,33 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
         UiBuilder::new().max_rect(tb.shrink2(vec2(0.0, 6.0))).layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     bar.spacing_mut().item_spacing.x = 4.0;
+    // Recording: what it is doing, and what can be done about it.
+    let recording = soyuz_sysmon::Hub::global().recording();
+    match recording {
+        soyuz_sysmon::Recording::Off => {
+            if pill_button(&mut bar, Some(ph::RECORD), tr!("monitor-gui-record"), Btn::Primary)
+                .on_hover_text(tr!("monitor-gui-record-tip"))
+                .clicked()
+            {
+                pending.push(MonitorCmd::RecordStart);
+            }
+        }
+        state => {
+            let paused = state == soyuz_sysmon::Recording::Paused;
+            let (glyph, label) = if paused {
+                (ph::PLAY, tr!("monitor-gui-record-resume"))
+            } else {
+                (ph::PAUSE, tr!("monitor-gui-record-pause"))
+            };
+            if pill_button(&mut bar, Some(glyph), label, Btn::AccentSoft).clicked() {
+                pending.push(MonitorCmd::RecordPause);
+            }
+            if pill_button(&mut bar, Some(ph::STOP), tr!("monitor-gui-record-stop"), Btn::AccentSoft).clicked() {
+                pending.push(MonitorCmd::RecordStop);
+            }
+        }
+    }
+    bar.add_space(10.0);
     for r in HistoryState::RANGES {
         if chip(&mut bar, None, &range_label(r), r == range_secs).clicked() {
             pending.push(MonitorCmd::HistoryRange(r));
@@ -102,11 +129,21 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
         bar.label(egui::RichText::new(tr!("monitor-gui-live")).font(font::ui(11.5)).color(p.text_secondary));
     }
     bar.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        let text = match oldest {
-            Some(o) => tr!("monitor-gui-recorded-since", time = super::charts::clock(o, true).as_str()),
-            None => tr!("monitor-gui-recording-starts").to_string(),
+        let (state, color) = match recording {
+            soyuz_sysmon::Recording::Off => (tr!("monitor-gui-not-recording"), p.text_tertiary),
+            soyuz_sysmon::Recording::On => (tr!("monitor-gui-recording"), p.danger),
+            soyuz_sysmon::Recording::Paused => (tr!("monitor-gui-recording-paused"), p.warning),
         };
-        ui.label(egui::RichText::new(text).font(font::ui(11.0)).color(p.text_tertiary));
+        if let Some(o) = oldest {
+            let text = tr!("monitor-gui-recorded-since", time = super::charts::clock(o, true).as_str());
+            ui.label(egui::RichText::new(text).font(font::ui(11.0)).color(p.text_tertiary));
+            ui.add_space(8.0);
+        }
+        ui.label(egui::RichText::new(state).font(font::ui(11.5)).color(p.text_secondary));
+        if recording != soyuz_sysmon::Recording::Off {
+            let (dot, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
+            ui.painter().circle_filled(dot.center(), 3.5, color);
+        }
     });
     let body = Rect::from_min_max(pos2(rect.left(), tb.bottom()), rect.max);
     let wide = body.width() >= font::grow(900.0);

@@ -612,6 +612,13 @@ impl History {
     /// break the line instead. A frame not newer than the last one is dropped (clock steps
     /// must not break the time order). Returns a finished coarse point, for the disk.
     pub fn push(&mut self, frame: &Frame) -> Option<AggPoint> {
+        self.push_as(frame, true)
+    }
+
+    /// Add a frame. `record` off keeps it for the live graphs only (the fine tier): the longer
+    /// tiers and the disk get nothing, and half-filled buckets are dropped, so that a pause leaves
+    /// a gap and not a blend of the moments on either side of it.
+    pub fn push_as(&mut self, frame: &Frame, record: bool) -> Option<AggPoint> {
         if frame.first || frame.gap {
             self.pending_break = true;
             return None;
@@ -634,19 +641,23 @@ impl History {
 
         let point = self.fine_point(frame, brk);
 
-        let mut cpu_tops: Vec<&ProcRow> = Vec::with_capacity(TOP_N + 1);
-        let mut mem_tops: Vec<&ProcRow> = Vec::with_capacity(TOP_N + 1);
-        top_rows(&frame.procs, &mut cpu_tops, |r| f64::from(r.cpu_percent));
-        top_rows(&frame.procs, &mut mem_tops, |r| r.raw.rss as f64);
-
         let mut coarse_done = None;
-        let tops = (cpu_tops.as_slice(), mem_tops.as_slice());
-        if let Some(p) = Self::roll(&mut self.medium_bucket, t, MEDIUM_STEP_MS, &point, tops, &mut self.intern) {
-            Self::append(&mut self.medium, p, MEDIUM_STEP_MS, self.last_dt, MEDIUM_SPAN_MS);
-        }
-        if let Some(p) = Self::roll(&mut self.coarse_bucket, t, COARSE_STEP_MS, &point, tops, &mut self.intern) {
-            let span = self.coarse_span();
-            coarse_done = Self::append(&mut self.coarse, p, COARSE_STEP_MS, self.last_dt, span);
+        if record {
+            let mut cpu_tops: Vec<&ProcRow> = Vec::with_capacity(TOP_N + 1);
+            let mut mem_tops: Vec<&ProcRow> = Vec::with_capacity(TOP_N + 1);
+            top_rows(&frame.procs, &mut cpu_tops, |r| f64::from(r.cpu_percent));
+            top_rows(&frame.procs, &mut mem_tops, |r| r.raw.rss as f64);
+            let tops = (cpu_tops.as_slice(), mem_tops.as_slice());
+            if let Some(p) = Self::roll(&mut self.medium_bucket, t, MEDIUM_STEP_MS, &point, tops, &mut self.intern) {
+                Self::append(&mut self.medium, p, MEDIUM_STEP_MS, self.last_dt, MEDIUM_SPAN_MS);
+            }
+            if let Some(p) = Self::roll(&mut self.coarse_bucket, t, COARSE_STEP_MS, &point, tops, &mut self.intern) {
+                let span = self.coarse_span();
+                coarse_done = Self::append(&mut self.coarse, p, COARSE_STEP_MS, self.last_dt, span);
+            }
+        } else {
+            self.medium_bucket = None;
+            self.coarse_bucket = None;
         }
 
         self.fine.push_back(point);
@@ -838,6 +849,14 @@ impl History {
     pub fn full_range(&self) -> Option<(i64, i64)> {
         let (oldest, newest) = self.range()?;
         Some((self.disk_oldest.map_or(oldest, |d| d.min(oldest)), newest))
+    }
+
+    /// The oldest moment actually recorded: the long tiers and the disk, not the live graphs' points.
+    pub fn recorded_from(&self) -> Option<i64> {
+        [self.medium.front().map(|p| p.t), self.coarse.front().map(|p| p.t), self.disk_oldest]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     /// Records how far the files on disk reach back (see `store::oldest`).

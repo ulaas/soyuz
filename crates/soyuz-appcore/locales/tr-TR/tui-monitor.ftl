@@ -198,7 +198,7 @@ tui-monitor-hint-network = v sanal · ? tuşlar
 tui-monitor-hint-connections = / filtre · < > sırala · Enter süreç
 tui-monitor-hint-services = x başlat · X durdur · R yeniden başlat · / filtre
 tui-monitor-hint-lists = / filtre · < > sırala · ? tuşlar
-tui-monitor-hint-history = + - aralık · oklar kaydır · L canlı · , . imleç
+tui-monitor-hint-history = r kaydet · Boşluk duraklat · + - aralık · oklar kaydır · L canlı · , . imleç
 tui-monitor-hint-snapshots = n yeni · a b taraflar · Enter karşılaştır · ? tuşlar
 tui-monitor-hint-compare = u değişmeyen · m eşleşme · / filtre · Esc kapat
 
@@ -252,6 +252,8 @@ tui-monitor-help-lists =
     / ve Esc                 filtrele, filtreyi temizle
     < > ve I                 sıralama sütunu, sırayı ters çevir
 tui-monitor-help-history =
+    r                        kaydı başlat veya durdur
+    Boşluk                   kaydı duraklat veya sürdür
     + ve -                   daha uzun veya kısa aralık
     Sol, Sağ                 zamanda geri veya ileri git
     L                        canlıya dön
@@ -280,3 +282,11 @@ tui-monitor-help-query =
     /ifade/ ve /ifade/i      düzenli ifade
     user:root                tek sütunda: user name cmd path state pid ppid cgroup arch
     cpu>5  mem>100M          karşılaştırma: cpu mem rss private threads handles read write gpu nice
+
+## Geçmiş kaydı
+
+tui-monitor-recording = Kaydediliyor
+tui-monitor-recording-paused = Kayıt duraklatıldı
+tui-monitor-not-recording = Kayıt yok
+tui-monitor-rec = kayıt
+tui-monitor-rec-paused = kayıt duraklatıldı

@@ -246,7 +246,6 @@ monitor-gui-disabled = Devre dışı
 
 monitor-gui-live = Canlı
 monitor-gui-recorded-since = { $time } tarihinden beri kayıtta
-monitor-gui-recording-starts = Kayıt ilk okumalarla başlar.
 monitor-gui-nothing-recorded = Bu aralık için kayıt yok.
 monitor-gui-at-cursor = İmleçte
 monitor-gui-latest = En son
@@ -360,3 +359,16 @@ settings-monitor-alert-snapshot = Uyarıda anlık görüntü
 settings-monitor-alert-snapshot-desc = Bir uyarı verildiğinde kendiliğinden anlık görüntü al.
 
 monitor-gui-statusbar = { $page } · { $processes } işlem, { $running } çalışıyor
+
+## Geçmiş kaydı
+
+monitor-gui-record = Kaydet
+monitor-gui-record-tip = Okumaları canlı grafiklerin son dakikalarının ötesinde, diskte de tutar. Siz durdurana kadar açık kalır.
+monitor-gui-record-pause = Duraklat
+monitor-gui-record-resume = Sürdür
+monitor-gui-record-stop = Durdur
+monitor-gui-recording = Kaydediliyor
+monitor-gui-recording-paused = Kayıt duraklatıldı
+monitor-gui-not-recording = Kayıt yok: yalnızca canlı okumalar
+settings-monitor-record = Geçmişi kaydet
+settings-monitor-record-desc = Okumaları canlı grafiklerin son dakikalarının ötesinde tutar. Geçmiş sayfası başlatır, duraklatır ve durdurur.

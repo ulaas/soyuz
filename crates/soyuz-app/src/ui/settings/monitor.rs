@@ -203,6 +203,9 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         );
     });
     any |= group(ui, q, CTX, tr!("settings-monitor-history"), |r| {
+        r.row_kw(tr!("settings-monitor-record"), tr!("settings-monitor-record-desc"), "history start stop", |ui| {
+            switch(ui, &mut m.record_history);
+        });
         r.row_kw(
             tr!("settings-monitor-background"),
             tr!("settings-monitor-background-desc"),

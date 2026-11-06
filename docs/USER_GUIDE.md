@@ -718,15 +718,27 @@ kills. In the terminal UI, press `?` on any page for its keys:
 | F9 or k, K, t | end, kill, end with everything it started (asks first) |
 | s, r, p, a, o | suspend, resume, priority, processors, open the program's folder |
 | x, X, R | Services: start, stop, restart |
+| r, Space | History: start or stop recording, pause or resume it |
 | +, -, Left, Right, L, comma, period | History: range, back and forward, live, cursor |
 | n, F2, Del, e, a, b, Enter | Snapshots: new, rename, delete, export, left side, right side, compare |
 
 ### History
 
-History is kept in `monitor/history/` under the config folder, one file per day for
-`history_days` days (`history_persist`). Normally it is recorded only while a monitor tab is
-on screen; `background_history` keeps recording while Soyuz runs. Pick a range, drag to go
-back in time, and point at a moment to read every value and the top processes at that moment.
+Nothing is recorded until you ask. Without recording, the graphs show at most the last 15 minutes
+from memory, and nothing is written to disk.
+
+On the History page, **Record** starts recording (R in both interfaces), **Pause** holds it and
+**Resume** continues (Space), and **Stop** ends it (R again). A dot in the window's title row of the page,
+or "rec" in the terminal UI, shows that it is on, on every page. Recording stays on across restarts until you stop it; a pause lasts until you resume
+or restart Soyuz. Pausing or stopping leaves a gap in the charts, and what was already recorded stays.
+"Pause" in the title bar is different: it freezes all readings, and recording with them.
+
+While recording, readings are kept in memory and one point a minute goes to `monitor/history/`
+under the config folder, one file per day for `history_days` days (`history_persist`). It records
+while a monitor tab is on screen; `background_history` keeps it going with no tab open.
+
+Pick a range, drag to go back in time, and point at a moment to read every value and, for recorded
+moments, the top processes then.
 
 ### Snapshots and comparing
 

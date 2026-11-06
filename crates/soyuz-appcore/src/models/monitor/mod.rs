@@ -512,7 +512,7 @@ fn pump_history(h: &mut HistoryState, frame: Option<&Frame>, generation: u64, wa
     h.built_at = generation;
     let (from, to) = h.window(now);
     let hub = Hub::global();
-    h.oldest_ms = hub.with_history(|hist| hist.full_range().map(|r| r.0));
+    h.oldest_ms = hub.with_history(|hist| hist.recorded_from());
     let in_memory = hub.with_history(|hist| hist.range().is_some_and(|(oldest, _)| oldest <= from));
     for metric in history_metrics(frame) {
         if in_memory {

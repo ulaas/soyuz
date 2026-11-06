@@ -111,6 +111,11 @@ pub enum MonitorCmd {
     Service(String, ServiceOp),
     ServiceNow(String, ServiceOp),
     // ---- history ----
+    /// Start recording history (stays on across restarts until stopped).
+    RecordStart,
+    /// Hold or resume the recording.
+    RecordPause,
+    RecordStop,
     HistoryRange(u32),
     /// Pan back by (positive) or forward by (negative) seconds; live again at the end.
     HistoryPan(i64),
@@ -467,6 +472,18 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
                         .body(labels::control_error(&e)),
                 ),
             });
+        }
+        C::RecordStart => {
+            Hub::global().pause_recording(false);
+            update_config(app, host, |c| c.monitor.record_history = true);
+        }
+        C::RecordPause => {
+            let hub = Hub::global();
+            hub.pause_recording(hub.recording() != soyuz_sysmon::Recording::Paused);
+        }
+        C::RecordStop => {
+            Hub::global().pause_recording(false);
+            update_config(app, host, |c| c.monitor.record_history = false);
         }
         C::HistoryRange(s) => app.ui.monitor.view(pane, &cfg).history.range_secs = s,
         C::HistoryPan(by) => {

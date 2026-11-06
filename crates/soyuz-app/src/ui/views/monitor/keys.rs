@@ -79,6 +79,20 @@ pub fn handle(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
         }
         MonitorPage::History => {
             let range = app.core.ui.monitor.view(pane, &cfg).history.range_secs;
+            if pressed(Modifiers::NONE, Key::R) {
+                cmds.push(if soyuz_sysmon::Hub::global().recording() == soyuz_sysmon::Recording::Off {
+                    MonitorCmd::RecordStart
+                } else {
+                    MonitorCmd::RecordStop
+                });
+                took = true;
+            }
+            if pressed(Modifiers::NONE, Key::Space)
+                && soyuz_sysmon::Hub::global().recording() != soyuz_sysmon::Recording::Off
+            {
+                cmds.push(MonitorCmd::RecordPause);
+                took = true;
+            }
             if any(Key::ArrowLeft) {
                 cmds.push(MonitorCmd::HistoryPan(i64::from(range / 10)));
                 took = true;

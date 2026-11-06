@@ -23,6 +23,7 @@ For the frontend agents: everything is at the crate root unless a module is name
 | `hub.with_history(\|h: &History\| ...) -> R` | Reads history; keep it short. |
 | `hub.proc_series(ProcKey) -> Vec<ProcSample>` | Short per-process trail. |
 | `hub.pause(bool)`, `hub.is_paused()` | Freeze or resume sampling (whole process). |
+| `hub.recording() -> Recording::{Off, On, Paused}`, `hub.pause_recording(bool)` | History is recorded only with `HubConfig.record` (`[monitor] record_history`) and no hold. Otherwise frames feed only the live graphs' fine tier. |
 | `hub.take_alerts() -> Vec<Alert>` | Alerts since the last call. |
 | `hub.system_info() -> Arc<SystemInfo>` | Read once on the worker; empty until the first start. |
 | `hub.data_dir() -> Option<PathBuf>` | The configured folder. |
