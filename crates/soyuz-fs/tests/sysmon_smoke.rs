@@ -566,3 +566,34 @@ fn service_control_reports_an_unknown_service() {
     let result = sysmon::service_control("soyuz-test-no-such-service", sysmon::ServiceOp::Start);
     assert!(result.is_err(), "{result:?}");
 }
+
+/// Stops, starts and restarts a real service: only with `SOYUZ_SERVICE_TESTS=1`, on a throwaway
+/// machine with admin rights (a CI runner). Never on someone's computer.
+#[test]
+fn service_control_on_a_real_service() {
+    if std::env::var_os("SOYUZ_SERVICE_TESTS").is_none() {
+        return;
+    }
+    let name = "Spooler";
+    let state =
+        || soyuz_fs::sysmon::services().into_iter().find(|s| s.name == name).map(|s| s.state).expect("service listed");
+    let wait = |wanted: soyuz_fs::sysmon::ServiceState| {
+        let end = Instant::now() + Duration::from_secs(60);
+        while state() != wanted {
+            assert!(Instant::now() < end, "{name} did not become {wanted:?}, is {:?}", state());
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    };
+    use soyuz_fs::sysmon::{ServiceOp, ServiceState, service_control};
+    if state() != ServiceState::Running {
+        service_control(name, ServiceOp::Start).expect("first start");
+        wait(ServiceState::Running);
+    }
+    service_control(name, ServiceOp::Stop).expect("stop");
+    wait(ServiceState::Stopped);
+    service_control(name, ServiceOp::Start).expect("start");
+    wait(ServiceState::Running);
+    service_control(name, ServiceOp::Restart).expect("restart");
+    wait(ServiceState::Running);
+    println!("{name}: stop, start and restart worked");
+}
