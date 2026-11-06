@@ -647,7 +647,7 @@ All from the palette or the context menu:
 
 ## System monitor
 
-Ctrl+Shift+Y, "System monitor" in the palette, or the entry under Devices in the sidebar
+Ctrl+Shift+Y, the pulse icon beside the settings gear, "System monitor" in the palette, or the entry under Devices in the sidebar
 opens the monitor in a tab of its own (the address is `monitor:`), in the window and in the
 terminal UI. It reads the system only while a monitor tab is on screen. Two panes can show
 two pages side by side.

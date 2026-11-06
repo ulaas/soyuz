@@ -104,6 +104,7 @@ app-toolbar-back = Back
 app-toolbar-forward = Forward
 app-toolbar-up = Up
 app-toolbar-settings = Settings
+app-toolbar-monitor = System monitor
 app-toolbar-dual-pane = Dual pane (right-click: layouts, sync)
 app-toolbar-preview-pane = Preview pane
 app-toolbar-search = Search subfolders

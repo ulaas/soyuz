@@ -104,6 +104,7 @@ app-toolbar-back = Geri
 app-toolbar-forward = İleri
 app-toolbar-up = Yukarı
 app-toolbar-settings = Ayarlar
+app-toolbar-monitor = Sistem izleyici
 app-toolbar-dual-pane = Çift bölme (sağ tık: düzenler, eşitleme)
 app-toolbar-preview-pane = Önizleme bölmesi
 app-toolbar-search = Alt klasörlerde ara

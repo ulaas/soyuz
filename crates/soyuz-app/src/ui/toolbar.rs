@@ -27,8 +27,9 @@ const OMNI_MIN: f32 = 120.0;
 /// Narrower than this the path field shows nothing useful, so it is not drawn.
 const OMNI_DRAWN: f32 = 48.0;
 const FILTER_GAP: f32 = 8.0;
-/// The toolbar's buttons on the right: settings, panes, preview, search, palette, sort, view.
-const RIGHT_BUTTONS: f32 = 7.0;
+/// The toolbar's buttons on the right: settings, system monitor, panes, preview, search, palette,
+/// sort, view.
+const RIGHT_BUTTONS: f32 = 8.0;
 
 /// The filter field's width in `middle` points shared with the path field, or `None` when it
 /// folds into a button. A filter in use stays a field, whatever it costs the path.
@@ -113,6 +114,11 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 .clicked()
             {
                 app.core.cmds.push(Cmd::Action(Action::Settings));
+            }
+            if right_btn(ui, ph::PULSE, &tip(app, tr!("app-toolbar-monitor"), &Action::OpenMonitor), on_monitor)
+                .clicked()
+            {
+                app.core.cmds.push(Cmd::Action(Action::OpenMonitor));
             }
             let dual_on = app.core.ws.tab().dual;
             let glyph = if app.core.ws.tab().shown() == 4 { ph::SQUARES_FOUR } else { ph::SQUARE_SPLIT_HORIZONTAL };
