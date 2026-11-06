@@ -668,7 +668,8 @@ two pages side by side.
 | History | Everything recorded, over a range from five minutes to a week |
 | Snapshots | Saved system states, and comparing them |
 
-A value your system does not report shows as a dash, never as 0.
+A value your system does not report shows as a dash, never as 0. Without administrator rights
+macOS hides other users' CPU and memory figures, and macOS services are listed but not controlled.
 
 ### Processes
 

@@ -55,6 +55,21 @@ fn opt_bytes(v: Option<u64>) -> CellValue {
 pub fn cell(col: ProcColumn, row: &ProcRow, now_ms: i64, ncpu: u32, scale: CpuScale) -> CellValue {
     use CellValue as V;
     let r = &row.raw;
+    // No figures at all: the OS does not tell (another user's process on macOS, a zombie). These
+    // columns are not `Option`s in the record, but a dash is the truth here, not 0.
+    let unreadable = r.rss == 0 && r.threads == 0 && r.cpu_user_ms == 0 && r.cpu_system_ms == 0;
+    if unreadable
+        && matches!(
+            col,
+            ProcColumn::Cpu
+                | ProcColumn::CpuTime
+                | ProcColumn::Memory
+                | ProcColumn::MemoryPercent
+                | ProcColumn::Threads
+        )
+    {
+        return V::Missing;
+    }
     match col {
         ProcColumn::Name => V::Text(r.name.to_string()),
         ProcColumn::Pid => V::Int(i64::from(r.key.pid)),
@@ -835,6 +850,18 @@ mod tests {
         HashSet::new()
     }
 
+    #[test]
+    fn a_process_without_figures_shows_dashes_not_zeros() {
+        let mut row = crate::testutil::row(1, None, "launchd", 0.0, 0);
+        row.raw.threads = 0;
+        row.raw.cpu_user_ms = 0;
+        row.raw.cpu_system_ms = 0;
+        for col in [ProcColumn::Cpu, ProcColumn::CpuTime, ProcColumn::Memory, ProcColumn::Threads] {
+            assert_eq!(cell(col, &row, 0, 4, CpuScale::Machine), CellValue::Missing, "{col:?}");
+        }
+        row.raw.threads = 1;
+        assert_eq!(cell(ProcColumn::Memory, &row, 0, 4, CpuScale::Machine), CellValue::Bytes(0));
+    }
     #[test]
     fn list_sorts_with_a_stable_tie_break_and_missing_last() {
         let mut a = row(3, None, "a", 5.0, 0);
