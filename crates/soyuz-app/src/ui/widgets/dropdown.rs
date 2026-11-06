@@ -1105,7 +1105,9 @@ fn search_box(ui: &mut Ui, st: &mut PopupState, search_id: Id, w: f32) {
             .frame(egui::Frame::NONE)
             .hint_text(tr!("dropdown-search"))
             .desired_width(field.width())
-            .margin(Margin::symmetric(4, 6)),
+            // With no frame egui ignores `margin`: the field spans the box and centers its row.
+            .align(Align2::LEFT_CENTER)
+            .min_size(vec2(0.0, field.height())),
     );
     crate::ui::a11y::name(&resp, tr!("dropdown-search"));
     if resp.changed() {

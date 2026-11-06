@@ -434,6 +434,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
             .frame(Frame::NONE)
             .font(crate::theme::font::ui(13.0))
             .align(egui::Align2::LEFT_CENTER)
+            .min_size(vec2(0.0, inner.height()))
             .desired_width(inner.width()),
     );
     if app.core.ui.search.focus {

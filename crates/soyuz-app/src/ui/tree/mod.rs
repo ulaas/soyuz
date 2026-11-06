@@ -87,7 +87,9 @@ pub fn filter_box(ui: &mut Ui, s: &mut TreeState) {
         .hint_text(egui::RichText::new(tr!("views-tree-filter")).color(p.text_tertiary))
         .font(crate::theme::font::ui(12.5))
         .desired_width(text_rect.width())
-        .margin(egui::Margin::ZERO);
+        // With no frame egui ignores `margin`: the field spans the box and centers its row.
+        .align(Align2::LEFT_CENTER)
+        .min_size(vec2(0.0, text_rect.height()));
     let resp = child.add(edit);
     crate::ui::a11y::with(ui.ctx(), resp.id, |n| n.set_label(tr!("views-tree-filter")));
     if !s.filter.is_empty() {

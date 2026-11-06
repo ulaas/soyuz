@@ -510,7 +510,9 @@ pub fn filter_box(ui: &mut Ui, rect: Rect, id: Id, text: &str, hint: &str, focus
             .hint_text(hint)
             .desired_width(field.width())
             .font(font::ui(12.5))
-            .margin(egui::Margin::symmetric(4, 5)),
+            // With no frame egui ignores `margin`: the field spans the box and centers its row.
+            .align(Align2::LEFT_CENTER)
+            .min_size(vec2(0.0, field.height())),
     );
     crate::ui::a11y::name(&resp, hint);
     if focus {
