@@ -10,6 +10,7 @@
 //! `Cmd::Monitor`. Every blocking read goes through a `soyuz_sysmon::fetch::Loader`.
 
 pub mod cmd;
+pub mod demo;
 pub mod labels;
 pub mod lists;
 pub mod snapshots;

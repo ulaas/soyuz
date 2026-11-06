@@ -363,7 +363,8 @@ impl Runner {
                 // `monitor:<page>` switches the focused monitor pane to a page (`cpu`, `history`, …);
                 // `monitor:view=<list|tree|by_name|by_user>`, `monitor:filter=<text>` and
                 // `monitor:select=<name>` drive its process table; `monitor:stress=<n>` shows `n`
-                // synthetic processes instead of the real ones.
+                // synthetic processes instead of the real ones; `monitor:demo` a made-up machine
+                // (the website's screenshots).
                 use crate::models::monitor::MonitorCmd as M;
                 use soyuz_core::config::monitor::{MonitorPage, ProcView};
                 let pane = core.ws.pane().id;
@@ -377,6 +378,11 @@ impl Runner {
                         _ => None,
                     },
                     Some(("filter", t)) => Some(M::SetFilter(t.to_string())),
+                    None if want == "demo" => {
+                        let (frames, info) = crate::models::monitor::demo::frames();
+                        core.ui.monitor.feed_test_frames(frames, info);
+                        Some(M::Select(None))
+                    }
                     Some(("stress", n)) => {
                         core.ui.monitor.stress_frame(n.parse().unwrap_or(2000));
                         Some(M::Select(None))

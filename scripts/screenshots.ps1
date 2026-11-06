@@ -18,7 +18,7 @@
   Maximum width of the committed PNGs (default 1600).
 
 .PARAMETER Only
-  Run only the sessions whose names match (main, activity, treemap, media).
+  Run only the sessions whose names match (main, activity, treemap, monitor, media).
 
   The media session (video-player.png, media-tools.png) needs the FFmpeg libraries, from
   SOYUZ_FFMPEG_DIR or next to the exe, and an ffmpeg program for the demo video (see
@@ -202,6 +202,18 @@ try {
     Write-Config
     Write-Session @(, @(''))
     Invoke-Session 'treemap' (@('size:1600x1000', 'wait:4000') + (Shot 'treemap.png') + @('quit')) @{ SOYUZ_OPEN_TOOL = "treemap=$Demo" }
+
+    # ---- The system monitor, on a made-up machine: no real process, user or host name.
+    Write-Config @"
+[monitor]
+details_panel = false
+"@
+    Write-Session @(, @(''))
+    Invoke-Session 'monitor' (@(
+            'size:1600x1000', 'wait:2000', 'cd:monitor:', 'wait:1500', 'monitor:demo', 'wait:800'
+            'monitor:overview', 'wait:1200') + (Shot 'monitor.png') + @(
+            'monitor:processes', 'monitor:view=tree', 'wait:1200') + (Shot 'monitor-processes.png') + @(
+            'monitor:view=list', 'monitor:cpu', 'wait:1200') + (Shot 'monitor-cpu.png') + @('quit')) @{}
 
     # ---- Media: the video player in the preview pane (playing, muted so nothing is heard)
     # and the media tools dialog on the same file. Needs the libraries and the demo video;
