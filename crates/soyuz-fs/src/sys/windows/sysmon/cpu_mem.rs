@@ -8,13 +8,25 @@ use windows_sys::Wdk::System::SystemInformation::{
 };
 use windows_sys::Win32::System::Power::{CallNtPowerInformation, PROCESSOR_POWER_INFORMATION, ProcessorInformation};
 use windows_sys::Win32::System::ProcessStatus::{K32GetPerformanceInfo, PERFORMANCE_INFORMATION};
-use windows_sys::Win32::System::SystemInformation::{
-    GetNativeSystemInfo, GlobalMemoryStatusEx, MEMORYSTATUSEX, SYSTEM_INFO,
-};
+use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+use windows_sys::Win32::System::Threading::{GetActiveProcessorCount, GetActiveProcessorGroupCount};
 
 use super::pdh::Query;
 use super::{Wrap32, as_bytes, query_exact, query_system, read_pod, ticks_to_ms, u32_at};
 use crate::sysmon::{CoreRaw, CpuTimes, MemoryRaw};
+
+#[link(name = "ntdll", kind = "raw-dylib")]
+unsafe extern "system" {
+    /// The form of the system query that takes an input; here, a processor group number.
+    fn NtQuerySystemInformationEx(
+        class: i32,
+        input: *const core::ffi::c_void,
+        input_len: u32,
+        info: *mut core::ffi::c_void,
+        info_len: u32,
+        returned: *mut u32,
+    ) -> i32;
+}
 
 /// `SystemPageFileInformation`.
 const SYSTEM_PAGEFILE_INFORMATION: i32 = 18;
@@ -76,7 +88,9 @@ pub(super) struct CpuReader {
     clock: Option<Query>,
     clock_tried: bool,
     power: Vec<PROCESSOR_POWER_INFORMATION>,
-    /// `% Processor Performance` per logical CPU of the first processor group.
+    /// Logical CPUs per processor group.
+    groups: Vec<u32>,
+    /// `% Processor Performance` per logical CPU, across groups.
     perf_percent: Vec<Option<f64>>,
     threads: Option<u64>,
     handles: Option<u64>,
@@ -87,24 +101,33 @@ impl CpuReader {
         let mut total = CpuTimes::default();
         let mut cores = Vec::new();
         let mut interrupts = None;
-        // One processor group only: machines over 64 logical CPUs report their first group.
-        // The kernel takes a size that is a whole number of records, one per processor.
-        if self.buf.is_empty() {
-            self.buf.resize((processor_count() * size_of::<ProcessorTimes>()).div_ceil(8), 0);
+        if self.groups.is_empty() {
+            self.groups = processor_groups();
+            let largest = self.groups.iter().copied().max().unwrap_or(1) as usize;
+            self.buf.resize((largest * size_of::<ProcessorTimes>()).div_ceil(8), 0);
         }
-        if let Some(len) = query_exact(SystemProcessorPerformanceInformation, &mut self.buf) {
-            let bytes = as_bytes(&self.buf, len);
-            let n = len / size_of::<ProcessorTimes>();
-            self.interrupts.resize_with(n, Wrap32::default);
-            cores.reserve(n);
-            let mut count = 0u64;
-            for i in 0..n {
+        let mut count = 0u64;
+        let mut any = false;
+        for (group, &cpus) in self.groups.iter().enumerate() {
+            // The kernel takes a size that is a whole number of records, one per processor.
+            let words = (cpus as usize * size_of::<ProcessorTimes>()).div_ceil(8);
+            let Some(window) = self.buf.get_mut(..words) else { continue };
+            let Some(len) = query_group(group as u16, window) else { continue };
+            any = true;
+            let bytes = as_bytes(window, len);
+            for i in 0..len / size_of::<ProcessorTimes>() {
                 let Some(p) = read_pod::<ProcessorTimes>(bytes, i * size_of::<ProcessorTimes>()) else { break };
                 let times = processor_times(&p);
                 add(&mut total, &times);
-                count += self.interrupts[i].push(p.interrupt_count);
+                let index = cores.len();
+                if self.interrupts.len() <= index {
+                    self.interrupts.resize_with(index + 1, Wrap32::default);
+                }
+                count += self.interrupts[index].push(p.interrupt_count);
                 cores.push(CoreRaw { times, mhz: None });
             }
+        }
+        if any {
             interrupts = Some(count);
         }
         self.read_clocks(&mut cores, hardware);
@@ -149,8 +172,9 @@ impl CpuReader {
                 && q.collect()
             {
                 let out = &mut self.perf_percent;
+                let groups = &self.groups;
                 q.values(0, |name, v| {
-                    if let Some(i) = first_group_cpu(name)
+                    if let Some(i) = cpu_of_instance(name, groups)
                         && let Some(slot) = out.get_mut(i)
                     {
                         *slot = Some(v);
@@ -223,13 +247,36 @@ impl CpuReader {
     }
 }
 
-/// Logical CPUs in this process's processor group.
-fn processor_count() -> usize {
-    // SAFETY: plain struct of integers and pointers; zero is valid as output space.
-    let mut si: SYSTEM_INFO = unsafe { std::mem::zeroed() };
-    // SAFETY: `si` is writable.
-    unsafe { GetNativeSystemInfo(&mut si) };
-    (si.dwNumberOfProcessors as usize).max(1)
+/// Logical CPUs per active processor group.
+fn processor_groups() -> Vec<u32> {
+    // SAFETY: no arguments.
+    let groups = unsafe { GetActiveProcessorGroupCount() };
+    // SAFETY: a group number below the count just read.
+    let list: Vec<u32> = (0..groups).map(|g| unsafe { GetActiveProcessorCount(g) }).collect();
+    if list.iter().any(|&n| n > 0) { list } else { vec![1] }
+}
+
+/// The processor times of one group. Windows without the group form still answers for the
+/// group this process runs in, which is all it has below 64 logical CPUs.
+fn query_group(group: u16, buf: &mut [u64]) -> Option<usize> {
+    let bytes = buf.len() * 8;
+    let mut ret = 0u32;
+    // SAFETY: the input is a group number of the size we pass; `buf` is writable for `bytes`
+    // bytes; `ret` is a valid out-pointer.
+    let st = unsafe {
+        NtQuerySystemInformationEx(
+            SystemProcessorPerformanceInformation,
+            (&raw const group).cast(),
+            size_of::<u16>() as u32,
+            buf.as_mut_ptr().cast(),
+            bytes as u32,
+            &mut ret,
+        )
+    };
+    if st >= 0 {
+        return Some((ret as usize).min(bytes));
+    }
+    if group == 0 { query_exact(SystemProcessorPerformanceInformation, buf) } else { None }
 }
 
 fn processor_times(p: &ProcessorTimes) -> CpuTimes {
@@ -266,14 +313,17 @@ fn page_file_pages(b: &[u8]) -> (u64, u64) {
     (total, used)
 }
 
-/// `0,3` is logical CPU 3 of group 0; other groups and `_Total` entries give `None`.
-fn first_group_cpu(name: &[u16]) -> Option<usize> {
+/// `1,3` is logical CPU 3 of group 1, numbered across groups; `_Total` entries give `None`.
+fn cpu_of_instance(name: &[u16], groups: &[u32]) -> Option<usize> {
     let s = String::from_utf16_lossy(name);
     let (group, cpu) = s.split_once(',')?;
-    if group != "0" {
+    let group: usize = group.parse().ok()?;
+    let cpu: u32 = cpu.parse().ok()?;
+    if cpu >= *groups.get(group)? {
         return None;
     }
-    cpu.parse().ok()
+    let before: u32 = groups[..group].iter().sum();
+    Some((before + cpu) as usize)
 }
 
 #[cfg(test)]
@@ -323,10 +373,26 @@ mod tests {
     #[test]
     fn processor_instances() {
         let w = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
-        assert_eq!(first_group_cpu(&w("0,12")), Some(12));
-        assert_eq!(first_group_cpu(&w("0,_Total")), None);
-        assert_eq!(first_group_cpu(&w("_Total")), None);
-        assert_eq!(first_group_cpu(&w("1,3")), None);
+        let groups = [64, 32];
+        assert_eq!(cpu_of_instance(&w("0,12"), &groups), Some(12));
+        assert_eq!(cpu_of_instance(&w("1,3"), &groups), Some(67));
+        assert_eq!(cpu_of_instance(&w("0,_Total"), &groups), None);
+        assert_eq!(cpu_of_instance(&w("_Total"), &groups), None);
+        assert_eq!(cpu_of_instance(&w("2,0"), &groups), None);
+        assert_eq!(cpu_of_instance(&w("1,32"), &groups), None);
+    }
+
+    /// The group form of the query answers on the real machine, for the same CPUs.
+    #[test]
+    fn group_query_covers_every_processor() {
+        let groups = processor_groups();
+        let total: u32 = groups.iter().sum();
+        for (g, &cpus) in groups.iter().enumerate() {
+            let mut buf = vec![0u64; cpus as usize * size_of::<ProcessorTimes>() / 8];
+            let len = query_group(g as u16, &mut buf).expect("group query");
+            assert_eq!(len, cpus as usize * size_of::<ProcessorTimes>());
+        }
+        assert_eq!(CpuReader::default().read(false).cores.len(), total as usize);
     }
 
     /// The hand-kept offsets in the performance table agree with a documented API.

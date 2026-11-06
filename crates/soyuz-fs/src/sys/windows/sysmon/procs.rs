@@ -3,12 +3,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::mem::{offset_of, size_of};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::ptr::{null, null_mut};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use windows_sys::Wdk::System::SystemInformation::SystemProcessInformation;
 use windows_sys::Wdk::System::Threading::{NtQueryInformationProcess, ProcessCommandLineInformation};
-use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::Foundation::{FILETIME, HANDLE};
 use windows_sys::Win32::Security::{
     GetLengthSid, GetTokenInformation, LookupAccountSidW, SID_NAME_USE, TOKEN_ELEVATION, TOKEN_QUERY, TOKEN_USER,
     TokenElevation, TokenUser,
@@ -18,11 +20,11 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::SystemInformation::IMAGE_FILE_MACHINE;
 use windows_sys::Win32::System::Threading::{
-    IsWow64Process2, OpenProcess, OpenProcessToken, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-    QueryFullProcessImageNameW,
+    GetProcessTimes, IsWow64Process2, OpenProcess, OpenProcessToken, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
 };
 
-use super::super::{Handle, wide_str};
+use super::super::{Handle, ft_u64, wide_str};
 use super::gpu::ProcGpu;
 use super::{
     STATUS_INFO_LENGTH_MISMATCH, as_bytes, query_system, read_pod, text_in_buffer, ticks_to_ms, ticks_to_unix_ms,
@@ -35,6 +37,8 @@ const SYSTEM_PROCESS_ID_INFORMATION: i32 = 88;
 const DESCRIPTION_BUDGET: u32 = 16;
 /// Cached descriptions, after which the cache restarts.
 const MAX_DESCRIPTIONS: usize = 4096;
+/// A program may rewrite its command line while running (worker titles, for one).
+const CMDLINE_REFRESH: Duration = Duration::from_secs(30);
 
 /// `SYSTEM_PROCESS_INFORMATION`. Pointers and handles as `usize`: never dereferenced.
 #[repr(C)]
@@ -188,20 +192,30 @@ fn entry_name(buf: &[u8], e: &ProcEntry) -> String {
     text_in_buffer(buf, e.name_ptr, usize::from(e.name_len))
 }
 
-/// What does not change while a process runs.
-#[derive(Default)]
+/// What rarely changes while a process runs, shared with the rows it appears in.
 struct Static {
-    exe: Option<PathBuf>,
-    cmdline: Option<String>,
-    user: Option<String>,
+    name: Arc<str>,
+    session: Arc<str>,
+    kernel: bool,
+    /// The handle-based fields below were read.
+    loaded: bool,
+    exe: Option<Arc<Path>>,
+    cmdline: Option<Arc<str>>,
+    /// When the command line was last read. `None`: the process cannot be opened, so there is
+    /// nothing to refresh.
+    cmdline_at: Option<Instant>,
+    user: Option<Arc<str>>,
     elevated: Option<bool>,
-    arch: Option<String>,
+    arch: Option<Arc<str>>,
+    description: Option<Arc<str>>,
+    description_done: bool,
 }
 
 /// One sample's process rows and totals.
 #[derive(Default)]
 pub(super) struct Table {
     pub rows: Vec<ProcRaw>,
+    /// Without the idle process's one thread per CPU, which are not work.
     pub threads: u64,
     pub handles: u64,
     /// The compression store's resident size.
@@ -213,12 +227,23 @@ pub(super) struct ProcReader {
     buf: Vec<u64>,
     cache: HashMap<ProcKey, Static>,
     /// Account names per SID bytes.
-    users: HashMap<Vec<u8>, Option<String>>,
+    users: HashMap<Vec<u8>, Option<Arc<str>>>,
     /// Product descriptions per executable.
-    descriptions: HashMap<PathBuf, Option<String>>,
+    descriptions: HashMap<Arc<Path>, Option<Arc<str>>>,
+    sessions: HashMap<u32, Arc<str>>,
+    arches: HashMap<&'static str, Arc<str>>,
     seen: HashSet<ProcKey>,
     /// Scratch for image paths.
     wide: Vec<u16>,
+}
+
+/// State a sample's walk passes from row to row.
+struct Pass<'a> {
+    want: Want,
+    gpu: Option<&'a ProcGpu>,
+    description_budget: u32,
+    devices: Option<Vec<(String, String)>>,
+    now: Instant,
 }
 
 impl ProcReader {
@@ -230,16 +255,18 @@ impl ProcReader {
         let mut buf = std::mem::take(&mut self.buf);
         if let Some(len) = query_system(SystemProcessInformation, &mut buf) {
             let bytes = as_bytes(&buf, len);
-            table.rows.reserve(512);
-            let mut budget = DESCRIPTION_BUDGET;
-            let mut devices = None;
+            table.rows.reserve(self.cache.len().max(512));
+            let mut pass =
+                Pass { want, gpu, description_budget: DESCRIPTION_BUDGET, devices: None, now: Instant::now() };
             self.seen.clear();
             walk(bytes, |e, threads| {
-                let row = self.row(bytes, e, threads, want, gpu, &mut budget, &mut devices);
-                if row.name == "Memory Compression" && row.kernel {
+                let row = self.row(bytes, e, threads, &mut pass);
+                if row.kernel && &*row.name == "Memory Compression" {
                     table.compressed = Some(row.rss);
                 }
-                table.threads += u64::from(e.threads);
+                if !row.idle {
+                    table.threads += u64::from(e.threads);
+                }
                 table.handles += u64::from(e.handles);
                 table.rows.push(row);
             });
@@ -250,27 +277,52 @@ impl ProcReader {
         table
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn row(
-        &mut self,
-        bytes: &[u8],
-        e: &ProcEntry,
-        threads: &[u8],
-        want: Want,
-        gpu: Option<&ProcGpu>,
-        budget: &mut u32,
-        devices: &mut Option<Vec<(String, String)>>,
-    ) -> ProcRaw {
+    fn row(&mut self, bytes: &[u8], e: &ProcEntry, threads: &[u8], pass: &mut Pass<'_>) -> ProcRaw {
         let pid = e.pid as u32;
-        let name = entry_name(bytes, e);
-        let kernel = is_kernel(pid, &name);
-        let key = ProcKey { pid, start_ms: ticks_to_unix_ms(e.create) };
+        let idle = e.pid == 0;
+        let key = ProcKey { pid, start_ms: ticks_to_unix_ms(e.create), start_raw: e.create.max(0) as u64 };
+        self.seen.insert(key);
+        let ProcReader { cache, users, descriptions, sessions, arches, wide, .. } = self;
+        let s = cache.entry(key).or_insert_with(|| {
+            let name = entry_name(bytes, e);
+            let session = sessions.entry(e.session).or_insert_with(|| Arc::from(e.session.to_string()));
+            Static {
+                kernel: is_kernel(pid, &name),
+                name: Arc::from(name),
+                session: session.clone(),
+                loaded: false,
+                exe: None,
+                cmdline: None,
+                cmdline_at: None,
+                user: None,
+                elevated: None,
+                arch: None,
+                description: None,
+                description_done: false,
+            }
+        });
+        if pass.want.process_details && !s.kernel {
+            if s.loaded {
+                refresh_cmdline(s, key, pass.now);
+            } else {
+                load_static(s, key, users, arches, wide, &mut pass.devices, pass.now);
+            }
+            if !s.description_done
+                && let Some(exe) = &s.exe
+                && let Some(d) = description(exe, descriptions, &mut pass.description_budget)
+            {
+                s.description = d;
+                s.description_done = true;
+            }
+        }
         let mut row = ProcRaw {
             key,
-            parent: (pid != 0).then_some(e.parent as u32),
+            parent: (!idle).then_some(e.parent as u32),
+            name: s.name.clone(),
             state: state_of(threads, e.pid),
-            cpu_user_ms: ticks_to_ms(e.user),
-            cpu_system_ms: ticks_to_ms(e.kernel),
+            // The idle process's times are the machine's idle time, not work it did.
+            cpu_user_ms: if idle { 0 } else { ticks_to_ms(e.user) },
+            cpu_system_ms: if idle { 0 } else { ticks_to_ms(e.kernel) },
             rss: e.ws as u64,
             private: Some(e.private as u64),
             shared: Some((e.ws as u64).saturating_sub(e.private_ws.max(0) as u64)),
@@ -278,6 +330,8 @@ impl ProcReader {
             peak_rss: Some(e.peak_ws as u64),
             threads: e.threads,
             handles: Some(e.handles),
+            // The transfer counts cover all of a process's I/O calls: files, but also pipes,
+            // sockets and devices. They are not disk traffic alone.
             read_bytes: Some(e.read_bytes.max(0) as u64),
             write_bytes: Some(e.write_bytes.max(0) as u64),
             read_ops: Some(e.read_ops.max(0) as u64),
@@ -285,84 +339,118 @@ impl ProcReader {
             page_faults: Some(u64::from(e.page_faults)),
             priority: priority_of(e.base_priority),
             nice: Some(e.base_priority),
-            session: Some(e.session.to_string()),
-            kernel,
-            name,
+            session: Some(s.session.clone()),
+            kernel: s.kernel,
+            idle,
             ..ProcRaw::default()
         };
-        if let Some(g) = gpu {
+        if let Some(g) = pass.gpu {
             row.gpu_percent = g.percent.as_ref().map(|m| m.get(&pid).copied().unwrap_or(0.0));
             row.gpu_mem = g.mem.as_ref().map(|m| m.get(&pid).copied().unwrap_or(0));
         }
-        self.seen.insert(key);
-        if want.process_details && !kernel {
-            if !self.cache.contains_key(&key) {
-                let s = self.read_static(pid, devices);
-                self.cache.insert(key, s);
-            }
-            if let Some(s) = self.cache.get(&key) {
-                row.exe.clone_from(&s.exe);
-                row.cmdline.clone_from(&s.cmdline);
-                row.user.clone_from(&s.user);
-                row.elevated = s.elevated;
-                row.arch.clone_from(&s.arch);
-            }
-            if let Some(exe) = row.exe.as_deref() {
-                row.description = self.description(exe, budget);
-            }
+        if pass.want.process_details && !s.kernel {
+            row.exe.clone_from(&s.exe);
+            row.cmdline.clone_from(&s.cmdline);
+            row.user.clone_from(&s.user);
+            row.elevated = s.elevated;
+            row.arch.clone_from(&s.arch);
+            row.description.clone_from(&s.description);
         }
         row
     }
+}
 
-    fn name_of_sid(&mut self, sid: &[u8]) -> Option<String> {
-        if let Some(known) = self.users.get(sid) {
-            return known.clone();
-        }
-        let name = account_name(sid);
-        self.users.insert(sid.to_vec(), name.clone());
-        name
-    }
+/// A handle on `key`'s process, or `None` when it cannot be opened or the PID was reused
+/// since the table was read.
+fn open_for_reading(key: ProcKey) -> Option<Handle> {
+    // SAFETY: plain call; the result is checked by `Handle::new`.
+    let h = Handle::new(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, key.pid) }).ok()?;
+    (creation_time(h.raw()) == Some(key.start_raw)).then_some(h)
+}
 
-    fn read_static(&mut self, pid: u32, devices: &mut Option<Vec<(String, String)>>) -> Static {
-        let mut s = Static::default();
-        // SAFETY: plain call; the result is checked by `Handle::new`.
-        let opened = Handle::new(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) });
-        if let Ok(h) = &opened {
-            s.exe = image_path(h.raw(), &mut self.wide).map(PathBuf::from);
-            s.cmdline = command_line_of(h.raw());
-            s.arch = arch(h.raw());
-            if let Some(token) = open_token(h.raw()) {
-                s.elevated = elevated(token.raw());
-                s.user = self.user_of(token.raw());
-            }
+fn load_static(
+    s: &mut Static,
+    key: ProcKey,
+    users: &mut HashMap<Vec<u8>, Option<Arc<str>>>,
+    arches: &mut HashMap<&'static str, Arc<str>>,
+    wide: &mut Vec<u16>,
+    devices: &mut Option<Vec<(String, String)>>,
+    now: Instant,
+) {
+    s.loaded = true;
+    if let Some(h) = open_for_reading(key) {
+        s.exe = image_path(h.raw(), wide).map(|p| Arc::from(Path::new(&p)));
+        s.cmdline = command_line_of(h.raw()).map(Arc::from);
+        s.cmdline_at = Some(first_cmdline_time(key.pid, now));
+        s.arch = arch(h.raw()).map(|a| arches.entry(a).or_insert_with(|| Arc::from(a)).clone());
+        if let Some(token) = open_token(h.raw()) {
+            s.elevated = elevated(token.raw());
+            s.user = token_sid(token.raw()).and_then(|sid| {
+                if let Some(known) = users.get(&sid) {
+                    return known.clone();
+                }
+                let name = account_name(&sid).map(Arc::<str>::from);
+                users.insert(sid, name.clone());
+                name
+            });
         }
-        if s.exe.is_none() {
-            s.exe = protected_image_path(pid, &mut self.wide, devices).map(PathBuf::from);
-        }
-        s
     }
+    if s.exe.is_none() {
+        s.exe = protected_image_path(key.pid, wide, devices).map(|p| Arc::from(Path::new(&p)));
+    }
+}
 
-    fn user_of(&mut self, token: HANDLE) -> Option<String> {
-        let sid = token_sid(token)?;
-        self.name_of_sid(&sid)
-    }
+/// Spreads refreshes over the period by PID, so they do not all fall in one sample.
+fn first_cmdline_time(pid: u32, now: Instant) -> Instant {
+    now.checked_sub(Duration::from_secs(u64::from(pid / 4) % CMDLINE_REFRESH.as_secs())).unwrap_or(now)
+}
 
-    fn description(&mut self, exe: &Path, budget: &mut u32) -> Option<String> {
-        if let Some(known) = self.descriptions.get(exe) {
-            return known.clone();
-        }
-        if *budget == 0 {
-            return None;
-        }
-        *budget -= 1;
-        // Reading a file from a network path may stall: not cheap, so not read.
-        let d = if exe.as_os_str().as_encoded_bytes().starts_with(br"\\") { None } else { file_description(exe) };
-        if self.descriptions.len() >= MAX_DESCRIPTIONS {
-            self.descriptions.clear();
-        }
-        self.descriptions.insert(exe.to_path_buf(), d.clone());
-        d
+fn refresh_cmdline(s: &mut Static, key: ProcKey, now: Instant) {
+    let Some(at) = s.cmdline_at else { return };
+    if now.saturating_duration_since(at) < CMDLINE_REFRESH {
+        return;
     }
+    s.cmdline_at = Some(now);
+    let Some(h) = open_for_reading(key) else { return };
+    // The shared text stays when nothing changed.
+    if let Some(new) = command_line_of(h.raw())
+        && s.cmdline.as_deref() != Some(new.as_str())
+    {
+        s.cmdline = Some(Arc::from(new));
+    }
+}
+
+/// The description of `exe`: `None` when the budget for new files is used up this sample,
+/// to be asked again next time.
+fn description(
+    exe: &Arc<Path>,
+    known: &mut HashMap<Arc<Path>, Option<Arc<str>>>,
+    budget: &mut u32,
+) -> Option<Option<Arc<str>>> {
+    if let Some(d) = known.get(exe) {
+        return Some(d.clone());
+    }
+    if *budget == 0 {
+        return None;
+    }
+    *budget -= 1;
+    // Reading a file from a network path may stall: not cheap, so not read.
+    let d = if exe.as_os_str().as_encoded_bytes().starts_with(br"\\") { None } else { file_description(exe) };
+    let d = d.map(Arc::<str>::from);
+    if known.len() >= MAX_DESCRIPTIONS {
+        known.clear();
+    }
+    known.insert(exe.clone(), d.clone());
+    Some(d)
+}
+
+/// A process's creation time as the OS stores it (`ProcKey::start_raw`).
+pub(super) fn creation_time(h: HANDLE) -> Option<u64> {
+    let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+    let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+    // SAFETY: open handle; valid out-pointers.
+    let ok = unsafe { GetProcessTimes(h, &mut created, &mut exited, &mut kernel, &mut user) };
+    (ok != 0).then(|| ft_u64(&created))
 }
 
 fn image_path(h: HANDLE, wide: &mut Vec<u16>) -> Option<String> {
@@ -482,7 +570,7 @@ struct UnicodeHeader {
     buffer: usize,
 }
 
-fn arch(h: HANDLE) -> Option<String> {
+fn arch(h: HANDLE) -> Option<&'static str> {
     let mut process: IMAGE_FILE_MACHINE = 0;
     let mut native: IMAGE_FILE_MACHINE = 0;
     // SAFETY: open handle; valid out-pointers.
@@ -490,16 +578,13 @@ fn arch(h: HANDLE) -> Option<String> {
         return None;
     }
     let machine = if process == 0 { native } else { process };
-    Some(
-        match machine {
-            0x8664 => "x64",
-            0xAA64 => "arm64",
-            0x014C => "x86",
-            0x01C4 => "arm",
-            _ => return None,
-        }
-        .to_string(),
-    )
+    match machine {
+        0x8664 => Some("x64"),
+        0xAA64 => Some("arm64"),
+        0x014C => Some("x86"),
+        0x01C4 => Some("arm"),
+        _ => None,
+    }
 }
 
 fn open_token(h: HANDLE) -> Option<Handle> {
@@ -617,7 +702,7 @@ pub(super) fn threads_of_process(key: ProcKey) -> Option<Vec<ThreadInfo>> {
     let bytes = as_bytes(&buf, len);
     let mut out = None;
     walk(bytes, |e, threads| {
-        if e.pid as u32 == key.pid && (key.start_ms == 0 || ticks_to_unix_ms(e.create) == key.start_ms) {
+        if e.pid as u32 == key.pid && e.create.max(0) as u64 == key.start_raw {
             out = Some(
                 threads_of(threads)
                     .map(|t| ThreadInfo {
@@ -714,6 +799,39 @@ mod tests {
         assert_eq!(priority_of(13), Some(ProcPriority::High));
         assert_eq!(priority_of(24), Some(ProcPriority::Realtime));
         assert_eq!(priority_of(0), None);
+    }
+
+    #[test]
+    fn refreshes_are_spread_over_the_period() {
+        let now = Instant::now() + Duration::from_secs(3600);
+        let age = |pid| now.duration_since(first_cmdline_time(pid, now));
+        assert!(age(4) < CMDLINE_REFRESH);
+        assert_ne!(age(4), age(8));
+        assert!((0..4000).step_by(4).all(|pid| age(pid) < CMDLINE_REFRESH));
+    }
+
+    /// The real path: this process's row picks up a changed command line once it is due, and
+    /// keeps sharing the same text until then.
+    #[test]
+    fn command_line_refreshes_when_due() {
+        let want = Want { hardware: false, process_gpu: false, ..Want::default() };
+        let me = std::process::id();
+        let mut r = ProcReader::default();
+        let row = |t: Table| t.rows.into_iter().find(|p| p.key.pid == me).expect("this process");
+        let first = row(r.read(want, None));
+        let real = first.cmdline.clone().expect("own command line");
+        let second = row(r.read(want, None));
+        assert!(Arc::ptr_eq(&real, second.cmdline.as_ref().unwrap()), "text is shared between samples");
+        assert!(Arc::ptr_eq(first.exe.as_ref().unwrap(), second.exe.as_ref().unwrap()));
+        assert!(Arc::ptr_eq(&first.name, &second.name));
+
+        let entry = r.cache.get_mut(&first.key).unwrap();
+        entry.cmdline = Some(Arc::from("old text"));
+        entry.cmdline_at = Some(Instant::now() + Duration::from_secs(3600));
+        assert_eq!(row(r.read(want, None)).cmdline.as_deref(), Some("old text"), "not due yet");
+        let entry = r.cache.get_mut(&first.key).unwrap();
+        entry.cmdline_at = Instant::now().checked_sub(CMDLINE_REFRESH);
+        assert_eq!(row(r.read(want, None)).cmdline.as_deref(), Some(&*real), "due");
     }
 
     #[test]
