@@ -366,7 +366,7 @@ pub struct Monitor {
     pub process_icons: bool,
     /// Read per-process GPU use (the most expensive reading; refreshed every few seconds).
     pub process_gpu: bool,
-    /// Keep the selected process in view while rows reorder.
+    /// Scroll to keep the selected process in view while rows reorder. Off: the selection stays on its process and the list stays put.
     pub follow_selected: bool,
     /// What of a process's command line goes into snapshots and exports.
     pub snapshot_commands: SnapshotCommands,
@@ -444,7 +444,7 @@ impl Default for Monitor {
             details_height: 260.0,
             process_icons: true,
             process_gpu: true,
-            follow_selected: true,
+            follow_selected: false,
             snapshot_commands: SnapshotCommands::Redacted,
             heat_cells: true,
             temperature_unit: TempUnit::Celsius,

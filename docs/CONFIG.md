@@ -669,7 +669,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `details_height` | float | `260.0` | Height of the details panel in points (the terminal UI divides by 18). |
 | `process_icons` | boolean | `true` | Draw program icons in the process table (GUI). |
 | `process_gpu` | boolean | `true` | Read per-process GPU use (the most expensive reading; refreshed every few seconds). |
-| `follow_selected` | boolean | `true` | Keep the selected process in view while rows reorder. |
+| `follow_selected` | boolean | `false` | Scroll to keep the selected process in view while rows reorder. Off: the selection stays on its process and the list stays put. |
 | `snapshot_commands` | `"none"` \| `"redacted"` \| `"full"` | `"redacted"` | What of a process's command line goes into snapshots and exports. (`none`: Leave command lines out; `redacted`: Mask the values of flags that look like secrets (`--password x`, `user:pass@host`); `full`: Keep them whole) |
 | `heat_cells` | boolean | `true` | Tint table cells by load, like a heat map. |
 | `temperature_unit` | `"celsius"` \| `"fahrenheit"` | `"celsius"` | Temperature unit. |
