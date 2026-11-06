@@ -1,0 +1,36 @@
+# Font rendering lab: compare font, hinting, gamma and raster techniques on Soyuz's own
+# eframe / wgpu stack. A separate workspace (like fuzz/): not part of Soyuz's build or gates.
+#   cargo run --release --manifest-path tools/font-lab/Cargo.toml
+[package]
+name = "font-lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[workspace]
+
+[dependencies]
+# Same versions and features as the Soyuz workspace.
+eframe = { version = "=0.37.0", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland"] }
+egui = "=0.37.0"
+epaint_default_fonts = "=0.37.0"
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+# The shaper and rasterizer epaint itself uses, for the techniques egui has no mode for.
+harfrust = "0.12.0"
+vello_cpu = "0.2.0"
+png = "0.18"
+pollster = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Graphics_DirectWrite"] }
+
+# Soyuz's LCD text (third_party/README.md), for the EL technique.
+[patch.crates-io]
+epaint = { path = "../../third_party/epaint" }
+egui-wgpu = { path = "../../third_party/egui-wgpu" }
+
+[profile.release]
+opt-level = 2
+debug = false
+codegen-units = 16
