@@ -278,3 +278,11 @@ fn sysmon_signal_after_exit_is_gone() {
     assert_eq!(sysmon::signal(key, ProcSignal::Kill), Err(ControlError::Gone));
     assert_eq!(sysmon::set_priority(key, ProcPriority::Normal), Err(ControlError::Gone));
 }
+
+/// The service calls report failure on a name that does not exist (no real service is touched).
+#[test]
+fn sysmon_service_control_reports_an_unknown_service() {
+    let result =
+        soyuz_fs::sysmon::service_control("soyuz-test-no-such-service.service", soyuz_fs::sysmon::ServiceOp::Start);
+    assert!(result.is_err(), "{result:?}");
+}

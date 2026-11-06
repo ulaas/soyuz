@@ -76,6 +76,8 @@ struct CloseWalk {
     pid: u32,
     posted: u32,
     denied: u32,
+    /// Also windows owned by another (tool windows, a program whose only window is one).
+    owned_too: bool,
 }
 
 unsafe extern "system" fn close_visible(hwnd: HWND, data: LPARAM) -> BOOL {
@@ -87,7 +89,7 @@ unsafe extern "system" fn close_visible(hwnd: HWND, data: LPARAM) -> BOOL {
     // calls fail, which reads as "not this process's visible window".
     unsafe {
         GetWindowThreadProcessId(hwnd, &mut pid);
-        if pid == walk.pid && IsWindowVisible(hwnd) != 0 && GetWindow(hwnd, GW_OWNER).is_null() {
+        if pid == walk.pid && IsWindowVisible(hwnd) != 0 && (walk.owned_too || GetWindow(hwnd, GW_OWNER).is_null()) {
             if PostMessageW(hwnd, WM_CLOSE, 0, 0) != 0 {
                 walk.posted += 1;
             } else {
@@ -98,12 +100,20 @@ unsafe extern "system" fn close_visible(hwnd: HWND, data: LPARAM) -> BOOL {
     1
 }
 
-/// Ask a process to exit by closing its top-level windows.
+/// Ask a process to exit by closing its top-level windows; its owned windows only when it has
+/// no others (closing a program's main window closes those anyway).
 fn post_close(pid: u32) -> Result<(), ControlError> {
-    let mut walk = CloseWalk { pid, posted: 0, denied: 0 };
+    let mut walk = CloseWalk { pid, posted: 0, denied: 0, owned_too: false };
     // SAFETY: the callback only uses the pointer during this synchronous call.
     unsafe {
         EnumWindows(Some(close_visible), (&raw mut walk) as LPARAM);
+    }
+    if walk.posted == 0 && walk.denied == 0 {
+        walk.owned_too = true;
+        // SAFETY: as above.
+        unsafe {
+            EnumWindows(Some(close_visible), (&raw mut walk) as LPARAM);
+        }
     }
     match (walk.posted, walk.denied) {
         (0, 0) => Err(ControlError::Unsupported),

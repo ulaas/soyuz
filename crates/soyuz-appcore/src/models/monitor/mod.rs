@@ -303,6 +303,35 @@ impl MonitorState {
         self.series.clear();
     }
 
+    /// Dev script `monitor:stress=<n>`: replace the sampler with the newest frame blown up to `n`
+    /// processes in trees of ten, to measure the pages at a size this machine does not have.
+    #[doc(hidden)]
+    pub fn stress_frame(&mut self, n: usize) {
+        let Some(base) = self.frame.clone() else { return };
+        if base.procs.is_empty() {
+            return;
+        }
+        let rows: Vec<soyuz_sysmon::ProcRow> = (0..n)
+            .map(|i| {
+                let mut row = base.procs[i % base.procs.len()].clone();
+                let pid = 100_000 + i as u32;
+                row.raw.key.pid = pid;
+                row.raw.key.start_raw = pid.into();
+                row.raw.key.start_ms = i64::from(pid);
+                row.raw.parent = (i % 10 != 0).then(|| 100_000 + (i - i % 10) as u32);
+                row.raw.idle = false;
+                row.raw.kernel = false;
+                row
+            })
+            .collect();
+        let mut frame = (*base).clone();
+        frame.procs = rows.into();
+        frame.added.clear();
+        frame.removed.clear();
+        let info = (*self.info).clone();
+        self.feed_test_frames(vec![frame], info);
+    }
+
     /// The page `pane` shows, if it has a view yet.
     pub fn page_of(&self, pane: PaneId) -> Option<MonitorPage> {
         self.views.get(&pane).map(|v| v.page)

@@ -484,3 +484,84 @@ fn sample_timings() {
     );
     measure("totals only", Want { processes: false, process_details: false, process_gpu: false, hardware: false });
 }
+
+/// A window of a child of this test, off screen and never activated: `Terminate` closes it, and a
+/// process without a window answers `Unsupported`.
+#[test]
+fn terminate_closes_the_window_of_our_child() {
+    let script = r#"
+Add-Type -ReferencedAssemblies System.Windows.Forms,System.Drawing -TypeDefinition @'
+public class SoyuzTestForm : System.Windows.Forms.Form {
+    protected override bool ShowWithoutActivation { get { return true; } }
+    public SoyuzTestForm() {
+        StartPosition = System.Windows.Forms.FormStartPosition.Manual;
+        Location = new System.Drawing.Point(-4000, -4000);
+        ShowInTaskbar = false;
+    }
+}
+'@
+[System.Windows.Forms.Application]::Run((New-Object SoyuzTestForm))
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("form.ps1");
+    std::fs::write(&file, script).unwrap();
+    let log = std::fs::File::create(dir.path().join("err.txt")).unwrap();
+    let mut child = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&file)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(log)
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .expect("spawn powershell");
+    let pid = child.id();
+    let mut probe = Probe::new();
+    let key = probe.sample(Want::default()).processes.iter().find(|p| p.key.pid == pid).expect("listed").key;
+
+    // The window takes a moment to appear; until then the answer is `Unsupported`.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let closed = loop {
+        match sysmon::signal(key, ProcSignal::Terminate) {
+            Ok(()) => break true,
+            Err(ControlError::Unsupported) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            Err(e) => {
+                eprintln!("terminate: {e}");
+                break false;
+            }
+        }
+    };
+    let mut exited = false;
+    if closed {
+        let until = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < until {
+            if child.try_wait().expect("try_wait").is_some() {
+                exited = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    let err = std::fs::read_to_string(dir.path().join("err.txt")).unwrap_or_default();
+    assert!(closed, "the close request reached the window; child said: {err}");
+    assert!(exited, "the program ended after the close request");
+
+    // The windowless child: Terminate says so, and Kill is what is left.
+    let mut quiet = spawn_child();
+    let qpid = quiet.id();
+    let qkey = probe.sample(Want::default()).processes.iter().find(|p| p.key.pid == qpid).expect("listed").key;
+    assert_eq!(sysmon::signal(qkey, ProcSignal::Terminate), Err(ControlError::Unsupported));
+    sysmon::signal(qkey, ProcSignal::Kill).expect("kill");
+    let _ = quiet.wait();
+}
+
+/// The service calls report failure on a name that does not exist (no real service is touched).
+#[test]
+fn service_control_reports_an_unknown_service() {
+    let result = sysmon::service_control("soyuz-test-no-such-service", sysmon::ServiceOp::Start);
+    assert!(result.is_err(), "{result:?}");
+}
