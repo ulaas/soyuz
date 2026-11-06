@@ -7107,6 +7107,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "soyuz-sysmon"
+version = "0.5.12"
+dependencies = [
+ "chrono",
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "regex",
+ "serde",
+ "serde_json",
+ "soyuz-core",
+ "soyuz-fs",
+ "tempfile",
+]
+
+[[package]]
 name = "soyuz-term"
 version = "0.5.12"
 dependencies = [
