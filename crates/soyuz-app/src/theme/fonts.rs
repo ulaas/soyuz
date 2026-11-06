@@ -13,11 +13,10 @@
 //! [`NUMBERS`]. Icons always use [`ICONS`] / [`PHOSPHOR_FILL`], whose first font is
 //! Phosphor, so a text font with Private Use Area glyphs can never shadow an icon.
 //!
-//! Rendering: egui rasterizes glyphs with grayscale anti-aliasing (no ClearType), so
-//! fonts hinted for ClearType (Segoe UI, Consolas) look thin and soft at 100 % scaling.
-//! The defaults are therefore embedded fonts drawn well by this renderer, with
-//! `[fonts] hinting_strength` (skrifa hinting target) and `text_gamma_*` (coverage →
-//! opacity curve, see `apply.rs`) tuning the result. System font files are mapped
+//! Rendering: `[fonts] text_antialiasing` picks LCD subpixel or grayscale smoothing (LCD comes
+//! from the vendored epaint and egui-wgpu, third_party/README.md; it needs a device with
+//! dual-source blending, see [`set_lcd_supported`]). `[fonts] hinting_strength` (skrifa hinting
+//! target) and `text_gamma_*` (coverage → opacity curve, see `apply.rs`) tune the result. System font files are mapped
 //! read-only once (`soyuz_fs::mapped`; read whole where mapping isn't safe) and kept for
 //! the process lifetime.
 
@@ -25,10 +24,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use egui::epaint::text::{FontTweak, HintingTarget, SmoothHinting, VariationCoords};
+use egui::epaint::text::{FontTweak, HintingTarget, LcdOrder, SmoothHinting, VariationCoords};
 use egui::{Context, FontData, FontDefinitions, FontFamily, FontId};
 use parking_lot::Mutex;
-use soyuz_core::config::{FontRoleKind, Fonts, HintingStrength};
+use soyuz_core::config::{FontRoleKind, Fonts, HintingStrength, TextAntialiasing};
 
 use super::sysfonts;
 
@@ -461,10 +460,33 @@ pub fn hinting_target(strength: HintingStrength) -> HintingTarget {
     })
 }
 
+/// The window's renderer blends per colour channel. Only then may glyphs be LCD: anything
+/// else (OpenGL, a GPU without dual-source blending, tests) would draw those atlas texels wrong.
+static LCD_SUPPORTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Called when the GPU device is created, before fonts are installed.
+pub fn set_lcd_supported(supported: bool) {
+    LCD_SUPPORTED.store(supported, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The subpixel order to draw with (`None`: grayscale).
+fn lcd_order(setting: TextAntialiasing, supported: bool) -> Option<LcdOrder> {
+    match setting {
+        TextAntialiasing::Lcd if supported => Some(LcdOrder::Rgb),
+        TextAntialiasing::LcdBgr if supported => Some(LcdOrder::Bgr),
+        _ => None,
+    }
+}
+
 fn tweak(fonts: &Fonts) -> FontTweak {
+    let order = lcd_order(fonts.text_antialiasing, LCD_SUPPORTED.load(std::sync::atomic::Ordering::Relaxed));
+    let target = hinting_target(fonts.hinting_strength);
     FontTweak {
         hinting: Some(fonts.hinting),
-        hinting_target: hinting_target(fonts.hinting_strength),
+        hinting_target: match (target, order) {
+            (HintingTarget::Smooth(smooth), Some(order)) => HintingTarget::SmoothLcd(smooth, order),
+            _ => target,
+        },
         subpixel_binning: Some(fonts.subpixel_positioning),
         ..FontTweak::default()
     }
@@ -997,10 +1019,19 @@ mod tests {
     }
 
     #[test]
+    fn lcd_needs_a_renderer_that_can_draw_it() {
+        assert_eq!(lcd_order(TextAntialiasing::Lcd, true), Some(LcdOrder::Rgb));
+        assert_eq!(lcd_order(TextAntialiasing::LcdBgr, true), Some(LcdOrder::Bgr));
+        assert_eq!(lcd_order(TextAntialiasing::Grayscale, true), None);
+        assert_eq!(lcd_order(TextAntialiasing::Lcd, false), None);
+        assert_eq!(lcd_order(TextAntialiasing::LcdBgr, false), None);
+    }
+
+    #[test]
     fn hinting_strengths_map_to_targets() {
         let t = |s| match hinting_target(s) {
             HintingTarget::Smooth(h) => (h.light, h.symmetric_rendering, h.preserve_linear_metrics),
-            HintingTarget::Mono => panic!("mono"),
+            other => panic!("{other:?}"),
         };
         assert_eq!(t(HintingStrength::Crisp), (false, false, false));
         assert_eq!(hinting_target(HintingStrength::Normal), HintingTarget::default());

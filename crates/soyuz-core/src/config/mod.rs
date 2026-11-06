@@ -25,7 +25,7 @@ pub use ai::{
 };
 pub use ai_agent::{AiAccess, AiAgent, AiApproval, AiFolderRule, AiRiskCeiling, folder_access};
 pub use automation::{Automation, AutomationRule, Cli, RuleAction, RuleConflict, RuleKind, Scripting};
-pub use fonts::{FontRole, FontRoleKind, Fonts, HintingStrength};
+pub use fonts::{FontRole, FontRoleKind, Fonts, HintingStrength, TextAntialiasing};
 pub use keys::{
     KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
     home_context, parse_sequence,

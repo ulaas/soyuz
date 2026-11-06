@@ -304,7 +304,7 @@ fn collapsed(widths: &[f32], avail: f32) -> Vec<usize> {
 
 /// Hover fill of a crumb / chevron / button inside the (hovered) omnibar field.
 fn seg_hover(p: &crate::theme::Palette) -> Color32 {
-    mix(p.rail(Rail::FieldHover), p.text_primary, if p.dark { 0.06 } else { 0.05 })
+    mix(p.rail(Rail::FieldHover), p.ink(), if p.dark { 0.06 } else { 0.05 })
 }
 
 fn start_edit(c: &mut OmnibarCtx<'_>) {

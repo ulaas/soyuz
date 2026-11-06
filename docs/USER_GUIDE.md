@@ -838,8 +838,9 @@ Search the settings with `Ctrl+F` inside the window.
   then your installed fonts such as Segoe UI or Consolas. The *Embedded* switch ignores
   installed fonts. Each role also has a size offset, a live preview and a notice when a
   font is not installed. Under *Rendering*: hinting, hinting strength (*Crisp* is the
-  sharpest at 100 % scaling), sub-pixel positioning and the text weight for dark and light
-  themes.
+  sharpest at 100 % scaling), sub-pixel positioning, text smoothing (*LCD* by default; *LCD (BGR)*
+  for panels with reversed stripes, *Grayscale* for no colour at glyph edges) and the text weight
+  for dark and light themes.
 - *Folder colors*: right-click folders → **Folder color** for a color and an emblem; it
   shows on the folder icon, in the breadcrumb and on tabs.
 - *Keyboard*: presets (Explorer, Commander, Finder, Vim), click any shortcut to record a new

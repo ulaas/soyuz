@@ -102,6 +102,9 @@ pub struct Fonts {
     pub subpixel_positioning: bool,
     /// How hard hinting snaps the outlines to the pixel grid (with `hinting = true`).
     pub hinting_strength: HintingStrength,
+    /// How glyph edges are smoothed: per colour stripe of an LCD panel (sharper at 100 %
+    /// scaling), or grayscale. A GPU or renderer without per-channel blending uses grayscale.
+    pub text_antialiasing: TextAntialiasing,
     /// Text weight on dark themes: the gamma that maps glyph coverage to opacity (lower =
     /// heavier, 1.0 = linear; 0 = egui's built-in `2c - c²` curve, close to 0.5).
     pub text_gamma_dark: f32,
@@ -109,14 +112,27 @@ pub struct Fonts {
     pub text_gamma_light: f32,
 }
 
+/// `[fonts] text_antialiasing`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TextAntialiasing {
+    /// LCD subpixel smoothing for panels with red, green, blue stripes (most of them).
+    #[default]
+    Lcd,
+    /// LCD subpixel smoothing for panels with blue, green, red stripes.
+    LcdBgr,
+    /// One coverage per pixel: no colour at glyph edges.
+    Grayscale,
+}
+
 /// `[fonts] hinting_strength`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum HintingStrength {
     /// Snap stems horizontally and vertically: the sharpest text at 100 % scaling.
-    #[default]
     Crisp,
     /// egui's default: snap vertically, keep the unhinted letter widths.
+    #[default]
     Normal,
     /// Only snap heights (FreeType's "light" mode): truest shapes, softer stems.
     Light,
@@ -142,7 +158,8 @@ impl Default for Fonts {
             hinting: true,
             subpixel_positioning: true,
             hinting_strength: HintingStrength::default(),
-            text_gamma_dark: 0.45,
+            text_antialiasing: TextAntialiasing::default(),
+            text_gamma_dark: 0.8,
             text_gamma_light: 0.8,
         }
     }

@@ -13,7 +13,7 @@ use crate::time::DateFormat;
 use super::keys::KeyPreset;
 
 /// Current schema version written by [`save_pretty`](super::save_pretty).
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

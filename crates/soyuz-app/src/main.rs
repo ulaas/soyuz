@@ -475,6 +475,12 @@ Run `soyuz <command> --help` for usage."
             soyuz_app::devscript::startup_mark("adapter chosen");
             let mut d = device_descriptor(adapter);
             low_gpu_memory(&mut d, gpu_memory);
+            // LCD text needs per-channel blending (`[fonts] text_antialiasing`).
+            let dual_source = adapter.features().contains(eframe::wgpu::Features::DUAL_SOURCE_BLENDING);
+            if dual_source {
+                d.required_features |= eframe::wgpu::Features::DUAL_SOURCE_BLENDING;
+            }
+            soyuz_app::theme::fonts::set_lcd_supported(dual_source);
             d
         });
     }

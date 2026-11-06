@@ -3,7 +3,7 @@
 //! preview in that role's font and a notice when the font is not installed.
 
 use egui::{Align, FontId, Layout, Margin, RichText, Ui};
-use soyuz_core::config::{Config, FontRoleKind, Fonts, HintingStrength};
+use soyuz_core::config::{Config, FontRoleKind, Fonts, HintingStrength, TextAntialiasing};
 
 use super::widgets::{dd, group, number, segmented, small_button, switch, text_choice};
 use crate::app::SoyuzApp;
@@ -136,6 +136,22 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                         ],
                     );
                 });
+            },
+        );
+        r.row_kw(
+            tr!("settings-fonts-antialiasing"),
+            tr!("settings-fonts-antialiasing-desc"),
+            "smoothing cleartype subpixel lcd grayscale sharp blurry colour fringe",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.fonts.text_antialiasing,
+                    &[
+                        (TextAntialiasing::Lcd, tr!("settings-fonts-antialiasing-lcd")),
+                        (TextAntialiasing::LcdBgr, tr!("settings-fonts-antialiasing-lcd-bgr")),
+                        (TextAntialiasing::Grayscale, tr!("settings-fonts-antialiasing-grayscale")),
+                    ],
+                );
             },
         );
         r.row_kw(

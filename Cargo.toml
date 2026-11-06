@@ -215,3 +215,6 @@ codegen-units = 16
 # Remove once a crates.io egui-phosphor depends on egui 0.37.
 [patch.crates-io]
 egui-phosphor = { path = "third_party/egui-phosphor" }
+# LCD subpixel text (third_party/README.md).
+epaint = { path = "third_party/epaint" }
+egui-wgpu = { path = "third_party/egui-wgpu" }

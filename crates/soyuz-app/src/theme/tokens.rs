@@ -143,16 +143,22 @@ impl Palette {
         contrast(self.border_subtle, self.bg_window) >= 3.0
     }
 
+    /// What hover and press tints mix towards: independent of the text colour, which can
+    /// be dim, so tinted surfaces stay as visible as they were.
+    pub fn ink(&self) -> Color32 {
+        if self.dark { Color32::from_rgb(0xE6, 0xE8, 0xEC) } else { Color32::from_rgb(0x17, 0x1A, 0x20) }
+    }
+
     /// Fills of the borderless toolbar rail (omnibar, filter, icon buttons), derived
     /// from the palette so every theme gets them. The fields rest on `bg.surface1`.
     pub fn rail(&self, state: Rail) -> Color32 {
         let field = self.bg_surface1;
         match state {
             Rail::Field => field,
-            Rail::FieldHover => mix(field, self.text_primary, 0.045),
+            Rail::FieldHover => mix(field, self.ink(), 0.045),
             Rail::FieldFocus => mix(field, self.accent, if self.dark { 0.13 } else { 0.07 }),
-            Rail::ButtonHover => mix(self.bg_window, self.text_primary, if self.dark { 0.07 } else { 0.055 }),
-            Rail::ButtonPressed => mix(self.bg_window, self.text_primary, if self.dark { 0.12 } else { 0.10 }),
+            Rail::ButtonHover => mix(self.bg_window, self.ink(), if self.dark { 0.07 } else { 0.055 }),
+            Rail::ButtonPressed => mix(self.bg_window, self.ink(), if self.dark { 0.12 } else { 0.10 }),
             Rail::ButtonFocus => mix(self.bg_window, self.accent, if self.dark { 0.28 } else { 0.18 }),
         }
     }
@@ -163,17 +169,13 @@ impl Palette {
         if self.dark {
             (mix(self.bg_window, Color32::BLACK, 0.32), Color32::from_black_alpha(150), Color32::from_white_alpha(14))
         } else {
-            (
-                mix(self.bg_window, self.text_primary, 0.065),
-                Color32::from_black_alpha(34),
-                Color32::from_white_alpha(200),
-            )
+            (mix(self.bg_window, self.ink(), 0.065), Color32::from_black_alpha(34), Color32::from_white_alpha(200))
         }
     }
 
     /// Hover fill of an inactive tab.
     pub fn tab_hover(&self) -> Color32 {
-        mix(self.bg_window, self.text_primary, if self.dark { 0.05 } else { 0.04 })
+        mix(self.bg_window, self.ink(), if self.dark { 0.05 } else { 0.04 })
     }
 
     /// The slanted separators between inactive tabs.

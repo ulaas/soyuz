@@ -54,7 +54,25 @@ pub const MIGRATIONS: &[Migration] = &[
         describe: "fonts: the code font (text previews, editor) defaults to Hack instead of Cascadia Mono",
         apply: code_font_v5,
     },
+    Migration {
+        from: 5,
+        describe: "fonts: LCD text with normal hinting and gamma 0.8 replaces crisp hinting and gamma 0.45",
+        apply: lcd_text_v6,
+    },
 ];
+
+/// v5 → v6: the new text look. Saved configs carry every key, so a file still holding the
+/// old defaults moves to the new ones; other values were chosen, and stay.
+fn lcd_text_v6(doc: &mut DocumentMut) -> Result<(), String> {
+    let Some(fonts) = doc.get_mut("fonts").and_then(|f| f.as_table_like_mut()) else { return Ok(()) };
+    if fonts.get("hinting_strength").and_then(|v| v.as_str()) == Some("crisp") {
+        fonts.insert("hinting_strength", value("normal"));
+    }
+    if fonts.get("text_gamma_dark").and_then(|v| v.as_float()).is_some_and(|g| (g - 0.45).abs() < 1e-6) {
+        fonts.insert("text_gamma_dark", value(0.8));
+    }
+    Ok(())
+}
 
 /// v4 → v5: the code role (text / code previews, the editor, other monospace text)
 /// defaults to the embedded Hack. Saved configs carry every key, so a `[fonts.code]
@@ -296,6 +314,19 @@ mod tests {
         Migration { from: 1, describe: "rename old_name", apply: rename_key },
         Migration { from: 2, describe: "add [extra]", apply: add_section },
     ];
+
+    #[test]
+    fn lcd_text_moves_old_defaults_only() {
+        let step = [Migration { from: 5, describe: "lcd", apply: lcd_text_v6 }];
+        let old = "schema = 5\n[fonts]\nhinting_strength = \"crisp\"\ntext_gamma_dark = 0.45\n";
+        let (out, _) = migrate_text_with(old, &step, 6).unwrap().unwrap();
+        assert!(out.contains("\"normal\"") && out.contains("text_gamma_dark = 0.8"), "{out}");
+        let chosen = "schema = 5\n[fonts]\nhinting_strength = \"light\"\ntext_gamma_dark = 0.6\n";
+        let (out, _) = migrate_text_with(chosen, &step, 6).unwrap().unwrap();
+        assert!(out.contains("\"light\"") && out.contains("text_gamma_dark = 0.6"), "{out}");
+        let (out, _) = migrate_text_with("schema = 5\n", &step, 6).unwrap().unwrap();
+        assert_eq!(out, "schema = 6\n");
+    }
 
     #[test]
     fn registered_table_is_consistent() {

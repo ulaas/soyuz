@@ -597,7 +597,7 @@ fn pill_colors(p: &Palette, kind: Btn, hover: f32, pressed: bool) -> (Color32, C
         }
         Btn::Secondary => {
             let bg = mix(p.bg_surface2, p.bg_surface3, hover);
-            let bg = if pressed { mix(p.bg_surface3, p.text_primary, 0.08) } else { bg };
+            let bg = if pressed { mix(p.bg_surface3, p.ink(), 0.08) } else { bg };
             (bg, p.text_primary, Some(p.border_subtle))
         }
         Btn::DangerSoft => {

@@ -90,7 +90,7 @@ written as a list of quoted values is an enumeration: use one of them.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `schema` | integer | `5` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
+| `schema` | integer | `6` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
 
 ## `[general]`
 
@@ -162,8 +162,9 @@ written as a list of quoted values is an enumeration: use one of them.
 |---|---|---|---|
 | `hinting` | boolean | `true` | TrueType hinting: snap stems to the pixel grid (crisper text at small sizes). |
 | `subpixel_positioning` | boolean | `true` | Sub-pixel glyph positioning: more even letter spacing, slightly softer stems. |
-| `hinting_strength` | `"crisp"` \| `"normal"` \| `"light"` | `"crisp"` | How hard hinting snaps the outlines to the pixel grid (with `hinting = true`). (`crisp`: Snap stems horizontally and vertically: the sharpest text at 100 % scaling; `normal`: egui's default: snap vertically, keep the unhinted letter widths; `light`: Only snap heights (FreeType's "light" mode): truest shapes, softer stems) |
-| `text_gamma_dark` | float | `0.45` | Text weight on dark themes: the gamma that maps glyph coverage to opacity (lower = heavier, 1.0 = linear; 0 = egui's built-in `2c - c²` curve, close to 0.5). |
+| `hinting_strength` | `"crisp"` \| `"normal"` \| `"light"` | `"normal"` | How hard hinting snaps the outlines to the pixel grid (with `hinting = true`). (`crisp`: Snap stems horizontally and vertically: the sharpest text at 100 % scaling; `normal`: egui's default: snap vertically, keep the unhinted letter widths; `light`: Only snap heights (FreeType's "light" mode): truest shapes, softer stems) |
+| `text_antialiasing` | `"lcd"` \| `"lcd_bgr"` \| `"grayscale"` | `"lcd"` | How glyph edges are smoothed: per colour stripe of an LCD panel (sharper at 100 % scaling), or grayscale. A GPU or renderer without per-channel blending uses grayscale. (`lcd`: LCD subpixel smoothing for panels with red, green, blue stripes (most of them); `lcd_bgr`: LCD subpixel smoothing for panels with blue, green, red stripes; `grayscale`: One coverage per pixel: no colour at glyph edges) |
+| `text_gamma_dark` | float | `0.8` | Text weight on dark themes: the gamma that maps glyph coverage to opacity (lower = heavier, 1.0 = linear; 0 = egui's built-in `2c - c²` curve, close to 0.5). |
 | `text_gamma_light` | float | `0.8` | Text weight on light themes (same scale; 1.0 = linear coverage, egui's default). |
 
 ## `[fonts.ui]`
