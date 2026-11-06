@@ -157,7 +157,18 @@ pub fn style(p: &Palette, font_size: f32, reduced_motion: bool) -> egui::Style {
     sp.tooltip_width = 360.0;
     sp.menu_spacing = 4.0;
     sp.scroll =
-        ScrollStyle { bar_width: 8.0, floating: true, floating_allocated_width: 0.0, ..ScrollStyle::floating() };
+        ScrollStyle {
+            bar_width: 8.0,
+            floating: true,
+            floating_allocated_width: 0.0,
+            // The handle is painted in the primary text colour (near white in dark themes, near
+            // black in light ones): quiet at rest, clear under the pointer, no track behind it.
+            active_handle_opacity: 0.24,
+            interact_handle_opacity: 0.5,
+            active_background_opacity: 0.0,
+            interact_background_opacity: 0.0,
+            ..ScrollStyle::floating()
+        };
 
     s.animation_time = if reduced_motion { 0.0 } else { motion::HOVER };
     s.visuals = visuals(p);
