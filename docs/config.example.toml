@@ -35,6 +35,7 @@ reduced_motion = false
 kinetic_scrolling = true         # lists coast after a touch drag / trackpad flick (off with reduced_motion)
 rubber_band = true               # trackpad / touch scrolling stretches past the ends and springs back (never the wheel)
 toast_time_scale = 0.5           # notification time × this (info 4 s, warning 6 s, error 8 s)
+merge_toasts = true              # same-kind operations share one notification with x/y and one Undo
 high_contrast = false            # stronger text, borders and focus rings
 icon_style = "colored"           # colored | mono
 show_thumbnails = true

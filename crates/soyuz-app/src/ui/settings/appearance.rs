@@ -140,6 +140,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
         r.row_kw(
+            tr!("settings-appearance-merge-toasts"),
+            tr!("settings-appearance-merge-toasts-desc"),
+            "notification toast merge group combine progress undo",
+            |ui| {
+                switch(ui, &mut d.appearance.merge_toasts);
+            },
+        );
+        r.row_kw(
             tr!("settings-appearance-welcome-tips"),
             tr!("settings-appearance-welcome-tips-desc"),
             "onboarding first run tips card intro",

@@ -97,6 +97,7 @@ impl Default for Appearance {
             kinetic_scrolling: true,
             rubber_band: true,
             toast_time_scale: 0.5,
+            merge_toasts: true,
             high_contrast: false,
             icon_style: IconStyle::Colored,
             show_thumbnails: true,
@@ -593,6 +594,7 @@ fn common(km: &mut Keymap) {
     b(G, A::ToggleActivityPanel, CTRL_SHIFT, KeyName::J);
     b(G, A::ToggleAiPanel, CTRL, KeyName::I);
     b(G, A::Undo, CTRL, KeyName::Z);
+    b(G, A::UndoGroup, CTRL_ALT, KeyName::Z);
     b(G, A::Redo, CTRL, KeyName::Y);
     b(G, A::Redo, CTRL_SHIFT, KeyName::Z);
     // Ctrl +/-/0 scale the whole UI; Ctrl+Alt +/-/0 (and Ctrl+wheel) size icons.

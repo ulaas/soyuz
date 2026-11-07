@@ -213,6 +213,20 @@ and Shift+Esc all of them); longer ones open the **activity panel** (`Ctrl+Shift
 automatically. Each job card shows progress, speed graph and ETA, and can be paused,
 resumed, cancelled, reprioritized or started immediately.
 
+Several operations of the same kind share one toast, so deleting files one by one does not
+leave a queue of toasts behind. It counts them while they run ("Moving 7/12 items to the
+trash") and ends with the outcome and **Undo 12**, which undoes them all, newest first. An
+operation joins while the toast is up. Copies and moves merge only when they go to the same
+folder; permanent deletes never merge with trashing, and work started by a rule, a script,
+the assistant or an MCP client stays apart from yours. If something failed, the toast turns
+into a warning with **Details**, and `Ctrl+Alt+Z` (*Undo notification*) still undoes what
+worked. `Ctrl+Z` always undoes just the last operation. Turn merging off with *Merge
+notifications* in Settings → Appearance (`[appearance] merge_toasts`).
+
+When more toasts are up than fit on screen, "+N more" shows above the stack. Infos and
+successes behind the stack keep ageing and can expire unseen; warnings and errors wait for
+their turn on screen.
+
 A job's details (expand its card) start with **Why is this slow?**:
 - **Speeds:** now, average and peak, files per second and the average file size.
 - **Where the time went:** moving, stalled, counting, queued, paused, or waiting for your answer.

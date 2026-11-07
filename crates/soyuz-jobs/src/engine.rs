@@ -1235,6 +1235,17 @@ impl JobEngine {
     /// Submit a job that reverses history entry `h`. `None` if the entry is unknown,
     /// already undone, not undoable, or an undo/redo of it is in flight.
     pub fn undo(&self, h: HistoryId) -> Option<JobId> {
+        self.undo_in(h, QueueMode::Parallel)
+    }
+
+    /// Like [`Self::undo`], but the job waits its turn in the serial lane: undos submitted
+    /// this way run one at a time, in the order they were submitted (undoing a group of
+    /// operations newest first, where a later one may depend on an earlier one).
+    pub fn undo_in_turn(&self, h: HistoryId) -> Option<JobId> {
+        self.undo_in(h, QueueMode::Serial)
+    }
+
+    fn undo_in(&self, h: HistoryId, queue: QueueMode) -> Option<JobId> {
         let (records, stamps, label) = {
             let st = self.inner.state.lock();
             if history_busy(&st, h) {
@@ -1251,7 +1262,7 @@ impl JobEngine {
             )
         };
         let roots = crate::undo::touched_roots(&records);
-        let options = JobOptions { journal: false, queue: QueueMode::Parallel, ..JobOptions::default() };
+        let options = JobOptions { journal: false, queue, ..JobOptions::default() };
         let exec = Exec::Undo { records, stamps };
         Some(self.inner.add_job_ext(exec, JobKindBrief::Undo, label, roots, options, Some(h), None))
     }

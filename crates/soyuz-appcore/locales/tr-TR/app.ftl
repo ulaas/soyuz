@@ -316,6 +316,7 @@ app-picker-row = { $kind ->
 app-hidden-controls-tip = Ad, gizli yön/biçim karakterleri içeriyor
 app-icon-size = Simge boyutu
 app-toast-dismiss = Kapat
+app-toast-more = +{ $count } bildirim daha
 app-quit-when-finished = İşlemler bitince Soyuz kapanacak
 
 ## Linux (data)

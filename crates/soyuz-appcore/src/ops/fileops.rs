@@ -12,6 +12,7 @@ pub mod names;
 pub mod paste_image;
 pub mod prompts;
 pub mod rename;
+pub mod toast_groups;
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -86,6 +87,9 @@ pub enum FileOpCmd {
     },
     /// Undo one history entry (the Undo button of a job's toast).
     UndoEntry(HistoryId),
+    /// Undo these history entries, oldest listed first, one at a time from the newest (the
+    /// Undo button of a merged toast).
+    UndoEntries(Vec<HistoryId>),
     /// Show a deferred prompt again.
     Resolve(JobId),
     CancelJob(JobId),
@@ -119,6 +123,8 @@ pub struct FileOps {
     auto_opened: HashSet<JobId>,
     /// History entries undone through Ctrl+Z (redo pops them).
     undo_stack: Vec<HistoryId>,
+    /// Running operations that share one notification.
+    toast_groups: toast_groups::ToastGroups,
     /// A clipboard image offered by the frontend for this frame's Paste ([`paste_image`]).
     pub pasted_image: Option<paste_image::PastedImage>,
 }
@@ -138,6 +144,7 @@ impl FileOps {
             pending_rename: None,
             auto_opened: HashSet::new(),
             undo_stack: Vec::new(),
+            toast_groups: Default::default(),
             pasted_image: None,
         }
     }
@@ -174,6 +181,7 @@ pub fn handles(a: &Action) -> bool {
             | A::DeletePermanent
             | A::SecureWipe
             | A::Undo
+            | A::UndoGroup
             | A::Redo
             | A::EmptyTrash
             | A::RestoreFromTrash
@@ -351,6 +359,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
             }
         }
         A::Undo => undo(app),
+        A::UndoGroup => undo_group(app),
         A::Redo => redo(app),
         A::EmptyTrash => app.dialogs.push(DeleteConfirmModel::empty_trash(app.fileops.trash.items().len())),
         A::RestoreFromTrash => {
@@ -581,6 +590,33 @@ fn undo(app: &mut AppCore) {
     }
 }
 
+/// Undo what the newest toast with an Undo names: the keyboard's way to its button.
+fn undo_group(app: &mut AppCore) {
+    let Some((toast, entries)) = app.ui.toasts.newest_undo() else {
+        app.ui.toasts.push(Toast::info(tr!("ops-nothing-to-undo")));
+        return;
+    };
+    app.ui.toasts.dismiss(toast);
+    undo_entries(app, &entries);
+}
+
+/// Undo `entries` (oldest first), newest first and one at a time: a later operation may
+/// depend on an earlier one (a file moved into a folder, then the folder moved). Entries
+/// already undone, by Ctrl+Z or from the history, are passed over.
+fn undo_entries(app: &mut AppCore, entries: &[HistoryId]) {
+    let mut any = false;
+    for &h in entries.iter().rev() {
+        if let Some(id) = app.fileops.jobs.engine().undo_in_turn(h) {
+            app.fileops.undo_stack.push(h);
+            app.fileops.jobs.track(id, JobMeta::new(OpKind::Undo, &[], None));
+            any = true;
+        }
+    }
+    if !any {
+        app.ui.toasts.push(Toast::info(tr!("ops-not-available")));
+    }
+}
+
 fn redo(app: &mut AppCore) {
     let hist = app.fileops.jobs.history();
     let undone = |id: HistoryId| hist.iter().any(|h| h.id == id && h.undone);
@@ -654,6 +690,7 @@ pub fn apply(app: &mut AppCore, cmd: FileOpCmd, _host: &dyn Host) {
             app.fileops.jobs.refresh_snapshots();
         }
         FileOpCmd::UndoEntry(h) => history_action(app, h, HistoryAction::Undo),
+        FileOpCmd::UndoEntries(entries) => undo_entries(app, &entries),
         FileOpCmd::Resolve(job) => app.fileops.prompts.undefer(job),
         FileOpCmd::CancelJob(job) => {
             app.fileops.jobs.engine().cancel(job);
@@ -690,10 +727,19 @@ pub fn apply(app: &mut AppCore, cmd: FileOpCmd, _host: &dyn Host) {
 /// from the frontend ([`drop_external`], right after this in the GUI frame).
 pub fn begin_frame(app: &mut AppCore, host: &dyn Host) {
     let events = app.fileops.jobs.poll(host);
+    // Before the events: a job may have started and finished since the last frame.
+    for id in app.fileops.jobs.take_started() {
+        if app.config.appearance.merge_toasts
+            && let Some(meta) = app.fileops.jobs.meta(id)
+        {
+            app.fileops.toast_groups.started(id, meta, &mut app.ui.toasts);
+        }
+    }
     for ev in events {
         match ev {
             JobEvent::Prompt(id) => on_prompt(app, id),
             JobEvent::Finished(id, summary) => on_finished(app, id, &summary),
+            JobEvent::Removed(id) => app.fileops.toast_groups.abandoned(id, &mut app.ui.toasts),
             _ => {}
         }
     }
@@ -806,7 +852,10 @@ fn reconcile_prompts(app: &mut AppCore) {
 }
 
 fn on_finished(app: &mut AppCore, id: JobId, summary: &JobSummary) {
-    let Some(snap) = app.fileops.jobs.snapshot(id).cloned() else { return };
+    let Some(snap) = app.fileops.jobs.snapshot(id).cloned() else {
+        app.fileops.toast_groups.abandoned(id, &mut app.ui.toasts);
+        return;
+    };
     let meta =
         app.fileops.jobs.meta(id).cloned().unwrap_or_else(|| JobMeta::new(OpKind::from_brief(snap.kind), &[], None));
     let total = snap.progress.totals_known.then_some(snap.progress.items_total);
@@ -815,72 +864,69 @@ fn on_finished(app: &mut AppCore, id: JobId, summary: &JobSummary) {
     if purge || matches!(meta.op, OpKind::Trash | OpKind::Restore | OpKind::EmptyTrash | OpKind::Undo | OpKind::Redo) {
         app.fileops.trash.mark_stale();
     }
-    match &snap.state {
-        JobState::Done(_) => {
-            match &meta.after {
-                AfterJob::SelectAndRename { pane, path } => {
-                    if summary.items_ok > 0 {
-                        if let Some(p) = app.ws.find_pane_mut(*pane) {
-                            p.pending_cursor = path.file_name().map(|n| n.to_string_lossy().into_owned());
-                        }
-                        app.fileops.pending_rename = Some((*pane, path.clone(), Instant::now()));
-                    }
-                }
-                AfterJob::Select { pane, name } => {
+    if matches!(snap.state, JobState::Done(_)) {
+        match &meta.after {
+            AfterJob::SelectAndRename { pane, path } => {
+                if summary.items_ok > 0 {
                     if let Some(p) = app.ws.find_pane_mut(*pane) {
-                        p.pending_cursor = Some(name.clone());
+                        p.pending_cursor = path.file_name().map(|n| n.to_string_lossy().into_owned());
                     }
+                    app.fileops.pending_rename = Some((*pane, path.clone(), Instant::now()));
                 }
-                AfterJob::ClearClipboard { generation } => {
-                    if summary.items_failed == 0 && app.fileops.clipboard.clear_if_generation(*generation) {
-                        crate::services::os_clipboard::clear_cut();
-                    }
-                }
-                AfterJob::None => {}
             }
-            if !meta.toast {
-                if summary.items_failed > 0 {
-                    app.ui.toasts.push(failure_toast(&title, summary));
+            AfterJob::Select { pane, name } => {
+                if let Some(p) = app.ws.find_pane_mut(*pane) {
+                    p.pending_cursor = Some(name.clone());
                 }
-                return;
             }
-            if summary.items_failed > 0 {
-                app.ui.toasts.push(failure_toast(&title, summary));
-            } else if summary.items_ok == 0 && summary.items_skipped > 0 {
-                app.ui.toasts.push(Toast::info(title).body(names::summary_line(summary)));
-            } else {
-                let mut t = Toast::success(title).body(names::summary_line(summary));
-                if meta.op.undoable()
-                    && let Some(h) = app.fileops.jobs.engine().undoable_history_of(id)
-                {
-                    t = t.undo_button(tr!("common-undo"), h);
-                    t.duration = Some(7.0);
+            AfterJob::ClearClipboard { generation } => {
+                if summary.items_failed == 0 && app.fileops.clipboard.clear_if_generation(*generation) {
+                    crate::services::os_clipboard::clear_cut();
                 }
-                app.ui.toasts.push(t);
             }
+            AfterJob::None => {}
+        }
+    }
+    let undo = if meta.op.undoable() { app.fileops.jobs.engine().undoable_history_of(id) } else { None };
+    let toast = match &snap.state {
+        JobState::Done(_) if summary.items_failed > 0 => Some(failure_toast(&title, summary)),
+        JobState::Done(_) if !meta.toast => None,
+        JobState::Done(_) if summary.items_ok == 0 && summary.items_skipped > 0 => {
+            Some(Toast::info(title).body(names::summary_line(summary)))
+        }
+        JobState::Done(_) => {
+            let mut t = Toast::success(title).body(names::summary_line(summary));
+            if let Some(h) = undo {
+                t = t.undo_button(tr!("common-undo"), h);
+                t.duration = Some(7.0);
+            }
+            Some(t)
         }
         JobState::Failed(e) => {
             let what = names::job_title(&meta, true, total, &snap.label);
-            app.ui.toasts.push(
+            Some(
                 Toast::error(tr!("ops-job-failed", what = lower_first(&what)))
                     .body(e.to_string())
                     .action(tr!("ops-details"), Action::JobsShowHistory),
-            );
+            )
         }
         JobState::Cancelled if meta.toast => {
             let what = names::job_title(&meta, true, total, &snap.label);
             let mut t = Toast::info(tr!("ops-outcome-cancelled")).body(what);
             t.duration = Some(3.0);
             // What it finished before the cancel can be undone.
-            if meta.op.undoable()
-                && let Some(h) = app.fileops.jobs.engine().undoable_history_of(id)
-            {
+            if let Some(h) = undo {
                 t = t.undo_button(tr!("common-undo"), h);
                 t.duration = Some(7.0);
             }
-            app.ui.toasts.push(t);
+            Some(t)
         }
-        _ => {}
+        _ => None,
+    };
+    // A job in a group reports to the group's toast; any other shows its own.
+    let finished = toast_groups::Finished { state: &snap.state, summary, undo, toast };
+    if let Some(t) = app.fileops.toast_groups.finished(id, finished, &mut app.ui.toasts) {
+        app.ui.toasts.push(t);
     }
 }
 

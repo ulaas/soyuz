@@ -322,6 +322,8 @@ app-picker-row = { $kind ->
 app-hidden-controls-tip = Name contains hidden direction/format characters
 app-icon-size = Icon size
 app-toast-dismiss = Dismiss
+# Notifications waiting behind the ones on screen.
+app-toast-more = +{ $count } more
 app-quit-when-finished = Soyuz will close when the operations finish
 
 ## Linux (data)

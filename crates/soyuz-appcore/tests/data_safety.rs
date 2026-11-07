@@ -68,6 +68,8 @@ fn run_all(data: &Path) {
     reload_without_pending_changes_replaces(&path, data);
     background_save_writes_and_keeps_the_refusal(&path, data);
     toast_undo_targets_the_operation_it_names(data);
+    merged_toast_counts_and_undoes_the_whole_group(data);
+    group_undo_runs_newest_first(data);
     folder_gone_at_navigation_falls_back(data);
     typed_path_that_does_not_exist_stays(data);
     late_probe_answer_is_ignored(data);
@@ -279,6 +281,70 @@ fn toast_undo_targets_the_operation_it_names(data: &Path) {
     settle(&mut app, &host, "the file back", |_| dir.join("moved.txt").exists());
     assert!(!sub.join("moved.txt").exists(), "the operation the toast named was undone");
     assert!(dir.join("after.txt").exists() && !dir.join("before.txt").exists(), "the rename stays");
+}
+
+/// Moves only: the undo here never reaches the real trash.
+fn merged_toast_counts_and_undoes_the_whole_group(data: &Path) {
+    let dir = data.join("merged");
+    let sub = dir.join("sub");
+    std::fs::create_dir_all(&sub).unwrap();
+    let names = ["a.txt", "b.txt", "c.txt"];
+    for n in names {
+        std::fs::write(dir.join(n), n).unwrap();
+    }
+    let host = NullHost::default();
+    let mut app = core(&dir);
+    app.ui.toasts.live.clear();
+    for n in names {
+        app.cmds.push(Cmd::FileOp(FileOpCmd::Transfer {
+            paths: vec![dir.join(n)],
+            dest: sub.clone(),
+            effect: DropEffect::Move,
+        }));
+    }
+    settle(&mut app, &host, "all moved", |a| a.ui.toasts.live.iter().any(|l| l.toast.group_undo.len() == 3));
+    assert!(names.iter().all(|n| sub.join(n).exists()));
+    assert_eq!(app.ui.toasts.live.len(), 1, "one toast for the three moves");
+    let toast = app.ui.toasts.live[0].toast.clone();
+    assert!(toast.title.contains("3 items"), "{}", toast.title);
+    assert_eq!(toast.action.as_ref().unwrap().0, "Undo 3");
+
+    app.ui.toasts.live.clear();
+    app.cmds.push(toast.command().expect("the Undo button"));
+    settle(&mut app, &host, "all back", |_| names.iter().all(|n| dir.join(n).exists()));
+    settle(&mut app, &host, "the undo's toast", |a| {
+        a.ui.toasts.live.iter().any(|l| l.toast.title.contains("3 operations"))
+    });
+    assert_eq!(app.ui.toasts.live.len(), 1, "one toast for the three undos too");
+    assert!(names.iter().all(|n| !sub.join(n).exists()));
+}
+
+/// The second move depends on the first: out of order, the file could not go back.
+fn group_undo_runs_newest_first(data: &Path) {
+    let dir = data.join("order");
+    let (first, second) = (dir.join("first"), dir.join("second"));
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    std::fs::write(dir.join("f.txt"), b"f").unwrap();
+    let host = NullHost::default();
+    let mut app = core(&dir);
+    let moved = |paths: PathBuf, dest: &Path| {
+        Cmd::FileOp(FileOpCmd::Transfer { paths: vec![paths], dest: dest.to_path_buf(), effect: DropEffect::Move })
+    };
+    // The history is shared with the scenarios before this one.
+    let before = app.fileops.jobs.history().len();
+    app.cmds.push(moved(dir.join("f.txt"), &first));
+    settle(&mut app, &host, "the first move", |a| a.fileops.jobs.history().len() == before + 1);
+    app.cmds.push(moved(first.clone(), &second));
+    settle(&mut app, &host, "the second move", |a| a.fileops.jobs.history().len() == before + 2);
+    assert!(second.join("first").join("f.txt").exists());
+
+    let entries: Vec<_> = app.fileops.jobs.history()[before..].iter().map(|h| h.id).collect();
+    assert_eq!(entries.len(), 2);
+    app.cmds.push(Cmd::FileOp(FileOpCmd::UndoEntries(entries)));
+    settle(&mut app, &host, "both undone", |a| a.fileops.jobs.history()[before..].iter().all(|h| h.undone));
+    assert!(dir.join("f.txt").exists(), "the file is back where it started");
+    assert!(first.is_dir() && !second.join("first").exists());
 }
 
 fn folder_gone_at_navigation_falls_back(data: &Path) {

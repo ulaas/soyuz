@@ -222,6 +222,8 @@ pub struct JobsService {
     /// The window being handled right now (`models::windows` keeps it up to date): new
     /// jobs are stamped with it.
     pub window: WindowId,
+    /// Jobs registered since the last [`Self::take_started`] (their notification counts them).
+    started: Vec<JobId>,
 }
 
 /// Collects the paths finished jobs changed: the touched roots of jobs submitted through
@@ -289,6 +291,7 @@ impl JobsService {
             moves: Vec::new(),
             affected: AffectedPaths::default(),
             window: WindowId::MAIN,
+            started: Vec::new(),
         };
         s.refresh_history();
         s
@@ -338,6 +341,7 @@ impl JobsService {
         let id = self.engine.submit(spec);
         self.affected.submitted(id, &kind);
         self.meta.insert(id, meta);
+        self.started.push(id);
         self.refresh_snapshots();
         id
     }
@@ -346,7 +350,13 @@ impl JobsService {
     pub fn track(&mut self, id: JobId, mut meta: JobMeta) {
         meta.window = self.window;
         self.meta.insert(id, meta);
+        self.started.push(id);
         self.refresh_snapshots();
+    }
+
+    /// The jobs registered since the last call, oldest first.
+    pub fn take_started(&mut self) -> Vec<JobId> {
+        std::mem::take(&mut self.started)
     }
 
     pub fn meta(&self, id: JobId) -> Option<&JobMeta> {

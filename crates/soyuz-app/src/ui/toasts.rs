@@ -47,6 +47,8 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
     let p = palette(ctx);
     let width = width().min(area.width() - 2.0 * MARGIN).max(220.0);
     let mut bottom = area.bottom() - MARGIN;
+    toasts.age_hidden(MAX_VISIBLE, dt);
+    let hidden = toasts.hidden(MAX_VISIBLE);
     let start = toasts.live.len().saturating_sub(MAX_VISIBLE);
     let mut any_animating = false;
     let ease = |x: f32| 1.0 - (1.0 - x).powi(3);
@@ -207,6 +209,22 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
             l.closing = Some(now);
             any_animating = true;
         }
+    }
+    if hidden > 0 {
+        // Above the stack: more wait behind the ones on screen.
+        let pos = pos2(area.right() - MARGIN, bottom - GAP);
+        Area::new(Id::unique("soyuz.toast.more")).order(Order::Tooltip).fixed_pos(pos).interactable(false).show(
+            ctx,
+            |ui| {
+                ui.painter().text(
+                    pos,
+                    Align2::RIGHT_BOTTOM,
+                    tr!("app-toast-more", count = hidden as u64),
+                    crate::theme::font::ui(12.0),
+                    p.text_secondary,
+                );
+            },
+        );
     }
     // Drop finished toasts.
     toasts.live.retain(|l| l.closing.is_none_or(|t| t.is_nan() || now - t < ANIM && !reduced_motion));

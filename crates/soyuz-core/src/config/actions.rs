@@ -102,7 +102,7 @@ define_actions! {
         NewSymlink, NewHardlink, NewJunction, Delete, DeletePermanent, SecureWipe, Properties,
         CopyPath, CopyPathPosix, CopyPathQuoted, CopyName, CopyAsFileList, CreateArchive,
         ExtractHere, ExtractToFolder, ExtractTo, TestArchive, CompareChecksum, SetAttributes,
-        TouchTimestamps, SplitFile, JoinFiles, ClearTags, Undo, Redo, PreviousVersions,
+        TouchTimestamps, SplitFile, JoinFiles, ClearTags, Undo, UndoGroup, Redo, PreviousVersions,
         // Serve the selection over HTTP on the local network (`models::quick_share`).
         QuickShare,
         // Media tools (FFmpeg, Phase V): jobs with a dry-run plan.

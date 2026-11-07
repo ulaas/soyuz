@@ -87,23 +87,36 @@ pub fn job_title(meta: &JobMeta, active: bool, total_items: Option<u64>, label: 
                 _ => meta.items as u64,
             };
             let what = items_phrase(n, meta.first.as_deref());
-            match (&meta.dest, meta.op) {
-                (_, OpKind::Trash) => tr!("ops-job-trash", state = state, what = what),
-                (Some(d), OpKind::Copy) => tr!("ops-job-copy-to", state = state, what = what, dest = show_path(d)),
-                (Some(d), OpKind::Move) => tr!("ops-job-move-to", state = state, what = what, dest = show_path(d)),
-                (Some(d), OpKind::Rename) => tr!("ops-job-rename-to", state = state, what = what, dest = quoted(d)),
-                (_, OpKind::Copy) => tr!("ops-job-copy", state = state, what = what),
-                (_, OpKind::Move) => tr!("ops-job-move", state = state, what = what),
-                (_, OpKind::Rename) => tr!("ops-job-rename", state = state, what = what),
-                (_, OpKind::Duplicate) => tr!("ops-job-duplicate", state = state, what = what),
-                (_, OpKind::Delete) => tr!("ops-job-delete", state = state, what = what),
-                (_, OpKind::Wipe) => tr!("ops-job-wipe", state = state, what = what),
-                (_, OpKind::SetMeta) => tr!("ops-job-set-meta", state = state, what = what),
-                (_, OpKind::Restore) => tr!("ops-job-restore", state = state, what = what),
-                _ => tr!("ops-job-other", state = state, label = what),
-            }
+            items_title(meta.op, meta.dest.as_deref(), state, what)
         }
     }
+}
+
+/// The title of an operation on `what` ("Moved 3 items to the trash").
+fn items_title(op: OpKind, dest: Option<&Path>, state: &str, what: String) -> String {
+    match (dest, op) {
+        (_, OpKind::Trash) => tr!("ops-job-trash", state = state, what = what),
+        (Some(d), OpKind::Copy) => tr!("ops-job-copy-to", state = state, what = what, dest = show_path(d)),
+        (Some(d), OpKind::Move) => tr!("ops-job-move-to", state = state, what = what, dest = show_path(d)),
+        (Some(d), OpKind::Rename) => tr!("ops-job-rename-to", state = state, what = what, dest = quoted(d)),
+        (_, OpKind::Copy) => tr!("ops-job-copy", state = state, what = what),
+        (_, OpKind::Move) => tr!("ops-job-move", state = state, what = what),
+        (_, OpKind::Rename) => tr!("ops-job-rename", state = state, what = what),
+        (_, OpKind::Duplicate) => tr!("ops-job-duplicate", state = state, what = what),
+        (_, OpKind::Delete) => tr!("ops-job-delete", state = state, what = what),
+        (_, OpKind::Wipe) => tr!("ops-job-wipe", state = state, what = what),
+        (_, OpKind::SetMeta) => tr!("ops-job-set-meta", state = state, what = what),
+        (_, OpKind::Restore) => tr!("ops-job-restore", state = state, what = what),
+        (_, OpKind::Undo) => tr!("ops-job-undo", state = state, label = what),
+        (_, OpKind::Redo) => tr!("ops-job-redo", state = state, label = what),
+        _ => tr!("ops-job-other", state = state, label = what),
+    }
+}
+
+/// The title of a notification for several operations of one kind: `what` is the count
+/// ("7/12 items"), `active` while some still run.
+pub fn group_title(op: OpKind, dest: Option<&Path>, active: bool, what: String) -> String {
+    items_title(op, dest, if active { "active" } else { "done" }, what)
 }
 
 fn lower_first(s: &str) -> String {

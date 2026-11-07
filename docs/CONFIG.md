@@ -129,6 +129,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `kinetic_scrolling` | boolean | `true` | Lists keep coasting after a touch drag or a trackpad flick, slowing down (off, or `reduced_motion`: they stop where the finger leaves). |
 | `rubber_band` | boolean | `true` | Trackpad / touch scrolling stretches past the start and end of a list and springs back (off, or `reduced_motion`: it stops hard at the edge). Mouse wheels never do. |
 | `toast_time_scale` | float | `0.5` | How long notifications stay up, as a multiple of their standard time (info 4 s, warning 6 s, error 8 s): 0.5 = half as long. Hovering one pauses its timer. |
+| `merge_toasts` | boolean | `true` | Operations of the same kind (to the same destination) share one notification that counts them ("Moving 7/12 items to the trash") and whose Undo covers them all. Off: one notification per operation. |
 | `high_contrast` | boolean | `false` | High-contrast palette (stronger text, borders and focus rings). |
 | `icon_style` | `"colored"` \| `"mono"` | `"colored"` | `colored` file-type icons or `mono` (single color; folder colors stay). |
 | `show_thumbnails` | boolean | `true` | Picture and video thumbnails in the grid and gallery views. |

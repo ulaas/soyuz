@@ -146,6 +146,12 @@ ops-summary-skipped = { $count } atlandı
 ops-summary-failed = { $count } başarısız
 ops-job-failed = Başarısız: { $what }
 ops-details = Ayrıntılar
+ops-group-progress = { $done }/{ $total } öğe
+ops-group-partial = { $total } öğeden { $done } tanesi
+ops-group-progress-ops = { $done }/{ $total } işlem
+ops-group-partial-ops = { $total } işlemden { $done } tanesi
+ops-group-ops = { $count } işlem
+ops-undo-count = Geri Al ({ $count })
 
 ## Varsayılan adlar
 

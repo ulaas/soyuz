@@ -317,6 +317,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::AddTag(_) => (IconId::Tag, "label color"),
         A::ClearTags => (IconId::TagSimple, ""),
         A::Undo => (IconId::ArrowUUpLeft, "revert"),
+        A::UndoGroup => (IconId::ArrowUUpLeft, "revert all notification toast"),
         A::Redo => (IconId::ArrowUUpRight, ""),
         A::PreviousVersions => (IconId::ClockCounterClockwise, "snapshot vss backup"),
         A::QuickShare => (IconId::QrCode, "share phone qr http lan send link wifi transfer"),

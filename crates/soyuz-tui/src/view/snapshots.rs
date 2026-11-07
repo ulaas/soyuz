@@ -437,6 +437,7 @@ fn toasts() -> ToastsVm {
             toast(2, ToastKind::Warning, "2 items skipped", Some("They already exist in backup"), None),
             toast(3, ToastKind::Error, "Cannot delete old-logs", Some("Access is denied"), None),
         ],
+        more: 0,
     }
 }
 

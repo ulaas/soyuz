@@ -46,6 +46,8 @@ pub struct ToastLine {
 pub struct ToastsVm {
     /// Newest last.
     pub lines: Vec<ToastLine>,
+    /// Toasts that wait behind these.
+    pub more: usize,
 }
 
 /// Toasts that are not closing.
@@ -56,7 +58,8 @@ fn live(core: &AppCore) -> impl Iterator<Item = &soyuz_appcore::models::toasts::
 impl ToastsVm {
     pub fn from_core(core: &AppCore) -> ToastsVm {
         let live: Vec<_> = live(core).collect();
-        let lines = live[live.len().saturating_sub(MAX_TOASTS)..]
+        let more = live.len().saturating_sub(MAX_TOASTS);
+        let lines = live[more..]
             .iter()
             .map(|l| ToastLine {
                 id: l.id,
@@ -70,7 +73,7 @@ impl ToastsVm {
                 sticky: l.toast.duration.is_none(),
             })
             .collect();
-        ToastsVm { lines }
+        ToastsVm { lines, more }
     }
 }
 
@@ -170,6 +173,13 @@ pub fn draw_toasts(f: &mut Frame<'_>, area: Rect, m: &ToastsVm, theme: &TuiTheme
         hits.push(r, HitTarget::Toast(i));
         y += height;
     }
+    if m.more > 0 && y < area.bottom() {
+        let note = format!(" {} ", safe(&soyuz_appcore::tr!("app-toast-more", count = m.more as u64)));
+        let width = (text::width(&note) as u16).min(area.width);
+        let r = Rect { x: area.right() - width, y, width, height: 1 };
+        f.render_widget(Clear, r);
+        f.render_widget(Paragraph::new(Span::styled(note, theme.style(Role::Muted))), r);
+    }
 }
 
 #[cfg(test)]
@@ -200,7 +210,7 @@ mod tests {
         let mut undo = toast(2, ToastKind::Success, "Moved 3 items");
         undo.body = Some("to the trash".into());
         undo.action = Some("Undo (Ctrl+Z)".into());
-        let m = ToastsVm { lines: vec![toast(1, ToastKind::Info, "Copied"), undo] };
+        let m = ToastsVm { lines: vec![toast(1, ToastKind::Info, "Copied"), undo], more: 0 };
         let (lines, buf, hits) = draw_with(&m, TuiBorders::Ascii, 40, 12);
         assert_eq!(lines[0].trim(), "", "row 0 is outside the area");
         assert_eq!(lines[1], "                +----------------------+");
@@ -220,7 +230,7 @@ mod tests {
     fn sticky_mark_borders_and_overflow() {
         let mut s = toast(1, ToastKind::Error, "Failed");
         s.sticky = true;
-        let m = ToastsVm { lines: vec![toast(0, ToastKind::Info, "old"), s] };
+        let m = ToastsVm { lines: vec![toast(0, ToastKind::Info, "old"), s], more: 0 };
         // Room for one box only: the newest.
         let (lines, _, hits) = draw_with(&m, TuiBorders::Rounded, 30, 5);
         assert_eq!(lines[1], "      ╭─────────────────────x╮", "{lines:?}");
@@ -230,6 +240,13 @@ mod tests {
         // No lines: a blank frame.
         let (lines, _, _) = draw_with(&m, TuiBorders::None, 30, 5);
         assert_eq!(lines[2].trim_end(), "        [x] Failed");
+    }
+
+    #[test]
+    fn says_how_many_wait_behind() {
+        let m = ToastsVm { lines: vec![toast(1, ToastKind::Info, "shown")], more: 4 };
+        let (lines, _, _) = draw_with(&m, TuiBorders::Ascii, 40, 8);
+        assert!(lines[4].trim_end().ends_with("+4 more"), "{lines:?}");
     }
 
     #[test]
@@ -251,7 +268,7 @@ mod tests {
         let mut long = toast(1, ToastKind::Warning, &"日本語 warning ".repeat(8));
         long.body = Some("👨\u{200d}👩\u{200d}👧 body".into());
         long.action = Some("Retry (F5)".into());
-        let m = ToastsVm { lines: vec![long.clone(), long.clone(), long] };
+        let m = ToastsVm { lines: vec![long.clone(), long.clone(), long], more: 7 };
         for w in 0..=30 {
             for h in 1..=8 {
                 let _ = draw_with(&m, TuiBorders::Rounded, w, h);

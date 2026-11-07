@@ -158,6 +158,18 @@ ops-summary-failed = { $count } failed
 # $what: a job title with its first letter lowercased.
 ops-job-failed = Failed: { $what }
 ops-details = Details
+# One notification for several operations of a kind. $done / $total: top-level items.
+ops-group-progress = { $done }/{ $total } items
+ops-group-partial = { $done } of { $total } items
+# The same for undo and redo jobs, which count operations.
+ops-group-progress-ops = { $done }/{ $total } operations
+ops-group-partial-ops = { $done } of { $total } operations
+ops-group-ops = { $count ->
+    [one] { $count } operation
+   *[other] { $count } operations
+}
+# The Undo button of a merged notification. $count: the items it brings back.
+ops-undo-count = Undo { $count }
 
 ## Default names. $stem: target name without extension; $ext: ".txt" or empty.
 
