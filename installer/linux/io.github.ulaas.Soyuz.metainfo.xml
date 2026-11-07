@@ -87,6 +87,13 @@
   </requires>
 
   <releases>
+    <release version="0.7.3" date="2026-11-07" type="development">
+      <description>
+        <p>The system monitor now works in every window. Before, a monitor tab in any window but
+          the main one said "No readings yet", and it lost its filter and selection, until the
+          main window showed the monitor too.</p>
+      </description>
+    </release>
     <release version="0.7.2" date="2026-11-07" type="development">
       <description>
         <p>Operations of the same kind now share one notification. It counts them while they
