@@ -1,7 +1,7 @@
 //! The system monitor (`monitor:` tabs): the state and commands behind both frontends' pages.
 //!
 //! The process-wide sampler is `soyuz_sysmon::Hub`; [`pump`] subscribes while a monitor pane
-//! is on screen, so nothing is sampled otherwise (unless `[monitor] background_history` or an
+//! is on screen in any window, so nothing is sampled otherwise (unless `[monitor] background_history` or an
 //! alert asks for it). Each pane has its own [`MonitorView`] (page, filter, selection, …),
 //! so two panes can show two pages. What a user arranges (columns, sort, view, graph range)
 //! is stored in `[monitor]`.
@@ -262,7 +262,7 @@ impl MonitorView {
     }
 }
 
-/// The monitor state of one window.
+/// The monitor state of all windows: one per process, with a view per pane.
 #[derive(Default)]
 pub struct MonitorState {
     sub: Option<(Subscription, u32, Want)>,
@@ -357,6 +357,12 @@ impl MonitorState {
         s
     }
 
+    /// Tests: whether this app is subscribed to the sampler.
+    #[cfg(test)]
+    pub(crate) fn sampling(&self) -> bool {
+        self.sub.is_some()
+    }
+
     /// Whether the sampler is frozen.
     pub fn paused(&self) -> bool {
         Hub::global().is_paused()
@@ -378,16 +384,23 @@ pub fn open_tab(app: &mut AppCore) {
 }
 
 /// Per frame (`AppCore::pump_services`): keep the hub configured, subscribe while a monitor
-/// pane is on screen, take new frames and finished background reads.
+/// pane is on screen in any window, take new frames and finished background reads.
 pub fn pump(app: &mut AppCore) {
     let hub = Hub::global();
     if app.ui.monitor.hub_config.as_ref() != Some(&app.config.monitor) {
         hub.configure(HubConfig::from_config(&app.config.monitor, Some(data_dir())));
         app.ui.monitor.hub_config = Some(app.config.monitor.clone());
     }
-    let tab = app.ws.tab();
-    let shown: Vec<PaneId> =
-        tab.panes.iter().take(tab.shown()).filter(|p| matches!(p.location, Location::Monitor)).map(|p| p.id).collect();
+    // Runs once per main frame, but every window draws from this state.
+    let workspaces = || std::iter::once(&app.ws).chain(app.workspaces.windows.iter().map(|w| &w.ws));
+    let shown: Vec<PaneId> = workspaces()
+        .flat_map(|ws| {
+            let tab = ws.tab();
+            tab.panes.iter().take(tab.shown())
+        })
+        .filter(|p| matches!(p.location, Location::Monitor))
+        .map(|p| p.id)
+        .collect();
     let m = &mut app.ui.monitor;
     if shown.is_empty() || m.test_history.is_some() {
         m.sub = None;
@@ -418,7 +431,8 @@ pub fn pump(app: &mut AppCore) {
     }
     // Views of panes that went away.
     if !m.views.is_empty() {
-        let live: HashSet<PaneId> = app.ws.tabs.iter().flat_map(|t| t.panes.iter().map(|p| p.id)).collect();
+        let live: HashSet<PaneId> =
+            workspaces().flat_map(|ws| ws.tabs.iter()).flat_map(|t| t.panes.iter().map(|p| p.id)).collect();
         m.views.retain(|id, _| live.contains(id));
     }
     let wake = app.wake.clone();

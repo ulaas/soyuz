@@ -18,7 +18,7 @@ For the frontend agents: everything is at the crate root unless a module is name
 | `hub.subscribe(interval_ms: u32, want: Want, wake: Wake) -> Subscription` | Interest in frames; drop ends it. Smallest interval and OR of all `Want`s win. |
 | `hub.configure(HubConfig)` | Applies settings; alert limits or background history start the worker with no tab. |
 | `HubConfig::from_config(&Monitor, data_dir: Option<PathBuf>)` | Settings to hub config. `data_dir` holds `history/` and `snapshots/`. |
-| `hub.latest() -> Option<Arc<Frame>>` | Newest frame. `None` before the first one and after the worker ended. |
+| `hub.latest() -> Option<Arc<Frame>>` | Newest frame. `None` before the first one and after the worker ended. A worker that panics comes back on its own while anyone is interested (after 5 s, doubling up to about 5 min until a frame is published). |
 | `hub.generation() -> u64` | Changes with every frame; the `TableCache` key. |
 | `hub.with_history(\|h: &History\| ...) -> R` | Reads history; keep it short. |
 | `hub.proc_series(ProcKey) -> Vec<ProcSample>` | Short per-process trail. |

@@ -37,6 +37,10 @@ const DEFAULT_LINGER: Duration = Duration::from_secs(60);
 const RAM_HISTORY_MS: i64 = 48 * 3600 * 1000;
 const MAX_QUEUED_ALERTS: usize = 64;
 const PRUNE_EVERY: Duration = Duration::from_secs(3600);
+/// After a worker panics, a new one starts this much later; the wait doubles with each panic
+/// in a row, so a reader that always panics does not fill the crash folder.
+const RETRY_MS: u64 = 5000;
+const RETRY_MAX_DOUBLINGS: u32 = 6;
 
 /// Where samples come from: the real probe, or a fake in tests. Lives on the worker thread only.
 pub trait Source {
@@ -149,6 +153,8 @@ struct Control {
     /// Recording on hold (readings and live graphs go on).
     record_paused: bool,
     worker_running: bool,
+    /// Worker panics since the last published frame.
+    panics: u32,
     /// Set when configuration changed, for the worker to pick up.
     config_rev: u64,
 }
@@ -165,6 +171,7 @@ struct Inner {
     source: SourceFactory,
     linger: Mutex<Duration>,
     prime_ms: AtomicU64,
+    retry_ms: AtomicU64,
 }
 
 /// The process-wide sampler. [`Hub::global`] reads the real system; tests make their own.
@@ -213,6 +220,7 @@ impl Hub {
                     paused: false,
                     record_paused: false,
                     worker_running: false,
+                    panics: 0,
                     config_rev: 0,
                 }),
                 changed: Condvar::new(),
@@ -224,6 +232,7 @@ impl Hub {
                 source,
                 linger: Mutex::new(DEFAULT_LINGER),
                 prime_ms: AtomicU64::new(PRIME_MS),
+                retry_ms: AtomicU64::new(RETRY_MS),
             }),
         }
     }
@@ -262,15 +271,7 @@ impl Hub {
     }
 
     fn ensure_worker(&self, c: &mut Control) {
-        if c.worker_running || !interested(c) {
-            return;
-        }
-        let inner = self.inner.clone();
-        let spawned = std::thread::Builder::new().name("soyuz-sysmon".to_string()).spawn(move || worker(inner));
-        match spawned {
-            Ok(_) => c.worker_running = true,
-            Err(e) => log::warn!("could not start the monitor sampler: {e}"),
-        }
+        ensure_worker(&self.inner, c);
     }
 
     /// The newest frame.
@@ -405,6 +406,38 @@ impl Hub {
     fn set_prime_ms(&self, ms: u64) {
         self.inner.prime_ms.store(ms, Ordering::Relaxed);
     }
+
+    #[cfg(test)]
+    fn set_retry_ms(&self, ms: u64) {
+        self.inner.retry_ms.store(ms, Ordering::Relaxed);
+    }
+}
+
+fn ensure_worker(inner: &Arc<Inner>, c: &mut Control) {
+    if c.worker_running || !interested(c) {
+        return;
+    }
+    let for_worker = inner.clone();
+    let spawned = std::thread::Builder::new().name("soyuz-sysmon".to_string()).spawn(move || worker(for_worker));
+    match spawned {
+        Ok(_) => c.worker_running = true,
+        Err(e) => log::warn!("could not start the monitor sampler: {e}"),
+    }
+}
+
+/// A worker panicked: whoever is still interested gets a new one after a wait. They already
+/// hold their subscription, so nothing else would start it.
+fn retry_worker(inner: &Arc<Inner>, panics: u32) {
+    let doublings = panics.saturating_sub(1).min(RETRY_MAX_DOUBLINGS);
+    let wait = Duration::from_millis(inner.retry_ms.load(Ordering::Relaxed) << doublings);
+    let inner = inner.clone();
+    let spawned = std::thread::Builder::new().name("soyuz-sysmon-retry".to_string()).spawn(move || {
+        std::thread::sleep(wait);
+        ensure_worker(&inner, &mut inner.control.lock());
+    });
+    if let Err(e) = spawned {
+        log::warn!("could not schedule a new monitor sampler: {e}");
+    }
 }
 
 fn interested(c: &Control) -> bool {
@@ -444,12 +477,14 @@ struct RunningGuard {
 impl Drop for RunningGuard {
     fn drop(&mut self) {
         if self.armed {
-            let clear_history = {
+            let (clear_history, panics) = {
                 let mut c = self.inner.control.lock();
                 c.worker_running = false;
-                history_on_disk(&c)
+                c.panics = c.panics.saturating_add(1);
+                (history_on_disk(&c), c.panics)
             };
             release_memory(&self.inner, clear_history);
+            retry_worker(&self.inner, panics);
         }
     }
 }
@@ -658,7 +693,11 @@ fn publish(
     *inner.latest.write() = Some(frame);
     inner.generation.fetch_add(1, Ordering::AcqRel);
 
-    let wakes: Vec<Wake> = inner.control.lock().subs.iter().map(|s| s.wake.clone()).collect();
+    let wakes: Vec<Wake> = {
+        let mut c = inner.control.lock();
+        c.panics = 0;
+        c.subs.iter().map(|s| s.wake.clone()).collect()
+    };
     for wake in wakes {
         wake();
     }
@@ -1051,6 +1090,48 @@ mod tests {
         drop(a);
         let _b = hub.subscribe(100, Want::default(), Arc::new(|| {}));
         wait_until("a second start", || n.load(Ordering::SeqCst) == 2);
+    }
+
+    #[test]
+    fn a_panicking_worker_comes_back_for_a_waiting_subscriber() {
+        struct BoomOnce(Arc<AtomicU32>);
+        impl Source for BoomOnce {
+            fn sample(&mut self, _want: Want) -> RawSample {
+                assert!(self.0.fetch_add(1, Ordering::SeqCst) > 0, "expected in this test");
+                RawSample { mono_ms: u64::from(self.0.load(Ordering::SeqCst)) * 100, ..Default::default() }
+            }
+        }
+        let calls = Arc::new(AtomicU32::new(0));
+        let c = calls.clone();
+        let hub = Hub::new_with_source(move || Box::new(BoomOnce(c.clone())) as Box<dyn Source>);
+        hub.set_prime_ms(1);
+        hub.set_retry_ms(10);
+        let _s = hub.subscribe(100, Want::default(), Arc::new(|| {}));
+        wait_until("a frame from the new worker", || hub.latest().is_some());
+        assert_eq!(hub.inner.control.lock().panics, 0, "a frame ends the run of panics");
+    }
+
+    #[test]
+    fn a_panicking_worker_stays_gone_with_nobody_waiting() {
+        struct Boom;
+        impl Source for Boom {
+            fn sample(&mut self, _want: Want) -> RawSample {
+                panic!("expected in this test");
+            }
+        }
+        let made = Arc::new(AtomicU32::new(0));
+        let m = made.clone();
+        let hub = Hub::new_with_source(move || {
+            m.fetch_add(1, Ordering::SeqCst);
+            Box::new(Boom) as Box<dyn Source>
+        });
+        hub.set_retry_ms(10);
+        let s = hub.subscribe(100, Want::default(), Arc::new(|| {}));
+        wait_until("the worker to die", || made.load(Ordering::SeqCst) == 1 && !hub.worker_running());
+        drop(s);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!hub.worker_running());
+        assert!(hub.inner.control.lock().panics >= 1);
     }
 
     #[test]

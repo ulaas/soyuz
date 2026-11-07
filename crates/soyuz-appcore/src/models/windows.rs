@@ -1128,6 +1128,29 @@ mod tests {
         assert_eq!(*host.windows.lock().unwrap(), vec![(w, WindowCmd::Minimized(false)), (w, WindowCmd::Raise)]);
     }
 
+    /// The monitor shown only in a secondary window gets readings and keeps its view, and
+    /// the sampler stops when no window shows it.
+    fn monitor_only_in_a_secondary_window(app: &mut AppCore, host: &crate::host::NullHost, w: WindowId) {
+        let (pane, was) = with_window(app, w, |app| {
+            let p = app.ws.pane_mut();
+            (p.id, std::mem::replace(&mut p.location, Location::Monitor))
+        })
+        .unwrap();
+        assert!(!matches!(app.ws.pane().location, Location::Monitor), "the main window shows a folder");
+        settle(app, host, "readings for the monitor in the second window", |a| a.ui.monitor.frame.is_some());
+        assert!(app.ui.monitor.sampling());
+
+        let cfg = app.config.monitor.clone();
+        app.ui.monitor.view(pane, &cfg).set_filter("keep".into());
+        tick(app, host);
+        tick(app, host);
+        assert_eq!(app.ui.monitor.peek(pane).map(|v| v.filter_text.as_str()), Some("keep"));
+
+        with_window(app, w, |app| app.ws.pane_mut().location = was);
+        tick(app, host);
+        assert!(!app.ui.monitor.sampling(), "no window shows the monitor");
+    }
+
     fn run_child(data: std::path::PathBuf) {
         use crate::host::NullHost;
         let dir = soyuz_core::config::config_dir();
@@ -1181,6 +1204,7 @@ mod tests {
 
         terminal_per_window(&mut app, &host, w, &sub);
         shared_panels_per_window(&mut app, &host, w, &sub);
+        monitor_only_in_a_secondary_window(&mut app, &host, w);
 
         // A search in the secondary window streams there (the pump sees every window).
         with_window(&mut app, w, |app| {
