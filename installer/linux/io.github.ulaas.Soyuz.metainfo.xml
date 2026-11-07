@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.7.2" date="2026-11-07" type="development">
+      <description>
+        <p>Operations of the same kind now share one notification. It counts them while they
+          run and ends with one Undo for the whole group, so deleting files one by one no longer
+          leaves a queue of notifications behind. Failures stay visible as a warning. Merging can
+          be turned off in Settings.</p>
+      </description>
+    </release>
     <release version="0.7.1" date="2026-11-07" type="development">
       <description>
         <p>Fixes for working with several windows. Dragging a folder to another Soyuz window
