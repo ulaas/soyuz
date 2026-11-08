@@ -10,7 +10,7 @@ use soyuz_sysmon::{Frame, Metric, Pt};
 use super::canvas::Area;
 use super::chart::{Chart, HUES};
 use super::{Cx, percent_axis, series_of};
-use crate::theme::Role;
+use crate::theme::{Ramp, Role};
 
 /// How a chart's values read.
 #[derive(Clone, Copy)]
@@ -129,16 +129,28 @@ pub(super) fn draw(cx: &mut Cx<'_>, v: &mut MonitorView, frame: &Frame, mut a: A
             continue;
         }
         let pts: Vec<_> = metrics.iter().map(|(m, _)| h.series(m)).collect();
+        let unit = *unit;
+        let bytes = matches!(unit, Unit::Rate);
+        // Two rates (in and out) are drawn like btop's network box: in up, out down.
+        let mirror = bytes && metrics.len() == 2;
         let series = metrics
             .iter()
             .zip(&pts)
             .enumerate()
-            .map(|(k, ((_, label), p))| series_of(label.clone(), p, HUES[(i + k) % HUES.len()]))
+            .map(|(k, ((m, label), p))| {
+                let ramp = match (mirror, k, m, unit) {
+                    (true, 0, ..) => Ramp::Down,
+                    (true, ..) => Ramp::Up,
+                    (_, 0, Metric::CpuTotal, _) => Ramp::Heat,
+                    (_, _, _, Unit::Temp) => Ramp::Temp,
+                    _ => HUES[(i + k) % HUES.len()],
+                };
+                series_of(label.clone(), p, ramp)
+            })
             .collect();
-        let unit = *unit;
         let fmt = move |x: f32| unit_text(unit, x, config);
-        let bytes = matches!(unit, Unit::Rate);
-        let chart = Chart { series, from, to, y_max: *y_max, fmt: &fmt, cursor: h.cursor_ms, legend: true, bytes };
+        let chart =
+            Chart { series, from, to, y_max: *y_max, fmt: &fmt, cursor: h.cursor_ms, legend: true, bytes, mirror };
         // One blank row between charts.
         let area = Area { x: a.x, y, w: a.w, h: chart_h.saturating_sub(u16::from(chart_h > 2)) };
         cx.chart(area, &chart);

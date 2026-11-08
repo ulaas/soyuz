@@ -2,30 +2,30 @@
 | data ×  System monitor ×  +                                                                        |
 |System monitor                                                                                      |
 |Over  Proc  CPU  Mem  Disk  Net  GPU  Sens  Conn  Svc  Boot  Hist  Snap                    every 1 s|
-|List · 6 processes, 3 running · 100% = the machine · 3 columns do not fit                           |
-|  Name                   PID State             CPU v      Memory      Read/s     Write/s         GPU|
-|  builder             900003 Running     #...  11.0%       2 GiB   1.0 KiB/s           –           –|
-|  database            900005 Running     ....   2.8%       4 GiB   1.0 KiB/s           –           –|
-|  db-worker           900006 Running     ....   1.4%     256 MiB   1.0 KiB/s           –           –|
-|  editor              900004 Running     ....   0.8%     512 MiB   1.0 KiB/s           –           –|
-|  shell               900002 Sleeping    ....   0.2%      40 MiB   1.0 KiB/s           –           –|
-|  init                900001 Sleeping    ....   0.0%      12 MiB   1.0 KiB/s           –           –|
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
-|                                                                                                    |
+|+-[Processes]--------------------------------------------------------------------------------------+|
+||List · 6 processes, 3 running · 100% = the machine · 3 columns do not fit                         ||
+||  Name                 PID State             CPU v      Memory      Read/s     Write/s         GPU||
+||  builder           900003 Running     #...  11.0%       2 GiB   1.0 KiB/s           –           –||
+||  database          900005 Running     #...   2.8%       4 GiB   1.0 KiB/s           –           –||
+||  db-worker         900006 Running     #...   1.4%     256 MiB   1.0 KiB/s           –           –||
+||  editor            900004 Running     #...   0.8%     512 MiB   1.0 KiB/s           –           –||
+||  shell             900002 Sleeping    #...   0.2%      40 MiB   1.0 KiB/s           –           –||
+||  init              900001 Sleeping    #...   0.0%      12 MiB   1.0 KiB/s           –           –||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+||                                                                                                  ||
+|+--------------------------------------------------------------------------------------------------+|
 | Processes                                                         ? keys · Tab pages · Ctrl+Q quit |

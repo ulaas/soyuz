@@ -106,6 +106,47 @@ pub enum Role {
     ProgressTrack,
     /// A search match / highlighted span (previews, the editor's find).
     Highlight,
+    /// Step `n` (`0..RAMP_STEPS`) of a monitor gradient: the system monitor's meters,
+    /// graphs and box lines (btop-like), from the low end of the ramp to the high end.
+    Ramp(Ramp, u8),
+}
+
+/// How many steps a [`Ramp`] has.
+pub const RAMP_STEPS: u8 = 16;
+
+/// A colour gradient of the system monitor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Ramp {
+    /// Load: success, warning, danger.
+    Heat,
+    /// Temperatures: info, warning, danger.
+    Temp,
+    /// A charge level: danger, warning, success.
+    Charge,
+    /// Incoming traffic (download, disk read): a dim accent up to the accent and image hues.
+    Down,
+    /// Outgoing traffic (upload, disk write): a dim audio hue up to the audio and warning hues.
+    Up,
+    /// One hue (`RAMP_HUES` order), from dim to full.
+    Hue(u8),
+    /// Barely there, every step (a dimmed row's meter).
+    Faint,
+}
+
+/// The hues of [`Ramp::Hue`]: accent, info, code, audio, image, archive, success, warning.
+pub const RAMP_HUES: usize = 8;
+
+impl Ramp {
+    /// The step for `share` (`0..=1`) of the ramp.
+    pub fn at(self, share: f32) -> Role {
+        let share = if share.is_finite() { share.clamp(0.0, 1.0) } else { 0.0 };
+        Role::Ramp(self, (share * f32::from(RAMP_STEPS - 1)).round() as u8)
+    }
+
+    /// The high end of the ramp.
+    pub fn top(self) -> Role {
+        Role::Ramp(self, RAMP_STEPS - 1)
+    }
 }
 
 impl Role {
@@ -238,6 +279,59 @@ struct Colors {
     doc: Color,
     exe: Color,
     tags: [Color; 8],
+    /// Every [`Ramp`]'s steps ([`ramp_index`] order).
+    ramps: Vec<[Color; RAMP_STEPS as usize]>,
+}
+
+/// Ramps in [`Colors::ramps`]: the five named, the hues, then faint.
+const RAMP_COUNT: usize = 5 + RAMP_HUES + 1;
+
+fn ramp_index(r: Ramp) -> usize {
+    match r {
+        Ramp::Heat => 0,
+        Ramp::Temp => 1,
+        Ramp::Charge => 2,
+        Ramp::Down => 3,
+        Ramp::Up => 4,
+        Ramp::Hue(i) => 5 + usize::from(i) % RAMP_HUES,
+        Ramp::Faint => 5 + RAMP_HUES,
+    }
+}
+
+/// `a` to `b` at `t` (`0..=1`).
+fn lerp(a: Rgba8, b: Rgba8, t: f32) -> Rgba8 {
+    let m = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round().clamp(0.0, 255.0) as u8;
+    Rgba8::rgb(m(a.r, b.r), m(a.g, b.g), m(a.b, b.b))
+}
+
+/// Three stops spread over [`RAMP_STEPS`].
+fn ramp3(a: Rgba8, b: Rgba8, c: Rgba8) -> [Rgba8; RAMP_STEPS as usize] {
+    std::array::from_fn(|i| {
+        let t = i as f32 / f32::from(RAMP_STEPS - 1);
+        if t <= 0.5 { lerp(a, b, t * 2.0) } else { lerp(b, c, t * 2.0 - 1.0) }
+    })
+}
+
+/// The RGB steps of every ramp of the palette `t` (opaque, over `bg.window`).
+fn ramp_rgb(t: &Tokens) -> Vec<[Rgba8; RAMP_STEPS as usize]> {
+    let window = t.bg_window.opaque();
+    let o = |x: Rgba8| blend_over(x, window);
+    // The dim end of a hue: 40 % of the way from the window.
+    let dim = |x: Rgba8| lerp(window, o(x), 0.4);
+    let hues = [t.accent, t.info, t.glyph_code, t.glyph_audio, t.glyph_image, t.glyph_archive, t.success, t.warning];
+    let mut out = vec![
+        ramp3(o(t.success), o(t.warning), o(t.danger)),
+        ramp3(o(t.info), o(t.warning), o(t.danger)),
+        ramp3(o(t.danger), o(t.warning), o(t.success)),
+        ramp3(dim(t.accent), o(t.accent), o(t.glyph_image)),
+        ramp3(dim(t.glyph_audio), o(t.glyph_audio), o(t.warning)),
+    ];
+    for h in hues {
+        out.push(ramp3(dim(h), lerp(dim(h), o(h), 0.5), o(h)));
+    }
+    out.push([o(t.text_tertiary); RAMP_STEPS as usize]);
+    debug_assert_eq!(out.len(), RAMP_COUNT);
+    out
 }
 
 /// The styles one frame draws with.
@@ -604,6 +698,7 @@ impl Colors {
             doc: c(t.glyph_doc),
             exe: c(t.glyph_exe),
             tags: t.tags.map(c),
+            ramps: ramp_rgb(t).into_iter().map(|r| r.map(|x| to_color(x, mode))).collect(),
         }
     }
 
@@ -652,6 +747,7 @@ impl Colors {
             Role::Disabled | Role::ProgressTrack => fg(self.text3),
             Role::Progress => fg(self.accent),
             Role::Highlight => fg(self.warning).add_modifier(bold | Modifier::UNDERLINED),
+            Role::Ramp(r, i) => fg(self.ramps[ramp_index(r)][usize::from(i.min(RAMP_STEPS - 1))]),
         }
     }
 }
@@ -721,6 +817,7 @@ fn ansi16(role: Role) -> Style {
         Role::Disabled | Role::ProgressTrack => fg(Color::DarkGray),
         Role::Progress => fg(Color::Blue),
         Role::Highlight => fg(Color::Yellow).add_modifier(bold | Modifier::UNDERLINED),
+        Role::Ramp(r, i) => fg(ansi16_ramp(r, i)),
         Role::Tag(i) => fg(match i % 8 {
             0 => Color::Red,
             1 => Color::Yellow,
@@ -731,6 +828,28 @@ fn ansi16(role: Role) -> Style {
             6 => Color::Magenta,
             _ => Color::DarkGray,
         }),
+    }
+}
+
+/// A ramp step in 16 colours: the ramp's stops in thirds.
+fn ansi16_ramp(r: Ramp, i: u8) -> Color {
+    let third = usize::from(i.min(RAMP_STEPS - 1)) * 3 / usize::from(RAMP_STEPS);
+    let pick = |c: [Color; 3]| c[third.min(2)];
+    match r {
+        Ramp::Heat => pick([Color::Green, Color::Yellow, Color::Red]),
+        Ramp::Temp => pick([Color::Cyan, Color::Yellow, Color::Red]),
+        Ramp::Charge => pick([Color::Red, Color::Yellow, Color::Green]),
+        Ramp::Down => pick([Color::Blue, Color::LightBlue, Color::LightMagenta]),
+        Ramp::Up => pick([Color::Magenta, Color::LightMagenta, Color::Yellow]),
+        Ramp::Hue(h) => match usize::from(h) % RAMP_HUES {
+            0 => Color::Blue,
+            1 | 3 => Color::Cyan,
+            2 | 7 => Color::Yellow,
+            4 => Color::Magenta,
+            5 => Color::Red,
+            _ => Color::Green,
+        },
+        Ramp::Faint => Color::DarkGray,
     }
 }
 
@@ -773,7 +892,8 @@ fn plain(role: Role) -> Style {
         | Role::Button
         | Role::Disabled
         | Role::Progress
-        | Role::ProgressTrack => s,
+        | Role::ProgressTrack
+        | Role::Ramp(..) => s,
     }
 }
 
@@ -783,7 +903,7 @@ mod tests {
 
     use super::*;
 
-    const ALL_ROLES: [Role; 41] = [
+    const ALL_ROLES: [Role; 45] = [
         Role::Text,
         Role::Muted,
         Role::Faint,
@@ -825,6 +945,10 @@ mod tests {
         Role::Progress,
         Role::ProgressTrack,
         Role::Highlight,
+        Role::Ramp(Ramp::Heat, 0),
+        Role::Ramp(Ramp::Down, RAMP_STEPS - 1),
+        Role::Ramp(Ramp::Hue(7), 3),
+        Role::Ramp(Ramp::Faint, 9),
     ];
 
     fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
