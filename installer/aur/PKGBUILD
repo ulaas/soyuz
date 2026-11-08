@@ -1,5 +1,5 @@
 # Template rendered by .github/workflows/package-manifests.yml
-# (placeholders: @VERSION@, @PKGVER@, @SHA256_LINUX_X86_64@). Publish as the `soyuz-bin`
+# (it fills in the version and checksums). Publish as the `soyuz-bin`
 # AUR package together with the rendered .SRCINFO.
 #
 # The release tarball is a relocatable prefix (bin/, lib/soyuz/, share/; scripts/package.sh),

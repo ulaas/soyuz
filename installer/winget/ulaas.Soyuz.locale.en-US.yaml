@@ -1,4 +1,4 @@
-# Template rendered by .github/workflows/package-manifests.yml (placeholders: @VERSION@).
+# Template rendered by .github/workflows/package-manifests.yml (it fills in the version and checksums).
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
 PackageIdentifier: ulaas.Soyuz
 PackageVersion: @VERSION@

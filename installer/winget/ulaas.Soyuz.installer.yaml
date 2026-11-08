@@ -1,5 +1,5 @@
 # Template rendered by .github/workflows/package-manifests.yml
-# (placeholders: @VERSION@, @SHA256_MSI@). The MSI installs per user into
+# (it fills in the version and checksums). The MSI installs per user into
 # %LOCALAPPDATA%\Programs\Soyuz without admin rights (WiX Scope="perUserOrMachine",
 # per-user by default; installer/windows/soyuz.wxs). UpgradeCode is fixed across versions.
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json

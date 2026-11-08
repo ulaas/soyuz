@@ -1,5 +1,5 @@
 # Homebrew cask template, rendered by .github/workflows/package-manifests.yml
-# (placeholders: @VERSION@, @SHA256_MACOS_ARM64@). For a tap such as ulaas/homebrew-tap:
+# (it fills in the version and checksums). For a tap such as ulaas/homebrew-tap:
 #   brew install --cask ulaas/tap/soyuz
 # The tarball has one top-level folder holding soyuz, soyuz-tui and the FFmpeg dylibs
 # (loaded from next to the executable), see scripts/package.ps1.

@@ -1,5 +1,5 @@
 {
-    "##": "Template rendered by .github/workflows/package-manifests.yml (placeholders: @VERSION@, @SHA256_PORTABLE_ZIP@). The portable zip carries an empty `portable` file next to soyuz.exe, so settings live in a portable-data folder beside it; `persist` keeps that folder across updates.",
+    "##": "Template rendered by .github/workflows/package-manifests.yml (it fills in the version and checksums). The portable zip carries an empty `portable` file next to soyuz.exe, so settings live in a portable-data folder beside it; `persist` keeps that folder across updates.",
     "version": "@VERSION@",
     "description": "A keyboard-first file explorer: background jobs with undo, dual panes and a terminal UI.",
     "homepage": "https://ulaas.github.io/soyuz/",
