@@ -11,11 +11,11 @@ use soyuz_sysmon::{
 };
 
 use super::canvas::{Area, Hit};
-use super::chart;
+
 use super::{Cx, follow};
 use crate::icons;
 use crate::input::monitor::FieldKind;
-use crate::theme::Role;
+use crate::theme::{Ramp, Role};
 use crate::view::text;
 use soyuz_appcore::icon::IconId;
 
@@ -286,8 +286,8 @@ pub(super) fn draw(cx: &mut Cx<'_>, v: &mut MonitorView, frame: &Frame, generati
                     };
                     if share > 0.0 {
                         let bw = p.w - tw - 1;
-                        let bar_role = if dim { Role::Faint } else { chart::heat_role(share) };
-                        cx.bar(Area { x, y, w: bw.min(4), h: 1 }, share, bar_role);
+                        let ramp = if dim { Ramp::Faint } else { Ramp::Heat };
+                        cx.bar(Area { x, y, w: bw.min(4), h: 1 }, share, ramp);
                     }
                 }
                 cx.c.right(x, y, p.w, &txt, role);
@@ -436,7 +436,7 @@ fn draw_details(cx: &mut Cx<'_>, v: &MonitorView, frame: &Frame, a: Area) {
                 trail.iter().map(|s| soyuz_sysmon::Pt { t: s.t_ms, avg: s.cpu_percent, max: s.cpu_percent }).collect();
             let w = 24u16;
             let window = (pts[0].t, pts[pts.len() - 1].t);
-            cx.spark(Area { x: body.x + body.w - w, y: body.y, w, h: 1 }, &pts, window, None, Role::Accent);
+            cx.spark(Area { x: body.x + body.w - w, y: body.y, w, h: 1 }, &pts, window, None, Ramp::Heat);
         }
     }
 }

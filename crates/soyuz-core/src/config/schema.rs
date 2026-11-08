@@ -488,7 +488,9 @@ pub enum SidebarSection {
     Trash,
     /// The disk tree as a section (only drawn in `mode = "both"`).
     Tree,
-    /// Smart folders (saved live searches). Shown last when not listed.
+    /// Smart folders (saved live searches). Listed, always shown (with a hint while the
+    /// file index is off); not listed, shown last when there are smart folders or the index
+    /// is on.
     Smart,
 }
 

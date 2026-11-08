@@ -810,8 +810,11 @@ made while it was closed are applied in seconds; otherwise it re-checks the fold
 background after each start.
 
 **Smart folders** are saved queries in the sidebar that stay up to date: create one with
-**Smart folder** in the search status strip or **New smart folder…** in the sidebar;
-right-click one to edit, rename or delete it (deleting only removes the query).
+**Smart folder** in the search status strip or **New smart folder…** in the sidebar's
+*Smart folders* section; right-click one to edit, rename or delete it (deleting only
+removes the query). They work without the index too, but then search the disk each time
+they open: while the index is off, the section's last row (*Turn on the index…*) opens
+its settings.
 
 ## Customizing
 

@@ -137,7 +137,7 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                             crate::ui::tools::tags_ui::sidebar_section(ui, &mut s.collapsed, c.current, c.pane, c.cmds)
                         }
                         SidebarSection::Smart => {
-                            crate::ui::smart::sidebar_section(ui, &mut s.collapsed, c.current, c.cmds)
+                            crate::ui::smart::sidebar_section(ui, &mut s.collapsed, c.current, c.cmds, true)
                         }
                         _ => {}
                     }
@@ -146,7 +146,7 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                     tree_section(ui, s, c);
                 }
                 if !c.sections.contains(&SidebarSection::Smart) {
-                    crate::ui::smart::sidebar_section(ui, &mut s.collapsed, c.current, c.cmds);
+                    crate::ui::smart::sidebar_section(ui, &mut s.collapsed, c.current, c.cmds, false);
                 }
                 crate::ui::search::sidebar_section(ui, c.saved_searches, &mut s.collapsed, c.cmds, c.saved_config);
                 ui.add_space(8.0);

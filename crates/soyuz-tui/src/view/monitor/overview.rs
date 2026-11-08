@@ -1,16 +1,16 @@
-//! The Overview page: who this machine is, a tile per resource with a small chart, and the
-//! top processes by CPU and memory.
+//! The Overview page: who this machine is, a box per resource with its value in the frame
+//! and a graph, and the top processes by CPU and memory.
 
 use soyuz_appcore::models::monitor::{MonitorState, labels};
 use soyuz_appcore::tr;
 use soyuz_core::config::monitor::MonitorPage;
 use soyuz_sysmon::{Frame, Metric, ProcRow, SystemInfo};
 
+use super::boxes::{Frame as BoxFrame, hue};
 use super::canvas::{Area, Hit};
-use super::chart::{self, Chart, HUES};
+use super::chart::{self, Chart};
 use super::{Cx, percent_axis, series_of};
-use crate::theme::Role;
-use crate::view::text;
+use crate::theme::{Ramp, Role};
 
 /// `host · Windows 11 · 10.0 · x86_64`, then the hardware and how long it has been up.
 pub(super) fn identity(cx: &Cx<'_>, info: &SystemInfo, frame: &Frame) -> Vec<String> {
@@ -48,7 +48,12 @@ struct Tile {
     value: String,
     sub: String,
     metric: Metric,
-    second: Option<(Metric, String)>,
+    /// The graph's gradient.
+    ramp: Ramp,
+    /// The box's hue.
+    hue: Ramp,
+    /// A second series, mirrored below the first (in and out), with its gradient.
+    second: Option<(Metric, String, Ramp)>,
     y_max: Option<f32>,
     page: MonitorPage,
     rate: bool,
@@ -73,6 +78,8 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
                 |t| labels::temperature(t, cx.config.monitor.temperature_unit),
             ),
             metric: Metric::CpuTotal,
+            ramp: Ramp::Heat,
+            hue: hue::CPU,
             second: None,
             y_max: Some(100.0),
             page: MonitorPage::Cpu,
@@ -83,6 +90,8 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
             value: labels::percent(mem.percent),
             sub: format!("{} / {}", cx.size(mem.used), cx.size(mem.raw.total)),
             metric: Metric::MemPercent,
+            ramp: Ramp::Hue(7),
+            hue: hue::MEMORY,
             second: None,
             y_max: Some(100.0),
             page: MonitorPage::Memory,
@@ -93,7 +102,9 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
             value: cx.rate(read + write),
             sub: tr!("tui-monitor-read-write", read = cx.rate(read), write = cx.rate(write)),
             metric: Metric::DiskRead,
-            second: Some((Metric::DiskWrite, tr!("tui-monitor-write").into())),
+            ramp: Ramp::Down,
+            hue: hue::DISKS,
+            second: Some((Metric::DiskWrite, tr!("tui-monitor-write").into(), Ramp::Up)),
             y_max: None,
             page: MonitorPage::Disks,
             rate: true,
@@ -103,7 +114,9 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
             value: cx.rate(rx + tx),
             sub: tr!("tui-monitor-down-up", down = cx.rate(rx), up = cx.rate(tx)),
             metric: Metric::NetRx,
-            second: Some((Metric::NetTx, tr!("tui-monitor-upload").into())),
+            ramp: Ramp::Down,
+            hue: hue::NETWORK,
+            second: Some((Metric::NetTx, tr!("tui-monitor-upload").into(), Ramp::Up)),
             y_max: None,
             page: MonitorPage::Network,
             rate: true,
@@ -118,6 +131,8 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
                 _ => g.name.clone(),
             },
             metric: Metric::GpuLoad(0),
+            ramp: Ramp::Heat,
+            hue: hue::GPU,
             second: None,
             y_max: Some(100.0),
             page: MonitorPage::Gpu,
@@ -130,6 +145,8 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
             value: labels::percent(mem.swap_percent),
             sub: format!("{} / {}", cx.size(mem.raw.swap_used), cx.size(mem.raw.swap_total)),
             metric: Metric::SwapPercent,
+            ramp: Ramp::Hue(5),
+            hue: hue::SWAP,
             second: None,
             y_max: Some(100.0),
             page: MonitorPage::Memory,
@@ -142,6 +159,8 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
             value: labels::temperature(t, cx.config.monitor.temperature_unit),
             sub: String::new(),
             metric: Metric::MaxTemp,
+            ramp: Ramp::Temp,
+            hue: hue::SENSORS,
             second: None,
             y_max: None,
             page: MonitorPage::Sensors,
@@ -153,6 +172,8 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
         value: labels::count(u64::from(frame.counts.processes)),
         sub: tr!("tui-monitor-threads", count = labels::count(frame.counts.threads)),
         metric: Metric::ProcessCount,
+        ramp: Ramp::Hue(1),
+        hue: hue::LISTS,
         second: None,
         y_max: None,
         page: MonitorPage::Processes,
@@ -161,27 +182,34 @@ fn tiles(cx: &Cx<'_>, frame: &Frame) -> Vec<Tile> {
     out
 }
 
-fn draw_tile(cx: &mut Cx<'_>, m: &mut MonitorState, frame: &Frame, t: &Tile, role: Role, a: Area) {
+/// A tile: a box with the value in its frame, the detail line and a graph.
+fn draw_tile(cx: &mut Cx<'_>, m: &mut MonitorState, frame: &Frame, t: &Tile, a: Area) {
     let window = cx.window(frame);
     let secs = cx.config.monitor.graph_span();
-    let vw = text::width(&t.value) as u16;
-    cx.c.bold(a.x, a.y, a.w.saturating_sub(vw + 1), &t.title, Role::Title);
-    cx.c.right(a.x, a.y, a.w, &t.value, Role::Text);
-    if a.h >= 2 {
-        cx.c.text(a.x, a.y + 1, a.w, &t.sub, Role::Muted);
-    }
     cx.c.hit(a, Hit::Tab(t.page));
-    let body = a.below(2);
+    // With lines the detail sits in the bottom line, leaving the inside to the graph.
+    let framed = cx.frame_rows() == 2 && a.h >= 3;
+    let foot = if framed { t.sub.as_str() } else { "" };
+    let inner = cx.boxed(a, BoxFrame { title: &t.title, info: &t.value, foot }, t.hue);
+    if inner.h == 0 {
+        return;
+    }
+    let body = if framed {
+        inner
+    } else {
+        cx.c.text(inner.x, inner.y, inner.w, &t.sub, Role::Muted);
+        inner.below(1)
+    };
     if body.h == 0 || cx.look.sr {
         return;
     }
     let width = usize::from(body.w) * 2;
     let pts = m.series(&t.metric, secs, width);
     if body.h == 1 {
-        cx.spark(body, &pts, window, t.y_max, role);
+        cx.spark(body, &pts, window, t.y_max, t.ramp);
         return;
     }
-    let second = t.second.as_ref().map(|(mt, l)| (m.series(mt, secs, width), l.clone()));
+    let second = t.second.as_ref().map(|(mt, l, r)| (m.series(mt, secs, width), l.clone(), *r));
     let style = cx.config.general.size_style;
     let fmt_rate = move |v: f32| labels::rate(f64::from(v), style);
     let fmt_num = |v: f32| format!("{v:.0}");
@@ -193,13 +221,23 @@ fn draw_tile(cx: &mut Cx<'_>, m: &mut MonitorState, frame: &Frame, t: &Tile, rol
         &fmt_num
     };
     let two = second.is_some();
-    let mut series = vec![series_of(t.title.clone(), &pts, role)];
-    if let Some((p, l)) = &second {
-        series.push(series_of(l.clone(), p, Role::Info));
+    let mut series = vec![series_of(t.title.clone(), &pts, t.ramp)];
+    if let Some((p, l, r)) = &second {
+        series.push(series_of(l.clone(), p, *r));
     }
-    // The tile's own lines say the value; two series need their names.
-    let chart =
-        Chart { series, from: window.0, to: window.1, y_max: t.y_max, fmt, cursor: None, legend: two, bytes: t.rate };
+    // The frame says the value; two series need their names where they fit (the detail
+    // line says both otherwise).
+    let chart = Chart {
+        series,
+        from: window.0,
+        to: window.1,
+        y_max: t.y_max,
+        fmt,
+        cursor: None,
+        legend: two && body.w >= 40,
+        bytes: t.rate,
+        mirror: two,
+    };
     chart::draw(cx.c, body, &chart, cx.look.chart);
 }
 
@@ -213,34 +251,35 @@ pub(super) fn top_by(frame: &Frame, n: usize, key: impl Fn(&ProcRow) -> f64) -> 
 
 fn draw_tops(cx: &mut Cx<'_>, frame: &Frame, a: Area) {
     let cols = if a.w >= 70 && !cx.look.sr { 2 } else { 1 };
-    let boxes = a.columns(cols, 3);
+    let boxes = a.columns(cols, 1);
     let rows = if cols == 2 { a.h } else { a.h / 2 };
-    let n = usize::from(rows.saturating_sub(1)).min(TOPS_MAX);
     let (ncpu, scale) = (frame.ncpu().max(1), cx.config.monitor.cpu_scale);
     let cpu_share = |p: &ProcRow| match scale {
         soyuz_sysmon::CpuScale::Machine => p.cpu_percent / ncpu as f32,
         soyuz_sysmon::CpuScale::PerCore => p.cpu_percent,
     };
-    let lists: [(&str, Vec<&ProcRow>); 2] = [
-        (tr!("tui-monitor-top-cpu"), top_by(frame, n, |p| f64::from(p.cpu_percent))),
-        (tr!("tui-monitor-top-memory"), top_by(frame, n, |p| p.raw.rss as f64)),
-    ];
-    for (k, (title, list)) in lists.iter().enumerate() {
+    let titles = [tr!("tui-monitor-top-cpu"), tr!("tui-monitor-top-memory")];
+    for (k, title) in titles.iter().enumerate() {
         let b = if cols == 2 { boxes[k] } else { Area { y: a.y + i32::from(rows) * k as i32, h: rows, ..a } };
-        cx.c.bold(b.x, b.y, b.w, title, Role::GroupHeader);
+        let inner = cx.boxed(b, BoxFrame { title, ..BoxFrame::default() }, hue::PROCESSES);
+        let n = usize::from(inner.h).min(TOPS_MAX);
+        let list = if k == 0 {
+            top_by(frame, n, |p| f64::from(p.cpu_percent))
+        } else {
+            top_by(frame, n, |p| p.raw.rss as f64)
+        };
         for (i, p) in list.iter().enumerate() {
-            let y = b.y + 1 + i as i32;
+            let y = inner.y + i as i32;
             let value = if k == 0 { labels::percent(cpu_share(p)) } else { cx.size(p.raw.rss) };
-            let bar_w = if b.w >= 44 { 10u16 } else { 0 };
+            let bar_w = if inner.w >= 40 { 12u16 } else { 0 };
             let vw = 9u16;
-            let nw = b.w.saturating_sub(vw + bar_w + 2);
-            cx.c.text(b.x, y, nw, &p.raw.name, Role::Text);
+            let nw = inner.w.saturating_sub(vw + bar_w + 2);
+            cx.c.text(inner.x, y, nw, &p.raw.name, Role::Text);
             let share = if k == 0 { cpu_share(p) / 100.0 } else { p.mem_percent / 100.0 };
             if bar_w > 0 {
-                let bx = Area { x: b.x + nw + 1, y, w: bar_w, h: 1 };
-                cx.bar(bx, share, chart::heat_role(share));
+                cx.bar(Area { x: inner.x + nw + 1, y, w: bar_w, h: 1 }, share, Ramp::Heat);
             }
-            cx.c.right(b.x + b.w.saturating_sub(vw), y, vw.min(b.w), &value, Role::Text);
+            cx.c.right(inner.x + inner.w.saturating_sub(vw), y, vw.min(inner.w), &value, Role::Text);
         }
     }
 }
@@ -254,30 +293,28 @@ pub(super) fn draw(cx: &mut Cx<'_>, m: &mut MonitorState, frame: &Frame, mut a: 
             cx.c.text(r.x, r.y, r.w, l, Role::Muted);
         }
     }
-    if a.h > 0 {
-        a.take_top(1);
-    }
     let ts = tiles(cx, frame);
     let cols = (a.w / 24).clamp(1, 4);
     let rows = ts.len().div_ceil(usize::from(cols)) as u16;
     // The top lists keep a useful length (one column of them below 70 cells: two lists
     // stacked); the tiles grow with the rest.
-    let wanted = TOPS_MAX as u16 + 1;
+    let wanted = TOPS_MAX as u16 + 2;
     let tops_keep = if a.h >= 16 { (if a.w >= 70 { wanted } else { 2 * wanted }).min(a.h / 2) } else { 0 };
     let per = (a.h.saturating_sub(tops_keep) / rows.max(1)).clamp(1, 14);
     let per = if cx.look.sr { 2 } else { per };
-    let grid = a.columns(cols, 2);
+    // The boxes sit side by side, one cell apart.
+    let grid = a.columns(cols, 1);
     for (i, t) in ts.iter().enumerate() {
         let col = grid[i % usize::from(cols)];
         let y = a.y + (i / usize::from(cols)) as i32 * i32::from(per);
-        let area = Area { x: col.x, y, w: col.w, h: per.saturating_sub(u16::from(per > 2)).max(1) };
         if y < a.y + i32::from(a.h) {
-            draw_tile(cx, m, frame, t, HUES[i % HUES.len()], area);
+            let h = per.min((a.y + i32::from(a.h) - y) as u16);
+            draw_tile(cx, m, frame, t, Area { x: col.x, y, w: col.w, h });
         }
     }
     let used = (rows * per).min(a.h);
     let tops = a.below(used);
-    if tops.h >= 3 {
+    if tops.h >= 4 {
         draw_tops(cx, frame, tops);
     }
     cx.announce = format!(

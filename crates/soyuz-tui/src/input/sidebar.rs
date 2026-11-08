@@ -196,6 +196,7 @@ pub fn activate(core: &mut AppCore, target: Target) {
         }
         Target::Connect => core.cmds.push(Cmd::Remote(RemoteCmd::ConnectDialog { uri: None, edit: None, note: None })),
         Target::NewSmart => core.cmds.push(Cmd::Smart(SmartCmd::Edit(None))),
+        Target::IndexSettings => core.cmds.push(Cmd::Smart(SmartCmd::OpenSettings)),
     }
 }
 

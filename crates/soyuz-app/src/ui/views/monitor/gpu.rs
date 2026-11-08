@@ -124,9 +124,14 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
                         ),
                         mr.width() - 28.0,
                     );
+                    // The shared-memory row sits at the bottom: the chart ends above it,
+                    // or the row covers the line (at a fifth of the card when a fifth of the
+                    // memory is in use).
+                    let bottom =
+                        if g.shared_used.is_some() { mr.bottom() - font::grow(24.0) - 6.0 } else { mr.bottom() - 10.0 };
                     let plot = Rect::from_min_max(
                         pos2(mr.left() + 12.0, y + font::grow(50.0)),
-                        pos2(mr.right() - 12.0, mr.bottom() - 10.0),
+                        pos2(mr.right() - 12.0, bottom),
                     );
                     let s = [Series::new(tr!("monitor-gui-gpu-memory"), hue(&p, Hue::Memory), mem)];
                     Chart::mini(span, Unit::Bytes, fmt).y_max(t as f32).show(

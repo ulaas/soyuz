@@ -10,6 +10,10 @@
 //! 2. [`decorate`] puts the finished [`MonitorVm`] on the pane's model.
 //! 3. [`MonitorVm::draw`] replays the canvas.
 //!
+//! The look follows btop: every section is a box in its own hue with the title set into
+//! the frame ([`boxes`]); graphs are braille areas coloured by height along a gradient,
+//! meters rows of `■` coloured by position ([`chart`]).
+//!
 //! Identity is never colour alone: charts have legends and differ in shape, bars carry
 //! numbers, change marks are `+ - ~`. Screen-reader mode ([`Look::sr`]) draws no charts or
 //! bars (a text line says the values) and keeps one thing per row; [`MonitorVm::announce`]
@@ -17,6 +21,7 @@
 //!
 //! Keys and mouse: `crate::input::monitor`.
 
+mod boxes;
 pub mod canvas;
 pub mod chart;
 pub mod dialogs;
@@ -41,6 +46,7 @@ use soyuz_core::config::monitor::MonitorPage;
 use soyuz_core::{Location, format_size};
 use soyuz_sysmon::{Frame, Pt};
 
+use self::boxes::{Frame as BoxFrame, hue};
 pub use self::canvas::Hit;
 use self::canvas::{Area, Canvas};
 use self::chart::{Chart, ChartStyle, Series};
@@ -51,7 +57,7 @@ use crate::icons::IconSet;
 use crate::input::InputState;
 use crate::input::monitor::{FieldKind, PaneNav};
 use crate::layout::{Hits, Regions};
-use crate::theme::{Role, TuiTheme};
+use crate::theme::{Ramp, Role, TuiTheme};
 use crate::view::PaneVm;
 use crate::view::text;
 
@@ -155,16 +161,16 @@ impl Cx<'_> {
     }
 
     /// A bar, nothing in screen-reader mode.
-    pub fn bar(&mut self, a: Area, share: f32, role: Role) {
+    pub fn bar(&mut self, a: Area, share: f32, ramp: Ramp) {
         if !self.look.sr {
-            chart::bar(self.c, a, share, role, self.look.chart);
+            chart::bar(self.c, a, share, ramp, self.look.chart);
         }
     }
 
     /// A sparkline, nothing in screen-reader mode.
-    pub fn spark(&mut self, a: Area, pts: &[Pt], window: (i64, i64), y_max: Option<f32>, role: Role) {
+    pub fn spark(&mut self, a: Area, pts: &[Pt], window: (i64, i64), y_max: Option<f32>, ramp: Ramp) {
         if !self.look.sr {
-            chart::spark(self.c, a, pts, window, y_max, role, self.look.chart);
+            chart::spark(self.c, a, pts, window, y_max, ramp, self.look.chart);
         }
     }
 
@@ -315,6 +321,24 @@ fn draw_page(cx: &mut Cx<'_>, m: &mut MonitorState, pane: PaneId, page: MonitorP
     let frame = m.frame.clone();
     let generation = m.generation;
     let cfg = cx.config.monitor.clone();
+    // The table pages sit in one box, like btop's process box (a reader has the page's
+    // name from the strip already).
+    let a = match page {
+        _ if cx.look.sr => a,
+        MonitorPage::Processes
+        | MonitorPage::Connections
+        | MonitorPage::Services
+        | MonitorPage::Startup
+        | MonitorPage::History
+        | MonitorPage::Snapshots => {
+            let h = if page == MonitorPage::Processes { hue::PROCESSES } else { hue::LISTS };
+            cx.boxed(a, BoxFrame { title: labels::page_title(page), ..BoxFrame::default() }, h)
+        }
+        _ => a,
+    };
+    if a.h == 0 {
+        return;
+    }
     // Pages that can draw without a reading.
     match page {
         MonitorPage::Snapshots => return snapshots::draw(cx, m.view(pane, &cfg), a),
@@ -529,8 +553,8 @@ pub(super) fn follow(top: usize, cursor: usize, rows: usize, len: usize) -> usiz
 }
 
 /// A chart of `metric`-like series on the live window, for pages.
-pub(super) fn series_of<'a>(label: impl Into<String>, pts: &'a [Pt], role: Role) -> Series<'a> {
-    Series { label: label.into(), pts, role }
+pub(super) fn series_of<'a>(label: impl Into<String>, pts: &'a [Pt], ramp: Ramp) -> Series<'a> {
+    Series { label: label.into(), pts, ramp }
 }
 
 #[cfg(test)]
