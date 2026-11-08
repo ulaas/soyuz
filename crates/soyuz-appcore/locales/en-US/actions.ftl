@@ -522,6 +522,7 @@ actions-mode-apps = Apps
 actions-legend-apps = apps
 actions-placeholder-apps = Start an installed app
 actions-section-apps = Applications
+actions-section-more-commands = More commands
 actions-palette-apps-off = Apps in the palette are off
 actions-palette-apps-off-detail = Turn on “List installed apps in the command palette” in Settings › Behaviour
 actions-palette-apps-scanning = Looking for installed apps…

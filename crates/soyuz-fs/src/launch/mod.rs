@@ -17,6 +17,7 @@ mod installed;
 pub(crate) mod linux;
 pub(crate) mod lnk;
 mod macos;
+mod store_apps;
 mod windows;
 
 use std::path::{Path, PathBuf};

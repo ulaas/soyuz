@@ -196,6 +196,7 @@ fn fake_app(name: &str) -> soyuz_fs::launch::InstalledApp {
         detail: "A test app".into(),
         keywords: String::new(),
         source: PathBuf::from(format!("{name}.desktop")),
+        aumid: None,
     }
 }
 

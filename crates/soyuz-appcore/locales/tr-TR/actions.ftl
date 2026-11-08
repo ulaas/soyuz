@@ -521,6 +521,7 @@ actions-mode-apps = Uygulamalar
 actions-legend-apps = uygulamalar
 actions-placeholder-apps = Yüklü bir uygulamayı başlatın
 actions-section-apps = Uygulamalar
+actions-section-more-commands = Diğer komutlar
 actions-palette-apps-off = Paletteki uygulamalar kapalı
 actions-palette-apps-off-detail = Ayarlar › Davranış bölümünden “Yüklü uygulamaları komut paletinde listele” seçeneğini açın
 actions-palette-apps-scanning = Yüklü uygulamalar aranıyor…

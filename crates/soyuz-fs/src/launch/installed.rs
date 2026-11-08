@@ -2,7 +2,9 @@
 //!
 //! * Windows: the shortcuts of the Start menu (the user's and all users' `Programs`
 //!   folders). Uninstallers and shortcuts whose target is gone are left out; a shortcut
-//!   starts as a double-click on it would ([`super::open_default`]).
+//!   starts as a double-click on it would ([`super::open_default`]). Plus the packaged
+//!   (Store) apps shown in Start ([`super::store_apps`]), started through their app
+//!   execution alias or Explorer's Apps folder.
 //! * Linux / BSD: the desktop entries an "Open with" menu would list (launchable, not
 //!   `NoDisplay`, shown in this desktop), started without files (D-Bus activation or
 //!   `Exec=`, terminal entries in a terminal).
@@ -26,8 +28,12 @@ pub struct InstalledApp {
     pub detail: String,
     /// More words to match (Start menu folder, program file name, `Keywords=`).
     pub keywords: String,
-    /// The shortcut, desktop file or bundle.
+    /// The shortcut, desktop file or bundle (a packaged app's install folder).
     pub source: PathBuf,
+    /// Windows packaged (Store) app: its application user model id
+    /// (`Microsoft.Paint_8wekyb3d8bbwe!App`).
+    #[serde(default)]
+    pub aumid: Option<String>,
 }
 
 /// Every application found, sorted by name (case-insensitive), duplicates by name removed.
@@ -53,6 +59,10 @@ pub fn launch_app(app: &InstalledApp) -> FsResult<()> {
             )),
         }
     }
+    #[cfg(windows)]
+    if let Some(aumid) = &app.aumid {
+        return super::windows::launch_packaged(aumid, &app.source);
+    }
     #[cfg(any(windows, target_os = "macos"))]
     {
         super::open_default(&app.source)
@@ -71,6 +81,7 @@ fn scan() -> Vec<InstalledApp> {
             }
         }
     }
+    out.extend(super::store_apps::scan());
     out
 }
 
@@ -100,6 +111,7 @@ fn start_menu_app(root: &Path, lnk: &Path) -> Option<InstalledApp> {
         keywords: format!("{folder} {program}"),
         name,
         source: lnk.to_path_buf(),
+        aumid: None,
     })
 }
 
@@ -123,6 +135,7 @@ fn scan() -> Vec<InstalledApp> {
                     e.program().unwrap_or_default()
                 ),
                 source: a.file.clone(),
+                aumid: None,
             }
         })
         .collect()
@@ -149,6 +162,7 @@ fn scan() -> Vec<InstalledApp> {
                 detail: folder.clone(),
                 keywords: folder,
                 source: app,
+                aumid: None,
             });
         }
     }

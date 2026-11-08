@@ -209,6 +209,30 @@ pub(crate) fn string_values(h: Hive, subkey: &str) -> Vec<(String, String)> {
     out
 }
 
+/// When a key was last written (100 ns ticks since 1601, as `FILETIME`).
+pub(crate) fn last_write(h: Hive, subkey: &str) -> Option<u64> {
+    let key = open(h, subkey)?;
+    let mut ft = windows_sys::Win32::Foundation::FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+    // SAFETY: open key; only the last-write time is requested.
+    let rc = unsafe {
+        RegQueryInfoKeyW(
+            key.0,
+            null_mut(),
+            null_mut(),
+            null(),
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            &mut ft,
+        )
+    };
+    (rc == 0).then_some((u64::from(ft.dwHighDateTime) << 32) | u64::from(ft.dwLowDateTime))
+}
+
 // ---- HKCU writes ---------------------------------------------------------------------
 //
 // Writes are limited to HKEY_CURRENT_USER on purpose: the only writer is the per-user,

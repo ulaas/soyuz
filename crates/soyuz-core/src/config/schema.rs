@@ -667,7 +667,7 @@ pub struct OpenSection {
     /// it fails with an error and only "Run as administrator" starts it.
     pub elevate_when_required: bool,
     /// The command palette also lists the applications installed on the system (the Start
-    /// menu on Windows, desktop entries on Linux, the Applications folders on macOS): type a
+    /// menu and Store apps on Windows, desktop entries on Linux, the Applications folders on macOS): type a
     /// name to start one, or `!` to list only apps; off = neither.
     pub palette_apps: bool,
     /// Default applications by file type: the first rule naming the file's extension wins;

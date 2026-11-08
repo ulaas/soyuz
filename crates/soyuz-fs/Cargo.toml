@@ -15,6 +15,7 @@ fault-inject = []
 fuzzing = []
 
 [dependencies]
+quick-xml.workspace = true
 soyuz-core.workspace = true
 bitflags.workspace = true
 serde.workspace = true

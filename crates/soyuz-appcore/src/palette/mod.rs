@@ -943,8 +943,9 @@ pub fn name_match(q: &str, name: &str) -> bool {
 }
 
 /// Commands mode with at least two letters typed: the apps whose names match closely
-/// ([`name_match`]) join the commands, ahead of them when the best app matches better than
-/// the best command.
+/// ([`name_match`]) join the commands. They come first when the best app matches better
+/// than the best command; else after the commands whose titles match closely too, and the
+/// looser command matches follow under "More commands".
 fn add_apps(app: &AppCore, q: &str, v: &mut Vec<Item>) {
     if !app.config.open.palette_apps || q.trim().chars().count() < 2 {
         return;
@@ -960,6 +961,17 @@ fn add_apps(app: &AppCore, q: &str, v: &mut Vec<Item>) {
     match (first_cmd, best_cmd) {
         (Some(at), Some(best)) if best_app > best => {
             v.splice(at..at, apps);
+        }
+        (Some(at), Some(_)) => {
+            let close = v[at..]
+                .iter()
+                .position(|i| !matches!(i.exec, Exec::Action(_)) || !name_match(q, &i.title))
+                .map_or(v.len(), |n| at + n);
+            let more = tr!("actions-section-more-commands");
+            for it in v[close..].iter_mut().filter(|i| matches!(i.exec, Exec::Action(_))) {
+                it.section = more;
+            }
+            v.splice(close..close, apps);
         }
         _ => v.extend(apps),
     }

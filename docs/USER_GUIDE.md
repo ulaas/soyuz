@@ -194,9 +194,10 @@ program needs them*). Any program can also be started elevated from its context 
 **Starting apps from the palette.** The command palette also finds the apps installed on
 the computer: type part of a name (`code` finds Visual Studio Code, `vsc` too) and the
 closest apps appear with the commands; start with `!` to list only apps, recently started
-ones first. On Windows they come from the Start menu (uninstallers left out; Store apps
-such as Paint or Calculator are not listed yet), on Linux from the desktop entries an
-*Open with* menu shows, on macOS from the Applications folders. Turn it off with `[open]
+ones first. On Windows they come from the Start menu shortcuts (uninstallers left out)
+and the Store apps shown in Start (Paint, Calculator, Terminal, …; named as Windows last
+showed them, started like a click in Start), on Linux from the desktop entries an *Open
+with* menu shows, on macOS from the Applications folders. Turn it off with `[open]
 palette_apps` (*Settings → Behaviour → List installed apps in the command palette*).
 
 **Unrecognized files.** A file no app is registered for, an unknown type or a file

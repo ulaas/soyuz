@@ -585,6 +585,19 @@ mod imp {
     }
 
     /// Open `url` with the handler registered for its scheme.
+    /// Start packaged (Store) app `aumid` (`Microsoft.Paint_8wekyb3d8bbwe!App`): through
+    /// its app execution alias when it has one, else Explorer (its own process) activates it
+    /// from the Apps folder, as the Start menu would.
+    pub(crate) fn launch_packaged(aumid: &str, path: &Path) -> FsResult<()> {
+        if !super::super::store_apps::valid_aumid(aumid) {
+            return Err(FsError::with_message(FsErrorKind::InvalidName, "launch", Some(path), "not a valid app id"));
+        }
+        if let Some(alias) = RealRegistry.app_alias(aumid) {
+            return spawn_raw(&alias, "", None, "launch", path);
+        }
+        spawn_raw(Path::new("explorer.exe"), &format!("shell:AppsFolder\\{aumid}"), None, "launch", path)
+    }
+
     pub(crate) fn open_url(url: &str, path: &Path) -> FsResult<()> {
         if !super::url_is_safe(url) {
             return Err(FsError::with_message(FsErrorKind::InvalidName, "open", Some(path), "not a valid URL"));
