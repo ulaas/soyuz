@@ -781,10 +781,10 @@ impl History {
             return collect_series(&self.fine, metric, from_ms, to_ms, max_points);
         }
         if reaches(medium) {
-            return collect_series(&self.medium, metric, from_ms, to_ms, max_points);
+            return self.stitched(&self.medium, MEDIUM_STEP_MS, metric, from_ms, to_ms, max_points);
         }
         if reaches(coarse) {
-            return collect_series(&self.coarse, metric, from_ms, to_ms, max_points);
+            return self.stitched(&self.coarse, COARSE_STEP_MS, metric, from_ms, to_ms, max_points);
         }
         // No tier reaches back that far: the finest one, unless a coarser tier really reaches
         // further than its own bucket (whose start is older than the first sample in it).
@@ -797,10 +797,42 @@ impl History {
         if fine.is_some() && !beats(medium, fine, MEDIUM_STEP_MS) && !beats(coarse, fine, COARSE_STEP_MS) {
             collect_series(&self.fine, metric, from_ms, to_ms, max_points)
         } else if medium.is_some() && !beats(coarse, medium, COARSE_STEP_MS) {
-            collect_series(&self.medium, metric, from_ms, to_ms, max_points)
+            self.stitched(&self.medium, MEDIUM_STEP_MS, metric, from_ms, to_ms, max_points)
         } else {
-            collect_series(&self.coarse, metric, from_ms, to_ms, max_points)
+            self.stitched(&self.coarse, COARSE_STEP_MS, metric, from_ms, to_ms, max_points)
         }
+    }
+
+    /// A coarser tier (`step` apart) for the part of the window before the fine tier starts,
+    /// then the fine tier. A coarser tier alone can end long before `to_ms`: the coarse
+    /// points loaded from disk at start end when the app last recorded, and a stopped
+    /// recording leaves both long tiers behind, so the live graphs drew nothing until the
+    /// fine tier reached back over the whole window. A gap between the two parts (a restart,
+    /// a pause in recording) breaks the line.
+    fn stitched(
+        &self,
+        tier: &VecDeque<AggPoint>,
+        step: i64,
+        metric: &Metric,
+        from_ms: i64,
+        to_ms: i64,
+        max_points: usize,
+    ) -> Vec<Pt> {
+        let split = self.fine.front().map_or(i64::MAX, |p| p.t).max(from_ms);
+        let mut d = Decimator::new(from_ms, to_ms, max_points);
+        let mut last = None;
+        let start = tier.partition_point(|p| p.t < from_ms);
+        for p in tier.iter().skip(start).take_while(|p| p.t < split && p.t <= to_ms) {
+            d.add(p.t, p.value(metric).map(PairValue::pair), p.brk);
+            last = Some(p.t);
+        }
+        let fine_start = self.fine.partition_point(|p| p.t < split);
+        for (i, p) in self.fine.iter().skip(fine_start).take_while(|p| p.t <= to_ms).enumerate() {
+            // The coarse bucket at `l` covers `l..l + step`: farther than one more step is a gap.
+            let gap = i == 0 && last.is_some_and(|l| p.t - l > 2 * step);
+            d.add(p.t, p.value(metric).map(PairValue::pair), p.brk || gap);
+        }
+        d.finish()
     }
 
     /// The top processes around a time (within 5 minutes), from the finest tier that has it.
@@ -1138,11 +1170,15 @@ mod tests {
         // The last five minutes come from the fine tier, every frame.
         let recent = h.series(&Metric::CpuTotal, now - 300_000, now, 0);
         assert_eq!(recent.len(), 301);
-        // The whole 20 minutes do not fit the fine tier: 10 s points.
+        // The whole 20 minutes do not fit the fine tier: 10 s points up to where it starts,
+        // then every frame.
         let all = h.series(&Metric::CpuTotal, T0, now, 0);
-        assert!((115..=121).contains(&all.len()), "{}", all.len());
-        assert!(all.iter().all(|p| p.max == 9.0), "each 10 s holds a full cycle");
-        assert!(all.iter().all(|p| (p.avg - 4.5).abs() < 0.01), "{:?}", all[0]);
+        let fine_from = h.fine.front().unwrap().t;
+        let (older, newer): (Vec<&Pt>, Vec<&Pt>) = all.iter().partition(|p| p.t < fine_from);
+        assert!((28..=31).contains(&older.len()), "{}", older.len());
+        assert!(older.iter().all(|p| p.max == 9.0), "each 10 s holds a full cycle");
+        assert!(older.iter().all(|p| (p.avg - 4.5).abs() < 0.01), "{:?}", older[0]);
+        assert_eq!(newer.len(), h.fine.len(), "no break between the two parts");
         // Per-core values exist only in the fine tier.
         assert_eq!(h.series(&Metric::Core(0), T0, now, 0).first().map(|p| p.t), h.fine.front().map(|p| p.t));
         assert!(h.medium.back().unwrap().cores.is_empty());
@@ -1271,6 +1307,46 @@ mod tests {
         assert_eq!(h.range().unwrap().0, T0);
         h.set_disk_oldest(Some(T0 - 5));
         assert_eq!(h.full_range().unwrap().0, T0 - 5);
+    }
+
+    /// The coarse tier loaded from disk at start ends when the app last recorded: the live
+    /// window comes from the fine tier, after a break, not from the old buckets alone.
+    #[test]
+    fn loaded_history_does_not_hide_the_live_points() {
+        let mut h = History::new(7);
+        let old: Vec<AggPoint> = (0..60).map(|i| AggPoint { t: T0 + i * 60_000, v: 1, ..Default::default() }).collect();
+        h.load_coarse(old);
+        // A day later, 30 s since the start.
+        let start = T0 + 86_400_000;
+        for i in 0..30 {
+            h.push(&frame(start + i * 1000, 7.0));
+        }
+        let now = start + 29_000;
+        let s = h.series(&Metric::CpuTotal, now - 120_000, now, 0);
+        assert_eq!(s.iter().filter(|p| !p.is_break()).count(), 30, "{s:?}");
+        assert!(s.iter().filter(|p| !p.is_break()).all(|p| p.avg == 7.0));
+        // A window that also covers the old points keeps them, with a break before the new.
+        let s = h.series(&Metric::CpuTotal, T0, now, 0);
+        assert_eq!(s.first().map(|p| p.t), Some(T0));
+        assert!(s.iter().any(|p| p.is_break()), "the restart breaks the line");
+        assert_eq!(s.last().map(|p| p.avg), Some(7.0));
+    }
+
+    /// A stopped recording leaves the long tiers behind: the newest part still comes from
+    /// the fine tier.
+    #[test]
+    fn a_stopped_recording_does_not_hide_the_live_points() {
+        let mut h = History::new(7);
+        for i in 0..300 {
+            h.push(&frame(T0 + i * 1000, 1.0));
+        }
+        for i in 300..1300 {
+            h.push_as(&frame(T0 + i * 1000, 2.0), false);
+        }
+        let now = T0 + 1299 * 1000;
+        // Twenty minutes: more than the fine tier, which the medium one reaches.
+        let s = h.series(&Metric::CpuTotal, now - 1_200_000, now, 0);
+        assert_eq!(s.last().map(|p| (p.t, p.avg)), Some((now, 2.0)), "the live end is there");
     }
 
     #[test]
