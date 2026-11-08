@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.7.4" date="2026-11-08" type="development">
+      <description>
+        <p>The terminal system monitor now draws its boxes, graphs and meters in the style of
+          btop. Live graphs draw at once after a restart or a stopped recording, chart hover
+          cards are no longer cut off by small charts, and the smart folders section shows in
+          the sidebar while the index is off, with a hint to turn it on.</p>
+      </description>
+    </release>
     <release version="0.7.3" date="2026-11-07" type="development">
       <description>
         <p>The system monitor now works in every window. Before, a monitor tab in any window but

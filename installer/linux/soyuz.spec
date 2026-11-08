@@ -3,13 +3,13 @@
 #
 #   scripts/package.sh --rpm                       # builds the tarball, then this spec
 #   rpmbuild -bb installer/linux/soyuz.spec \
-#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.7.3"
+#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.7.4"
 #
 # The org.freedesktop.FileManager1 D-Bus activation file is deliberately NOT installed:
 # Soyuz writes it to the user's ~/.local/share/dbus-1/services/ only on opt-in
 # (docs/RELEASING.md, "Linux").
 
-%{!?soyuz_version: %global soyuz_version 0.7.3}
+%{!?soyuz_version: %global soyuz_version 0.7.4}
 %{!?soyuz_arch: %global soyuz_arch %{_arch}}
 # 1 when the tarball carries the FFmpeg runtime (scripts/package.sh --ffmpeg-dir sets it):
 # lib/soyuz/lib*.so.* go to %{_libdir}/soyuz/ (private; the exe looks in
@@ -114,6 +114,11 @@ fi
 %endif
 
 %changelog
+* Sun Nov 08 2026 The Soyuz contributors - 0.7.4-1
+- Version 0.7.4: the terminal system monitor draws like btop; live graphs draw at once
+  after a restart; chart hover cards are no longer cut off; the smart folders section
+  shows while the index is off.
+
 * Sat Nov 07 2026 The Soyuz contributors - 0.7.3-1
 - Version 0.7.3: the system monitor gets readings in every window, not only the main one.
 
