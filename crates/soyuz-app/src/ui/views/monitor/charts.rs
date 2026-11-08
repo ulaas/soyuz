@@ -493,19 +493,26 @@ impl Chart {
                     lines.push((s.color, s.label.clone(), v));
                 }
             }
-            if pointer.is_some() && !lines.is_empty() {
-                tooltip(&painter, p, plot, pos2(x, pointer.map_or(plot.top(), |q| q.y)), &clock(t, false), &lines);
+            if let Some(q) = pointer
+                && !lines.is_empty()
+            {
+                // On the tooltip layer, unclipped: a small chart (a core's) is narrower and
+                // lower than its own card would be.
+                let layer = egui::LayerId::new(egui::Order::Tooltip, id.with("tooltip"));
+                let top = ui.ctx().layer_painter(layer);
+                tooltip(&top, p, ui.ctx().content_rect(), pos2(x, q.y), &clock(t, false), &lines);
             }
         }
         ChartOut { response, hover_t, plot }
     }
 }
 
-/// The value tooltip of a crosshair: a small card beside the pointer, flipped to stay inside.
+/// The value tooltip of a crosshair: a small card beside the pointer, flipped and moved to
+/// stay inside `bounds` (the window).
 fn tooltip(
     painter: &egui::Painter,
     p: &Palette,
-    plot: Rect,
+    bounds: Rect,
     at: Pos2,
     title: &str,
     lines: &[(Color32, String, String)],
@@ -527,11 +534,11 @@ fn tooltip(
     let w = rows.iter().map(|(_, l, v)| 14.0 + l.size().x + 12.0 + v.size().x).fold(title_g.size().x, f32::max) + 20.0;
     let h = 10.0 + 16.0 + rows.len() as f32 * row_h + 4.0;
     let mut x = at.x + 14.0;
-    if x + w > plot.right() {
+    if x + w > bounds.right() - 4.0 {
         x = at.x - 14.0 - w;
     }
-    let mut y = at.y - h / 2.0;
-    y = y.clamp(plot.top(), (plot.bottom() - h).max(plot.top()));
+    let x = x.clamp(bounds.left() + 4.0, (bounds.right() - 4.0 - w).max(bounds.left() + 4.0));
+    let y = (at.y - h / 2.0).clamp(bounds.top() + 4.0, (bounds.bottom() - 4.0 - h).max(bounds.top() + 4.0));
     let r = Rect::from_min_size(pos2(x, y), vec2(w, h));
     painter.rect_filled(r, crate::theme::tokens::radius::same(crate::theme::tokens::radius::CARD), p.bg_surface3);
     painter.rect_stroke(
