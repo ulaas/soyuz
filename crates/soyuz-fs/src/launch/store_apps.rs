@@ -20,6 +20,9 @@ pub(crate) struct ManifestApp {
     pub description: String,
     /// `AppListEntry="none"`: not shown in Start.
     pub hidden: bool,
+    /// `Square44x44Logo` (the app-list icon), else `Square150x150Logo`, relative to the
+    /// package root, without its scale / size qualifiers.
+    pub logo: String,
 }
 
 /// `Name_Version_Arch_ResourceId_PublisherId` split into (name, version, family name).
@@ -77,6 +80,7 @@ pub(crate) fn manifest_apps(xml: &str) -> Vec<ManifestApp> {
                     app.display_name = attr("DisplayName").unwrap_or_default();
                     app.description = attr("Description").unwrap_or_default();
                     app.hidden = attr("AppListEntry").is_some_and(|v| v.eq_ignore_ascii_case("none"));
+                    app.logo = attr("Square44x44Logo").or_else(|| attr("Square150x150Logo")).unwrap_or_default();
                 }
             }
             _ => {}
@@ -84,6 +88,54 @@ pub(crate) fn manifest_apps(xml: &str) -> Vec<ManifestApp> {
     }
     out.retain(|a| !a.id.is_empty());
     out
+}
+
+/// The best file for logo `stem.ext` among a folder's `names`: the qualified variants
+/// Windows picks from (`AppList.targetsize-48_altform-unplated.png`, `AppList.scale-200.png`,
+/// …). Plain (unplated) target sizes near 48 px first, then plated ones, then the largest
+/// scale, then the file without qualifiers; contrast variants never.
+pub(crate) fn pick_logo(names: &[String], stem: &str, ext: &str) -> Option<String> {
+    let (stem, ext) = (stem.to_lowercase(), ext.to_lowercase());
+    let mut best: Option<(i64, &String)> = None;
+    for n in names {
+        let lower = n.to_lowercase();
+        let quals = if lower == format!("{stem}.{ext}") {
+            String::new()
+        } else {
+            match lower.strip_prefix(&format!("{stem}.")).and_then(|r| r.strip_suffix(&format!(".{ext}"))) {
+                Some(q) => q.to_string(),
+                None => continue,
+            }
+        };
+        if quals.contains("contrast-") {
+            continue;
+        }
+        let mut score = 0i64;
+        let mut size = None;
+        let mut scale = None;
+        for q in quals.split(['_', '.']).filter(|q| !q.is_empty()) {
+            if let Some(v) = q.strip_prefix("targetsize-") {
+                size = v.parse::<i64>().ok();
+            } else if let Some(v) = q.strip_prefix("scale-") {
+                scale = v.parse::<i64>().ok();
+            } else if q == "altform-unplated" {
+                score += 50;
+            } else if q.starts_with("altform-") {
+                score -= 20;
+            }
+        }
+        score += match (size, scale) {
+            // 48 px and a little more first, much larger next, small ones last.
+            (Some(s), _) if s >= 48 => 1000 - (s - 48).min(400),
+            (Some(s), _) => 500 + s,
+            (None, Some(sc)) => 300 + sc.min(400) / 4,
+            (None, None) => 100,
+        };
+        if best.is_none_or(|(b, _)| score > b) {
+            best = Some((score, n));
+        }
+    }
+    best.map(|(_, n)| n.clone())
 }
 
 /// The `ms-resource://` URIs an `ms-resource:` reference of package `name` may stand for:
@@ -133,7 +185,7 @@ pub(crate) use imp::scan;
 #[cfg(windows)]
 mod imp {
     use std::collections::HashMap;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use super::*;
     use crate::launch::InstalledApp;
@@ -167,6 +219,33 @@ mod imp {
             }
         }
         best.into_iter().map(|(k, (_, v))| (k, v)).collect()
+    }
+
+    /// The file names in `dir`.
+    fn names_in(dir: &Path) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+            .unwrap_or_default()
+    }
+
+    /// The best file for an app's logo (`Assets\AppList.png`): a variant next to where the
+    /// manifest says, else, for logos kept in a resource package, next to the file Windows
+    /// last resolved for it.
+    fn logo_path(root: &Path, full: &str, logo: &str, cache: &HashMap<String, String>) -> Option<PathBuf> {
+        let rel = PathBuf::from(logo.replace('/', "\\"));
+        let stem = rel.file_stem()?.to_string_lossy().into_owned();
+        let ext = rel.extension()?.to_string_lossy().into_owned();
+        let pick = |dir: &Path| pick_logo(&names_in(dir), &stem, &ext).map(|n| dir.join(n));
+        let dir = root.join(rel.parent().unwrap_or(Path::new("")));
+        if let Some(p) = pick(&dir) {
+            return Some(p);
+        }
+        let (name, _, _) = split_full_name(full)?;
+        let resolved = [logo.replace('/', "\\"), logo.replace('\\', "/")]
+            .iter()
+            .find_map(|l| cache.get(&cache_key(&format!("@{{{full}?ms-resource://{name}/Files/{l}}}"))))
+            .map(PathBuf::from)?;
+        resolved.parent().and_then(pick).or_else(|| resolved.is_file().then_some(resolved))
     }
 
     /// The Start-visible apps of the packages registered for this user; for a family
@@ -208,6 +287,7 @@ mod imp {
                     detail: description.clone(),
                     keywords: format!("{package} {description}"),
                     source: root.clone(),
+                    icon: logo_path(&root, &full, &app.logo, cache),
                     aumid: Some(aumid),
                 });
             }
@@ -260,6 +340,30 @@ mod tests {
         assert_eq!(family, "Microsoft.Paint_8wekyb3d8bbwe");
         assert!(split_full_name("NotAPackage").is_none());
         assert!(v > vec![11, 2504, 531, 0]);
+    }
+
+    #[test]
+    fn logos_pick_the_best_variant() {
+        let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let all = names(&[
+            "AppList.png",
+            "AppList.scale-100.png",
+            "AppList.scale-200.png",
+            "AppList.targetsize-16.png",
+            "AppList.targetsize-48.png",
+            "AppList.targetsize-48_altform-unplated.png",
+            "AppList.targetsize-48_altform-lightunplated.png",
+            "AppList.targetsize-256_altform-unplated.png",
+            "AppList.scale-200_contrast-black.png",
+            "AppListOther.png",
+            "Wide.scale-200.png",
+        ]);
+        assert_eq!(pick_logo(&all, "AppList", "png").as_deref(), Some("AppList.targetsize-48_altform-unplated.png"));
+        let scales = names(&["applist.scale-100.png", "AppList.scale-200.PNG", "AppList.png"]);
+        assert_eq!(pick_logo(&scales, "AppList", "png").as_deref(), Some("AppList.scale-200.PNG"));
+        assert_eq!(pick_logo(&names(&["AppList.png"]), "AppList", "png").as_deref(), Some("AppList.png"));
+        assert_eq!(pick_logo(&names(&["AppList.scale-200_contrast-white.png", "Other.png"]), "AppList", "png"), None);
+        assert_eq!(manifest_apps(MANIFEST)[0].logo, "a.png");
     }
 
     #[test]

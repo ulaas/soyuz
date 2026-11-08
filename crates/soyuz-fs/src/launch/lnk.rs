@@ -32,6 +32,9 @@ pub(crate) struct Shortcut {
     pub working_dir: Option<String>,
     pub arguments: Option<String>,
     pub icon: Option<String>,
+    /// Which icon of `icon` (the header's `IconIndex`): the n-th, or for a negative value
+    /// the one with resource id `-n`.
+    pub icon_index: i32,
     /// `%VAR%`-style target from the EnvironmentVariableDataBlock (unexpanded).
     pub env_target: Option<String>,
     /// The target is to run elevated ("Run as administrator" is ticked).
@@ -71,7 +74,8 @@ pub(crate) fn parse(b: &[u8]) -> io::Result<Shortcut> {
     }
     let flags = u32_at(b, 0x14)?;
     let mut pos = HEADER_SIZE as usize;
-    let mut out = Shortcut { run_as_admin: flags & RUN_AS_USER != 0, ..Shortcut::default() };
+    let mut out =
+        Shortcut { run_as_admin: flags & RUN_AS_USER != 0, icon_index: u32_at(b, 0x38)? as i32, ..Shortcut::default() };
 
     if flags & HAS_LINK_TARGET_ID_LIST != 0 {
         pos += 2 + u16_at(b, pos)? as usize;

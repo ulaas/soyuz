@@ -34,6 +34,10 @@ pub struct InstalledApp {
     /// (`Microsoft.Paint_8wekyb3d8bbwe!App`).
     #[serde(default)]
     pub aumid: Option<String>,
+    /// An icon file to draw for it: a program (`.exe`, its own icon), `.ico`, `.png` or
+    /// `.svg`.
+    #[serde(default)]
+    pub icon: Option<PathBuf>,
 }
 
 /// Every application found, sorted by name (case-insensitive), duplicates by name removed.
@@ -103,6 +107,7 @@ fn start_menu_app(root: &Path, lnk: &Path) -> Option<InstalledApp> {
     if is_uninstaller(&program) {
         return None;
     }
+    let icon = shortcut_icon(sc.icon.as_deref(), sc.icon_index, &target);
     let comment =
         sc.name.filter(|c| !c.trim().is_empty() && !c.starts_with('@') && !c.trim().eq_ignore_ascii_case(&name));
     Some(InstalledApp {
@@ -112,7 +117,27 @@ fn start_menu_app(root: &Path, lnk: &Path) -> Option<InstalledApp> {
         name,
         source: lnk.to_path_buf(),
         aumid: None,
+        icon,
     })
+}
+
+/// The icon a shortcut shows: its icon location (a program or DLL, as `file,index` when it
+/// names another icon than the first; or an `.ico` file), else its target program.
+#[cfg(windows)]
+fn shortcut_icon(location: Option<&str>, index: i32, target: &Path) -> Option<PathBuf> {
+    let own = location
+        .map(|l| PathBuf::from(crate::path::expand_env(l.trim().trim_matches('"'))))
+        .filter(|p| crate::list::exists_nofollow(p))
+        .and_then(|p| {
+            if ext_is(&p, "ico") || ((ext_is(&p, "exe") || ext_is(&p, "dll")) && index == 0) {
+                Some(p)
+            } else if ext_is(&p, "exe") || ext_is(&p, "dll") {
+                Some(PathBuf::from(format!("{},{index}", p.display())))
+            } else {
+                None
+            }
+        });
+    own.or_else(|| ext_is(target, "exe").then(|| target.to_path_buf()))
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
@@ -136,9 +161,20 @@ fn scan() -> Vec<InstalledApp> {
                 ),
                 source: a.file.clone(),
                 aumid: None,
+                icon: e.icon.as_deref().and_then(entry_icon),
             }
         })
         .collect()
+}
+
+/// A desktop entry's `Icon=`: an absolute file, else the themed icon of that name.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn entry_icon(icon: &str) -> Option<PathBuf> {
+    let p = Path::new(icon);
+    if p.is_absolute() {
+        return p.is_file().then(|| p.to_path_buf());
+    }
+    super::linux::icons::icon_path(icon, 48, 1)
 }
 
 #[cfg(target_os = "macos")]
@@ -163,6 +199,7 @@ fn scan() -> Vec<InstalledApp> {
                 keywords: folder,
                 source: app,
                 aumid: None,
+                icon: None,
             });
         }
     }

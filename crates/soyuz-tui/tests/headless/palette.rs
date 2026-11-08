@@ -197,6 +197,7 @@ fn fake_app(name: &str) -> soyuz_fs::launch::InstalledApp {
         keywords: String::new(),
         source: PathBuf::from(format!("{name}.desktop")),
         aumid: None,
+        icon: None,
     }
 }
 

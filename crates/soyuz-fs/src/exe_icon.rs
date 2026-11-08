@@ -41,11 +41,31 @@ pub fn has_icon_ext(path: &Path) -> bool {
 /// The program icon of the PE file at `path` closest to `px` pixels (see [`icon_from`]),
 /// or for a program of Windows itself, the one in its `SystemResources` companion.
 pub fn icon(path: &Path, px: u32) -> Option<Vec<u8>> {
+    icon_at(path, px, 0)
+}
+
+/// Like [`icon`], for icon `index` of the file (as an icon location `file,index` names
+/// it): the n-th icon in resource order, or for a negative index the icon with resource id
+/// `-index`. Any PE file works (`.dll` icon libraries too).
+pub fn icon_at(path: &Path, px: u32, index: i32) -> Option<Vec<u8>> {
     let mut f = std::fs::File::open(path).ok()?;
-    icon_from(&mut f, px).or_else(|| {
+    icon_from_at(&mut f, px, index).or_else(|| {
         let mun = system_resources(path, std::env::var_os("SystemRoot")?.as_ref())?;
-        icon_from(&mut std::fs::File::open(mun).ok()?, px)
+        icon_from_at(&mut std::fs::File::open(mun).ok()?, px, index)
     })
+}
+
+/// An icon location as Windows writes it, `lib.dll,-101` or `app.exe,2`, split into
+/// the file and the icon index; a path without a numeric `,index` suffix is index 0.
+pub fn split_location(location: &Path) -> (std::path::PathBuf, i32) {
+    let s = location.to_string_lossy();
+    match s.rsplit_once(',') {
+        Some((file, n)) if !file.is_empty() => match n.trim().parse::<i32>() {
+            Ok(i) => (std::path::PathBuf::from(file), i),
+            Err(_) => (location.to_path_buf(), 0),
+        },
+        _ => (location.to_path_buf(), 0),
+    }
 }
 
 /// `<root>\SystemResources\<name>.mun` for a file inside the Windows folder `root`.
@@ -62,10 +82,25 @@ fn system_resources(path: &Path, root: &Path) -> Option<std::path::PathBuf> {
 /// pixels wide (the deepest color of that size), else the largest one. `None` when `r`
 /// is not a PE file or has no icon.
 pub fn icon_from<R: Read + Seek>(r: &mut R, px: u32) -> Option<Vec<u8>> {
+    icon_from_at(r, px, 0)
+}
+
+/// [`icon_from`] for icon `index` (see [`icon_at`]).
+pub fn icon_from_at<R: Read + Seek>(r: &mut R, px: u32, index: i32) -> Option<Vec<u8>> {
     let pe = Pe::read(r)?;
     let root = pe.rsrc_off;
     let group_dir = pe.subdir(r, root, RT_GROUP_ICON)?;
-    let group = pe.first_leaf(r, group_dir)?;
+    let group = match index {
+        0 => pe.first_leaf(r, group_dir)?,
+        i if i > 0 => {
+            let (_, field) = *pe.entries(r, group_dir)?.get(i as usize)?;
+            pe.first_leaf_or_self(r, pe.target(field))?
+        }
+        i => {
+            let node = pe.entry_by_id(r, group_dir, i.unsigned_abs())?;
+            pe.first_leaf_or_self(r, node)?
+        }
+    };
     let (g_off, g_len) = pe.data(r, group)?;
     if !(6..=6 + 14 * 512).contains(&g_len) {
         return None;
@@ -349,6 +384,42 @@ mod tests {
         assert_eq!(big[6], 0, "256 px is written as 0");
         assert_eq!(&big[22..], b"\x89PNG-256");
         assert_eq!(icon_from(&mut Cursor::new(&pe), 16).unwrap()[22..], [0x16; 40]);
+    }
+
+    #[test]
+    fn icons_by_index_and_by_resource_id() {
+        let pe = tiny_pe(&[(32, 32, vec![7; 64])]);
+        let first = icon_from(&mut Cursor::new(&pe), 32).unwrap();
+        assert_eq!(icon_from_at(&mut Cursor::new(&pe), 32, 0), Some(first.clone()));
+        // The only group has resource id 1: index -1 names it, index 1 is past the end.
+        assert_eq!(icon_from_at(&mut Cursor::new(&pe), 32, -1), Some(first));
+        assert_eq!(icon_from_at(&mut Cursor::new(&pe), 32, 1), None);
+        assert_eq!(icon_from_at(&mut Cursor::new(&pe), 32, -2), None);
+    }
+
+    #[test]
+    fn icon_locations_split_into_file_and_index() {
+        let s = |l: &str| split_location(Path::new(l));
+        assert_eq!(s(r"C:\Windows\system32\Mycomput.dll,2"), (r"C:\Windows\system32\Mycomput.dll".into(), 2));
+        assert_eq!(s("lib.dll,-101"), ("lib.dll".into(), -101));
+        assert_eq!(s("lib.dll, 3"), ("lib.dll".into(), 3));
+        assert_eq!(s("plain.exe"), ("plain.exe".into(), 0));
+        assert_eq!(s("odd, name.exe"), ("odd, name.exe".into(), 0));
+        assert_eq!(s(",5"), (",5".into(), 0));
+    }
+
+    /// A numbered icon of a real system library (read-only).
+    #[cfg(windows)]
+    #[test]
+    fn reads_a_numbered_icon_of_a_windows_library() {
+        let Some(root) = std::env::var_os("SystemRoot") else { return };
+        let dll = Path::new(&root).join("System32").join("imageres.dll");
+        if !dll.exists() {
+            return;
+        }
+        let a = icon_at(&dll, 32, 2).expect("imageres.dll icon 2");
+        let b = icon_at(&dll, 32, 3).expect("imageres.dll icon 3");
+        assert_ne!(a, b, "different indexes give different icons");
     }
 
     #[test]

@@ -737,16 +737,49 @@ fn pdf_first_page(_key: &ThumbKey) -> Option<RgbaImage> {
 }
 
 /// The program's icon image closest to `key.px`, scaled to fit it (Lanczos, so small
-/// icons stay sharp).
+/// icons stay sharp). Besides programs, an icon location (`lib.dll,2`) or an icon file
+/// works too (`.ico`, `.png`, `.svg`, …: the palette's installed apps).
 fn program_icon(key: &ThumbKey) -> Option<RgbaImage> {
-    let ico = soyuz_fs::exe_icon::icon(&key.path, key.px)?;
-    let img = image::load_from_memory_with_format(&ico, image::ImageFormat::Ico).ok()?;
+    // An icon location (`lib.dll,-101`) names one icon of a PE file.
+    let (file, index) = soyuz_fs::exe_icon::split_location(&key.path);
+    let ext = file.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let img = match ext.as_str() {
+        "exe" | "scr" | "dll" => {
+            let ico = soyuz_fs::exe_icon::icon_at(&file, key.px, index)?;
+            image::load_from_memory_with_format(&ico, image::ImageFormat::Ico).ok()?
+        }
+        "svg" => return svg_icon(key),
+        _ => {
+            let size = std::fs::metadata(&key.path).ok()?.len();
+            decode_full(&ThumbKey { size, ..key.clone() })?
+        }
+    };
     let img = if img.width() == key.px && img.height() == key.px {
         img
     } else {
         img.resize(key.px, key.px, image::imageops::FilterType::Lanczos3)
     };
     Some(img.to_rgba8())
+}
+
+/// An SVG icon rasterized at `key.px` (premultiplied pixels turned straight).
+fn svg_icon(key: &ThumbKey) -> Option<RgbaImage> {
+    const MAX_SVG_BYTES: u64 = 4 * 1024 * 1024;
+    if std::fs::metadata(&key.path).ok()?.len() > MAX_SVG_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(&key.path).ok()?;
+    let px = super::preview_raster::svg(&bytes, key.px).ok()?;
+    let mut rgba = px.rgba;
+    for c in rgba.as_chunks_mut::<4>().0 {
+        let a = c[3] as u32;
+        if a > 0 && a < 255 {
+            for v in &mut c[..3] {
+                *v = ((*v as u32 * 255 + a / 2) / a).min(255) as u8;
+            }
+        }
+    }
+    RgbaImage::from_raw(px.size[0] as u32, px.size[1] as u32, rgba)
 }
 
 fn decode(key: &ThumbKey) -> Option<RgbaImage> {

@@ -87,6 +87,9 @@ pub struct Item {
     pub title: String,
     pub detail: String,
     pub icon: IconId,
+    /// A picture drawn instead of `icon` where the frontend can (an installed app's own
+    /// icon: a program or an icon file, see `services::thumbs::Thumbs::get_program_icon`).
+    pub image: Option<PathBuf>,
     pub tint: Tint,
     /// Shortcut shown as chips.
     pub chord: Option<String>,
@@ -105,6 +108,7 @@ impl Item {
             title: title.into(),
             detail: String::new(),
             icon,
+            image: None,
             tint: Tint::Accent,
             chord: None,
             tag: None,
@@ -901,6 +905,7 @@ fn rank_apps(app: &AppCore, q: &str) -> Vec<Item> {
             }
         };
         let mut it = Item::new(Exec::App(a.clone()), a.name.clone(), IconId::AppWindow, section);
+        it.image = a.icon.clone();
         it.detail = a.detail.clone();
         it.hl = hl;
         it.score = score + boost;

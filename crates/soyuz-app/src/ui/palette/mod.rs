@@ -239,6 +239,7 @@ fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
 
 fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exec, RunMods)> {
     let items = &app.core.palette.results;
+    let thumbs = &app.core.services.thumbs;
     let mut clicked = None;
     if items.is_empty() {
         let (rect, _) = ui.allocate_exact_size(vec2(width, 120.0), Sense::hover());
@@ -349,7 +350,7 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
                         p.accent.gamma_multiply(sel_t),
                     );
                 }
-                row(ui, p, it, r, is_sel);
+                row(ui, p, it, r, is_sel, thumbs);
             }
             ui.add_space(4.0);
         },
@@ -360,10 +361,21 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
     clicked
 }
 
-fn row(ui: &Ui, p: &Palette, it: &Item, r: Rect, selected: bool) {
+/// Size of an item's own picture (an installed app's icon) in its tile.
+const IMAGE_ICON: f32 = 24.0;
+
+fn row(ui: &Ui, p: &Palette, it: &Item, r: Rect, selected: bool, thumbs: &crate::services::thumbs::Thumbs) {
     let tile = Rect::from_center_size(pos2(r.left() + 24.0, r.center().y), vec2(30.0, 30.0));
     let tint = tint_color(p, it.tint);
-    icon_tile(ui, tile, crate::ui::icons::glyph(it.icon), tint, 16.0);
+    let image = it.image.as_ref().and_then(|path| {
+        let px = crate::services::thumbs::icon_px(IMAGE_ICON, ui.ctx().pixels_per_point());
+        thumbs.get_program_icon(&crate::services::thumbs::ThumbKey { path: path.clone(), mtime: None, size: 0, px })
+    });
+    match image {
+        Some(t) => crate::ui::views::flow::paint_program_icon(ui.painter(), tile.center(), IMAGE_ICON, &t, 1.0),
+        // Glyph while the picture loads, or when there is none.
+        None => icon_tile(ui, tile, crate::ui::icons::glyph(it.icon), tint, 16.0),
+    }
     // Right side: chips + tag.
     let mut right = r.right() - 12.0;
     if let Some(c) = &it.chord {

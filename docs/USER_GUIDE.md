@@ -197,7 +197,9 @@ closest apps appear with the commands; start with `!` to list only apps, recentl
 ones first. On Windows they come from the Start menu shortcuts (uninstallers left out)
 and the Store apps shown in Start (Paint, Calculator, Terminal, …; named as Windows last
 showed them, started like a click in Start), on Linux from the desktop entries an *Open
-with* menu shows, on macOS from the Applications folders. Turn it off with `[open]
+with* menu shows, on macOS from the Applications folders. Each app shows its own icon
+when it has one (the program's or shortcut's icon, a Store app's logo, the icon theme's
+icon on Linux). Turn it off with `[open]
 palette_apps` (*Settings → Behaviour → List installed apps in the command palette*).
 
 **Unrecognized files.** A file no app is registered for, an unknown type or a file
