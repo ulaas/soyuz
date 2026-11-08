@@ -28,10 +28,20 @@ pub fn prompt(app: &mut SoyuzApp, p: SmartPrompt) {
 /// Collapsed-set key of the sidebar section (persisted; the header is translated).
 const SECTION: &str = "Smart folders";
 
-/// Sidebar section (drawn when there are smart folders or indexing is on).
-pub fn sidebar_section(ui: &mut Ui, collapsed: &mut BTreeSet<String>, current: &Location, cmds: &mut Vec<Cmd>) {
+/// Sidebar section. `listed`: `[sidebar] sections` names it, and it is always drawn so
+/// "New smart folder…" can be found; while the file index is off a hint row below it opens
+/// the index settings (smart folders then search the disk when opened). Not listed (a
+/// config from before the section existed), it is drawn last when there are smart folders
+/// or the index is on, so taking it out of the list still hides it.
+pub fn sidebar_section(
+    ui: &mut Ui,
+    collapsed: &mut BTreeSet<String>,
+    current: &Location,
+    cmds: &mut Vec<Cmd>,
+    listed: bool,
+) {
     let list = folders();
-    if list.is_empty() && !ix::is_enabled() {
+    if !listed && list.is_empty() && !ix::is_enabled() {
         return;
     }
     let mut open = !collapsed.contains(SECTION);
@@ -70,6 +80,20 @@ pub fn sidebar_section(ui: &mut Ui, collapsed: &mut BTreeSet<String>, current: &
     .on_hover_text(tr!("views-smart-new-tip"));
     if r.clicked() {
         cmds.push(Cmd::Smart(SmartCmd::Edit(None)));
+    }
+    if !ix::is_enabled() {
+        let r = NavRow {
+            icon: ph::LIGHTNING,
+            label: tr!("views-smart-index-hint"),
+            active: false,
+            icon_color: Some(palette(ui.ctx()).text_tertiary),
+            usage: None,
+        }
+        .show(ui)
+        .on_hover_text(tr!("views-smart-index-hint-tip"));
+        if r.clicked() {
+            cmds.push(Cmd::Smart(SmartCmd::OpenSettings));
+        }
     }
 }
 

@@ -120,6 +120,9 @@ pub enum Target {
     Connect,
     /// "New smart folder" (`SmartCmd::Edit(None)`).
     NewSmart,
+    /// The hint under the smart folders while the file index is off: its settings
+    /// (`SmartCmd::OpenSettings`).
+    IndexSettings,
 }
 
 /// What a place row shows before its label.
@@ -218,7 +221,7 @@ pub fn entries(core: &AppCore) -> Vec<Entry> {
             SidebarSection::Trash => other(core, &mut out),
             SidebarSection::Network => network(core, &mut out),
             SidebarSection::Tags => tags(core, &mut out),
-            SidebarSection::Smart => smart(core, &mut out),
+            SidebarSection::Smart => smart(core, &mut out, true),
             _ => {}
         }
     }
@@ -226,7 +229,7 @@ pub fn entries(core: &AppCore) -> Vec<Entry> {
         tree_section(core, &mut out);
     }
     if !sections.contains(&SidebarSection::Smart) {
-        smart(core, &mut out);
+        smart(core, &mut out, false);
     }
     searches(core, &mut out);
     out
@@ -368,11 +371,13 @@ fn tags(core: &AppCore, out: &mut Vec<Entry>) {
     }
 }
 
-fn smart(core: &AppCore, out: &mut Vec<Entry>) {
+/// `listed`: `[sidebar] sections` names the section; it is then always shown, so "New
+/// smart folder" can be found. Not listed, it comes last with smart folders or while the
+/// index runs, so taking it out of the list still hides it (the GUI's rule).
+fn smart(core: &AppCore, out: &mut Vec<Entry>, listed: bool) {
     use soyuz_appcore::models::smart;
     let list = smart::folders();
-    // Shown with smart folders or while the index runs (the GUI's rule).
-    let shown = !list.is_empty() || soyuz_appcore::services::index::is_enabled();
+    let shown = listed || !list.is_empty() || soyuz_appcore::services::index::is_enabled();
     if !shown || !header(core, out, Section::Of(SidebarSection::Smart)) {
         return;
     }
@@ -383,6 +388,11 @@ fn smart(core: &AppCore, out: &mut Vec<Entry>) {
     }
     let new = tr!("views-smart-new").to_string();
     out.push(Entry::Place { label: new, target: Target::NewSmart, active: false, mark: Mark::Plus });
+    // Without the index smart folders search the disk each time: say how to speed them up.
+    if !soyuz_appcore::services::index::is_enabled() {
+        let hint = tr!("views-smart-index-hint").to_string();
+        out.push(Entry::Place { label: hint, target: Target::IndexSettings, active: false, mark: Mark::None });
+    }
 }
 
 fn searches(core: &AppCore, out: &mut Vec<Entry>) {

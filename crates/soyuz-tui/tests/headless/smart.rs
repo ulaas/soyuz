@@ -144,3 +144,58 @@ fn smart_flow(data: PathBuf) {
     assert!(saw_cheat_sheet, "the editor shows the query examples");
     common::ok();
 }
+
+/// With no smart folders and the index off, a listed section still shows "New smart
+/// folder" and, below it, the hint whose Enter opens the index settings; taken out of
+/// `[sidebar] sections` it is hidden.
+#[test]
+fn smart_section_shows_the_index_hint_while_the_index_is_off() {
+    let run = common::relaunch(module_path!(), "smart_section_shows_the_index_hint_while_the_index_is_off", |_| {});
+    if let Run::Child(data) = run {
+        index_hint(data);
+    }
+}
+
+fn index_hint(data: PathBuf) {
+    assert!(!soyuz_appcore::services::index::is_enabled(), "the test config has no index");
+    let mut c = common::test_config();
+    c.layout.sidebar = true;
+    c.sidebar.sections = vec![SidebarSection::Smart];
+    let mut first = app(c, &data);
+    let hint = tr!("views-smart-index-hint");
+    let mut stage = 0;
+    drive(&mut first, |a| match stage {
+        0 if sidebar_has(a, tr!("views-smart-new")) && sidebar_has(a, hint) => {
+            stage = 1;
+            Some(key(KeyCode::F(12)))
+        }
+        1 if a.key_context() == KeyContext::Sidebar => {
+            if sidebar_cursor(a).as_deref() == Some(hint) {
+                stage = 2;
+                Some(key(KeyCode::Enter))
+            } else {
+                Some(key(KeyCode::Down))
+            }
+        }
+        2 if a.view().is_some_and(|v| v.settings.visible) => {
+            stage = 3;
+            Some(ctrl('q'))
+        }
+        _ => None,
+    });
+    assert_eq!(stage, 3, "the hint opened the settings");
+    let mut c = common::test_config();
+    c.layout.sidebar = true;
+    c.sidebar.sections = Vec::new();
+    let mut second = app(c, &data);
+    let mut seen = false;
+    drive(&mut second, |a| {
+        if a.view().is_some() && !seen {
+            seen = true;
+            assert!(!sidebar_has(a, tr!("views-smart-new")), "not listed: hidden without folders or an index");
+            return Some(ctrl('q'));
+        }
+        None
+    });
+    common::ok();
+}
