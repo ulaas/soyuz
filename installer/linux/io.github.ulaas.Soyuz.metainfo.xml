@@ -87,6 +87,13 @@
   </requires>
 
   <releases>
+    <release version="0.7.5" date="2026-11-08" type="development">
+      <description>
+        <p>The command palette starts the applications installed on the computer: type part of
+          an app's name, or start with ! to list only apps. Each app shows its own icon. On
+          Windows this includes Store apps such as Paint, Calculator and Terminal.</p>
+      </description>
+    </release>
     <release version="0.7.4" date="2026-11-08" type="development">
       <description>
         <p>The terminal system monitor now draws its boxes, graphs and meters in the style of
