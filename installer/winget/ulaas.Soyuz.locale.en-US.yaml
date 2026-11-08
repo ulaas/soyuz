@@ -1,0 +1,36 @@
+# Template rendered by .github/workflows/package-manifests.yml (placeholders: @VERSION@).
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+PackageIdentifier: ulaas.Soyuz
+PackageVersion: @VERSION@
+PackageLocale: en-US
+Publisher: The Soyuz contributors
+PublisherUrl: https://github.com/ulaas/soyuz
+PublisherSupportUrl: https://github.com/ulaas/soyuz/issues
+PrivacyUrl: https://github.com/ulaas/soyuz#principles
+Author: The Soyuz contributors
+PackageName: Soyuz
+PackageUrl: https://ulaas.github.io/soyuz/
+License: MIT
+LicenseUrl: https://github.com/ulaas/soyuz/blob/main/LICENSE
+ShortDescription: A keyboard-first file explorer.
+Description: |-
+  Soyuz is a keyboard-first file explorer written in Rust with egui. Every copy, move, delete,
+  extract or checksum runs as a background job with progress, pause / resume / cancel,
+  conflict handling, history and undo, so the window never stops responding. Tabs, dual and
+  quad panes, a command palette, archives browsed like folders, remote locations (SFTP,
+  WebDAV, FTP, S3), an integrated terminal and a terminal UI (soyuz-tui). No telemetry.
+Moniker: soyuz
+Tags:
+  - dual-pane
+  - file-explorer
+  - file-manager
+  - keyboard
+  - orthodox-file-manager
+  - rust
+  - tui
+ReleaseNotesUrl: https://github.com/ulaas/soyuz/releases/tag/v@VERSION@
+Documentations:
+  - DocumentLabel: User guide
+    DocumentUrl: https://github.com/ulaas/soyuz/blob/main/docs/USER_GUIDE.md
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

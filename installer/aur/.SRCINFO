@@ -1,0 +1,24 @@
+pkgbase = soyuz-bin
+	pkgdesc = Keyboard-first file explorer: background jobs with undo, dual panes and a terminal UI
+	pkgver = @PKGVER@
+	pkgrel = 1
+	url = https://ulaas.github.io/soyuz/
+	arch = x86_64
+	license = MIT
+	depends = gcc-libs
+	depends = glibc
+	depends = alsa-lib
+	depends = fontconfig
+	depends = libxkbcommon
+	depends = libva
+	depends = libdrm
+	depends = zlib
+	depends = hicolor-icon-theme
+	provides = soyuz
+	conflicts = soyuz
+	options = !strip
+	options = !debug
+	source = https://github.com/ulaas/soyuz/releases/download/v@VERSION@/soyuz-@VERSION@-linux-x86_64.tar.gz
+	sha256sums = @SHA256_LINUX_X86_64@
+
+pkgname = soyuz-bin

@@ -1,0 +1,28 @@
+# Template rendered by .github/workflows/package-manifests.yml
+# (placeholders: @VERSION@, @SHA256_MSI@). The MSI installs per user into
+# %LOCALAPPDATA%\Programs\Soyuz without admin rights (WiX Scope="perUserOrMachine",
+# per-user by default; installer/windows/soyuz.wxs). UpgradeCode is fixed across versions.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
+PackageIdentifier: ulaas.Soyuz
+PackageVersion: @VERSION@
+MinimumOSVersion: 10.0.17763.0
+InstallerType: wix
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+InstallerSwitches:
+  Custom: ALLUSERS=2 MSIINSTALLPERUSER=1
+UpgradeBehavior: install
+ReleaseDate: @RELEASE_DATE@
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/ulaas/soyuz/releases/download/v@VERSION@/soyuz-@VERSION@-windows-x64.msi
+    InstallerSha256: @SHA256_MSI@
+    AppsAndFeaturesEntries:
+      - DisplayName: Soyuz
+        Publisher: The Soyuz contributors
+        UpgradeCode: "{4D03F89E-9D28-4139-AA95-0E950320AF14}"
+ManifestType: installer
+ManifestVersion: 1.9.0

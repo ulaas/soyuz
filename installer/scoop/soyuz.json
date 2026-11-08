@@ -1,0 +1,37 @@
+{
+    "##": "Template rendered by .github/workflows/package-manifests.yml (placeholders: @VERSION@, @SHA256_PORTABLE_ZIP@). The portable zip carries an empty `portable` file next to soyuz.exe, so settings live in a portable-data folder beside it; `persist` keeps that folder across updates.",
+    "version": "@VERSION@",
+    "description": "A keyboard-first file explorer: background jobs with undo, dual panes and a terminal UI.",
+    "homepage": "https://ulaas.github.io/soyuz/",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/ulaas/soyuz/releases/download/v@VERSION@/soyuz-@VERSION@-windows-x64-portable.zip",
+            "hash": "@SHA256_PORTABLE_ZIP@"
+        }
+    },
+    "bin": [
+        "soyuz.exe",
+        "soyuz-tui.exe"
+    ],
+    "shortcuts": [
+        [
+            "soyuz.exe",
+            "Soyuz"
+        ]
+    ],
+    "persist": "portable-data",
+    "checkver": {
+        "github": "https://github.com/ulaas/soyuz"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/ulaas/soyuz/releases/download/v$version/soyuz-$version-windows-x64-portable.zip",
+                "hash": {
+                    "url": "$url.sha256"
+                }
+            }
+        }
+    }
+}

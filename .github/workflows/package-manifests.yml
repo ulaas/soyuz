@@ -1,0 +1,124 @@
+# Renders the package-manager manifests in installer/{winget,scoop,homebrew,aur} for a
+# published app release and attaches them to that release, ready to submit by hand:
+#   winget-ulaas.Soyuz*.yaml    → microsoft/winget-pkgs (manifests/u/ulaas/Soyuz/<version>/)
+#   scoop-soyuz.json            → a Scoop bucket
+#   homebrew-soyuz.rb           → a Homebrew tap (Casks/soyuz.rb)
+#   aur-soyuz-bin.PKGBUILD / aur-soyuz-bin.SRCINFO → the soyuz-bin AUR package
+# Nothing is pushed anywhere and no secrets are needed. Only app releases (v* tags) are
+# handled; the ffmpeg-runtime-* releases are skipped. The asset names are chosen so the
+# in-app update check (soyuz-appcore services/updates.rs, pick_asset) never picks them:
+# none starts with "soyuz-<version>-" or ends in .zip / .tar.gz / .msi / .sha256.
+name: Package manifests
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "App release tag to render manifests for (e.g. v0.7.5)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: package-manifests-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    name: Render and attach manifests
+    if: startsWith(github.event.release.tag_name || inputs.tag, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the release assets and verify their checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::$TAG is not an app release tag (vX.Y.Z[-pre])"; exit 1
+          fi
+          version="${TAG#v}"
+          dl="$RUNNER_TEMP/assets"; rm -rf "$dl"; mkdir -p "$dl"
+          files=(
+            "soyuz-$version-windows-x64.msi"
+            "soyuz-$version-windows-x64-portable.zip"
+            "soyuz-$version-macos-arm64.tar.gz"
+            "soyuz-$version-linux-x86_64.tar.gz"
+          )
+          for f in "${files[@]}"; do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$dl" --pattern "$f" --pattern "$f.sha256"
+          done
+          (cd "$dl" && for f in "${files[@]}"; do sha256sum -c "$f.sha256"; done)
+          {
+            echo "VERSION=$version"
+            echo "DL=$dl"
+          } >> "$GITHUB_ENV"
+
+      - name: Render the manifests
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          PUBLISHED_AT: ${{ github.event.release.published_at }}
+        run: |
+          set -euo pipefail
+          sha() { # <asset file name> → its SHA-256 from <file>.sha256 ("<hash>  <name>")
+            local h name
+            read -r h name < "$DL/$1.sha256"
+            [[ "$h" =~ ^[0-9a-fA-F]{64}$ && "$name" == "$1" ]] || { echo "::error::bad $1.sha256" >&2; exit 1; }
+            echo "${h,,}"
+          }
+          msi=$(sha "soyuz-$VERSION-windows-x64.msi")
+          portable=$(sha "soyuz-$VERSION-windows-x64-portable.zip")
+          macos=$(sha "soyuz-$VERSION-macos-arm64.tar.gz")
+          linux=$(sha "soyuz-$VERSION-linux-x86_64.tar.gz")
+          # AUR pkgver cannot contain '-' (0.8.0-rc.1 → 0.8.0_rc.1).
+          pkgver="${VERSION//-/_}"
+          date="${PUBLISHED_AT:-}"; date="${date%%T*}"
+          [[ -n "$date" ]] || date=$(date -u +%F)
+
+          out="$RUNNER_TEMP/manifests"; rm -rf "$out"; mkdir -p "$out"
+          render() { # <template> <output name>
+            sed -e "s|@VERSION@|$VERSION|g" \
+                -e "s|@PKGVER@|$pkgver|g" \
+                -e "s|@RELEASE_DATE@|$date|g" \
+                -e "s|@SHA256_MSI@|${msi^^}|g" \
+                -e "s|@SHA256_PORTABLE_ZIP@|$portable|g" \
+                -e "s|@SHA256_MACOS_ARM64@|$macos|g" \
+                -e "s|@SHA256_LINUX_X86_64@|$linux|g" \
+                "$1" > "$out/$2"
+          }
+          render installer/winget/ulaas.Soyuz.yaml                winget-ulaas.Soyuz.yaml
+          render installer/winget/ulaas.Soyuz.installer.yaml      winget-ulaas.Soyuz.installer.yaml
+          render installer/winget/ulaas.Soyuz.locale.en-US.yaml   winget-ulaas.Soyuz.locale.en-US.yaml
+          render installer/scoop/soyuz.json                       scoop-soyuz.json
+          render installer/homebrew/soyuz.rb                      homebrew-soyuz.rb
+          render installer/aur/PKGBUILD                           aur-soyuz-bin.PKGBUILD
+          render installer/aur/.SRCINFO                           aur-soyuz-bin.SRCINFO
+
+          if grep -n '@[A-Z0-9_]*@' "$out"/*; then
+            echo "::error::unrendered placeholders left"; exit 1
+          fi
+          python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "$out/scoop-soyuz.json"
+          python3 -c 'import sys, yaml; [yaml.safe_load(open(p)) for p in sys.argv[1:]]' "$out"/winget-*.yaml
+          bash -n "$out/aur-soyuz-bin.PKGBUILD"
+          ruby -c "$out/homebrew-soyuz.rb"
+          for f in "$out"/*; do echo "::group::$(basename "$f")"; cat "$f"; echo "::endgroup::"; done
+          echo "OUT=$out" >> "$GITHUB_ENV"
+
+      - name: Attach the manifests to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$OUT"/*

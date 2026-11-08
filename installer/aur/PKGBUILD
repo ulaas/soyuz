@@ -1,0 +1,27 @@
+# Template rendered by .github/workflows/package-manifests.yml
+# (placeholders: @VERSION@, @PKGVER@, @SHA256_LINUX_X86_64@). Publish as the `soyuz-bin`
+# AUR package together with the rendered .SRCINFO.
+#
+# The release tarball is a relocatable prefix (bin/, lib/soyuz/, share/; scripts/package.sh),
+# so it is copied into /usr as is. Soyuz finds its private FFmpeg libraries in
+# <exe dir>/../lib/soyuz and does not offer self-updates for copies under /usr.
+pkgname=soyuz-bin
+_version=@VERSION@
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc='Keyboard-first file explorer: background jobs with undo, dual panes and a terminal UI'
+arch=('x86_64')
+url='https://ulaas.github.io/soyuz/'
+license=('MIT')
+depends=('gcc-libs' 'glibc' 'alsa-lib' 'fontconfig' 'libxkbcommon' 'libva' 'libdrm' 'zlib' 'hicolor-icon-theme')
+provides=('soyuz')
+conflicts=('soyuz')
+options=('!strip' '!debug')
+source=("https://github.com/ulaas/soyuz/releases/download/v${_version}/soyuz-${_version}-linux-x86_64.tar.gz")
+sha256sums=('@SHA256_LINUX_X86_64@')
+
+package() {
+  cd "soyuz-${_version}-linux-x86_64"
+  install -d "${pkgdir}/usr"
+  cp -dr --no-preserve=ownership bin lib share "${pkgdir}/usr/"
+}
