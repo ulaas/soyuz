@@ -9,6 +9,7 @@
 //! | `>` | run a shell command in the current folder (terminal panel) |
 //! | `#` | switch tab |
 //! | `?` | ask the assistant in plain words (`[ai] palette`); its plans open for review |
+//! | `!` | start an installed application (`[open] palette_apps`) |
 
 /// What the palette lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -25,6 +26,8 @@ pub enum Mode {
     Clipboard,
     /// A request for the assistant (`ai::state::ask_from_palette`).
     Ask,
+    /// The applications installed on the system (`soyuz_fs::launch::installed_apps`).
+    Apps,
 }
 
 impl Mode {
@@ -38,6 +41,7 @@ impl Mode {
             Mode::Shell => Some('>'),
             Mode::Tabs => Some('#'),
             Mode::Ask => Some('?'),
+            Mode::Apps => Some('!'),
         }
     }
 
@@ -53,6 +57,7 @@ impl Mode {
             Mode::Tabs => tr!("actions-mode-tabs"),
             Mode::Clipboard => tr!("actions-mode-clipboard"),
             Mode::Ask => tr!("actions-mode-ask"),
+            Mode::Apps => tr!("actions-mode-apps"),
         }
     }
 
@@ -68,6 +73,7 @@ impl Mode {
             Mode::Tabs => tr!("actions-legend-tabs"),
             Mode::Clipboard => tr!("actions-mode-clipboard"),
             Mode::Ask => tr!("actions-legend-ask"),
+            Mode::Apps => tr!("actions-legend-apps"),
         }
     }
 
@@ -82,11 +88,13 @@ impl Mode {
             Mode::Tabs => tr!("actions-placeholder-tabs"),
             Mode::Clipboard => tr!("actions-placeholder-clipboard"),
             Mode::Ask => tr!("actions-placeholder-ask"),
+            Mode::Apps => tr!("actions-placeholder-apps"),
         }
     }
 
     /// The prefixed modes, for the footer legend.
-    pub const PREFIXED: [Mode; 6] = [Mode::Path, Mode::Bookmarks, Mode::Search, Mode::Shell, Mode::Tabs, Mode::Ask];
+    pub const PREFIXED: [Mode; 7] =
+        [Mode::Path, Mode::Bookmarks, Mode::Search, Mode::Shell, Mode::Tabs, Mode::Apps, Mode::Ask];
 }
 
 /// Split raw input into a mode and the remaining text. `base` is the mode without a
@@ -105,6 +113,7 @@ pub fn parse(input: &str, base: Mode) -> (Mode, &str) {
         Some('>') => Mode::Shell,
         Some('#') => Mode::Tabs,
         Some('?') => Mode::Ask,
+        Some('!') => Mode::Apps,
         _ => return (base, trimmed),
     };
     let rest = chars.as_str();
@@ -141,6 +150,7 @@ mod tests {
         assert_eq!(parse("  new tab", Mode::Commands), (Mode::Commands, "new tab"));
         assert_eq!(parse(">", Mode::Commands), (Mode::Shell, ""));
         assert_eq!(parse("? move the pdfs", Mode::Commands), (Mode::Ask, "move the pdfs"));
+        assert_eq!(parse("!fire", Mode::Commands), (Mode::Apps, "fire"));
     }
 
     #[test]

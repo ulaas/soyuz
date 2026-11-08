@@ -154,6 +154,7 @@ fn mode_icon(mode: Mode) -> soyuz_appcore::icon::IconId {
         Mode::Tabs => IconId::Browsers,
         Mode::Clipboard => IconId::Clipboard,
         Mode::Ask => IconId::Sparkle,
+        Mode::Apps => IconId::AppWindow,
     }
 }
 

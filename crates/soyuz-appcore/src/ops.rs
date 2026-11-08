@@ -335,7 +335,7 @@ pub fn open_file(
 /// Run a process launch (`open_with`, reveal, external terminal) on a short-lived
 /// thread: resolving and spawning can block for seconds (cold disk, network paths,
 /// slow association lookups). A failure comes back as an error toast titled `title`.
-fn spawn_launch(app: &mut AppCore, title: String, f: impl FnOnce() -> Result<(), String> + Send + 'static) {
+pub(crate) fn spawn_launch(app: &mut AppCore, title: String, f: impl FnOnce() -> Result<(), String> + Send + 'static) {
     let postman = app.services.mailbox.postman();
     let spawned = std::thread::Builder::new().name("soyuz-launch".into()).spawn(move || {
         if let Err(e) = f() {
@@ -657,6 +657,7 @@ pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
         UiMsg::Notice(t) => {
             app.ui.toasts.push(t);
         }
+        UiMsg::InstalledApps(v) => crate::palette::apps_scanned(app, v),
         UiMsg::Launch(p) => launch(app, &p),
         UiMsg::ChooseApp(p) => app.cmds.push(Cmd::ChooseOpenWith(p)),
         UiMsg::Cmds(c) => app.cmds.extend(c),

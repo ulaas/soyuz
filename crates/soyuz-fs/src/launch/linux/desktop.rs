@@ -13,6 +13,8 @@ pub(crate) struct DesktopEntry {
     pub name: String,
     pub generic_name: Option<String>,
     pub comment: Option<String>,
+    /// `Keywords=` (localized): more words to search for.
+    pub keywords: Vec<String>,
     /// Raw value (string escapes not yet applied; see [`exec_tokens`]).
     pub exec: Option<String>,
     pub try_exec: Option<String>,
@@ -90,7 +92,7 @@ pub(crate) fn parse_desktop_with(text: &str, locale: Option<&Locale>) -> Option<
     let mut in_main = false;
     let mut seen_main = false;
     // Best rank seen so far for each localizable key (`u8::MAX` = unlocalized).
-    let mut ranks: [Option<u8>; 3] = [None; 3];
+    let mut ranks: [Option<u8>; 4] = [None; 4];
     for line in text.lines() {
         let line = line.trim_start();
         if line.is_empty() || line.starts_with('#') {
@@ -114,6 +116,7 @@ pub(crate) fn parse_desktop_with(text: &str, locale: Option<&Locale>) -> Option<
             "Name" => Some(0),
             "GenericName" => Some(1),
             "Comment" => Some(2),
+            "Keywords" => Some(3),
             _ => None,
         };
         if let Some(slot) = slot {
@@ -132,6 +135,7 @@ pub(crate) fn parse_desktop_with(text: &str, locale: Option<&Locale>) -> Option<
             match slot {
                 0 => e.name = val,
                 1 => e.generic_name = Some(val),
+                3 => e.keywords = split_list(v),
                 _ => e.comment = Some(val),
             }
             continue;

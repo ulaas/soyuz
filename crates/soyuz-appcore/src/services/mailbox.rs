@@ -32,6 +32,8 @@ pub enum UiMsg {
     CloudPlaces(Vec<(String, PathBuf)>),
     /// A notification from a worker (e.g. a failed launch).
     Notice(Toast),
+    /// The installed applications, scanned for the command palette.
+    InstalledApps(Vec<soyuz_fs::launch::InstalledApp>),
     /// A shortcut resolved to a folder: navigate the focused pane there.
     OpenDir(PathBuf),
     /// A worker found a file to open with its default application.

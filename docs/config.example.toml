@@ -197,6 +197,7 @@ always_for_unknown = true        # Open with… for such a type starts with "Alw
 run_binaries = true              # Enter on an executable binary / AppImage runs it (Linux); scripts still open in their editor
 store_apps_via_explorer = true   # Windows: a Store-app default (Photos, ...) opens through Explorer; off = first registered program
 elevate_when_required = true     # Windows: a program that needs admin rights (installers, ...) opens with the UAC prompt; off = an error
+palette_apps = true              # the command palette lists installed apps (type a name, or ! for apps only)
 # [[open.programs]]              # written by Soyuz: programs picked in Open with… (newest first), listed for every file
 # last_used = { png = "..." }    # written by Soyuz: last Open with… choice per extension ("." = no extension)
 

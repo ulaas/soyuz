@@ -188,3 +188,78 @@ fn clipboard_history(data: PathBuf) {
     common::run_script(&mut app, steps, 100, 30);
     common::ok();
 }
+
+fn fake_app(name: &str) -> soyuz_fs::launch::InstalledApp {
+    soyuz_fs::launch::InstalledApp {
+        id: format!("{name}.desktop"),
+        name: name.into(),
+        detail: "A test app".into(),
+        keywords: String::new(),
+        source: PathBuf::from(format!("{name}.desktop")),
+    }
+}
+
+fn selected_app(a: &App) -> Option<String> {
+    match selected(a) {
+        Some(Exec::App(app)) => Some(app.name.clone()),
+        _ => None,
+    }
+}
+
+/// Installed apps: `!` lists only them, typed names find them among the commands, and with
+/// `[open] palette_apps` off the `!` mode says so. A made-up list stands in for the scan,
+/// and nothing is started.
+#[test]
+fn palette_lists_installed_apps() {
+    match common::relaunch(module_path!(), "palette_lists_installed_apps", |data| {
+        std::fs::write(data.join("a.txt"), b"a").unwrap();
+    }) {
+        Run::Child(data) => installed_apps(data),
+        Run::Parent(_) => {}
+    }
+}
+
+fn installed_apps(data: PathBuf) {
+    let mut app = common::new_app(common::test_config(), &data);
+    soyuz_appcore::palette::apps_scanned(&mut app.core, vec![fake_app("Quokkaview"), fake_app("Zebra Paint")]);
+    let d = data.clone();
+    let mut steps = vec![Step::new("the listing", move |a| at(a, &d) && a.view().is_some(), ctrl('k'))];
+    let word = "!zebra";
+    for (i, c) in word.char_indices() {
+        let typed = &word[..i];
+        steps.push(Step::new("the text so far", move |a| open(a) && drawn_with(a, typed), key(KeyCode::Char(c))));
+    }
+    steps.push(Step::new(
+        "`!zebra` selects the app",
+        |a| open(a) && drawn_with(a, "!zebra") && selected_app(a).as_deref() == Some("Zebra Paint"),
+        key(KeyCode::Esc),
+    ));
+    // Among the commands: a name no command has puts the app first.
+    let word = "quokka";
+    for (i, c) in word.char_indices() {
+        let typed = &word[..i];
+        steps.push(Step::new("the text so far", move |a| open(a) && drawn_with(a, typed), key(KeyCode::Char(c))));
+    }
+    steps.push(Step::new(
+        "`quokka` ranks the app first among the commands",
+        |a| open(a) && drawn_with(a, "quokka") && selected_app(a).as_deref() == Some("Quokkaview"),
+        key(KeyCode::Esc),
+    ));
+    steps.push(Step::new("the input cleared", |a| open(a) && drawn_with(a, ""), key(KeyCode::Esc)));
+    steps.push(Step::new("the palette closed", |a| !a.core.palette.open, ctrl('q')));
+    let (terminal, _) = common::run_script(&mut app, steps, 100, 30);
+    let _ = terminal;
+    // Off: `!` shows the note instead of apps, and typed names find no apps.
+    app.core.config.open.palette_apps = false;
+    soyuz_appcore::palette::open(&mut app.core, soyuz_appcore::palette::query::Mode::Commands, "!zebra");
+    soyuz_appcore::palette::refresh_results(&mut app.core);
+    let r = &app.core.palette.results;
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].exec, Exec::Nothing);
+    app.core.palette.input = "quokka".into();
+    soyuz_appcore::palette::refresh_results(&mut app.core);
+    assert!(!app.core.palette.results.iter().any(|i| matches!(i.exec, Exec::App(_))));
+    soyuz_appcore::palette::close(&mut app.core);
+    app.finish();
+    common::ok();
+}

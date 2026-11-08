@@ -1118,6 +1118,14 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.open.run_binaries);
             },
         );
+        r.row_kw(
+            tr!("settings-open-palette-apps"),
+            tr!("settings-open-palette-apps-desc"),
+            "palette launcher launch start run installed applications apps programs start menu",
+            |ui| {
+                switch(ui, &mut d.open.palette_apps);
+            },
+        );
         if cfg!(windows) {
             r.row_kw(
                 tr!("settings-open-store-apps"),

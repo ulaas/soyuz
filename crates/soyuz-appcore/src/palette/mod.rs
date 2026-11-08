@@ -2,7 +2,8 @@
 //!
 //! One centered, animated overlay with a fuzzy-ranked list. Prefixes switch modes (see
 //! [`query`]): `:` path with folder completion, `@` bookmarks / recent folders, `/`
-//! recursive search, `>` shell command in the terminal panel, `#` switch tab. Recently
+//! recursive search, `>` shell command in the terminal panel, `#` switch tab, `!` start an
+//! installed application (also listed among the commands once two letters are typed). Recently
 //! used commands float to the top; folder visits are tracked with frecency and
 //! persisted in `palette.toml` together with recent shell commands and marks.
 //!
@@ -20,6 +21,7 @@ use std::time::{Duration, Instant};
 
 use soyuz_core::Location;
 use soyuz_core::config::Action;
+use soyuz_fs::launch::InstalledApp;
 
 use crate::cmd::Cmd;
 use crate::core::AppCore;
@@ -34,6 +36,10 @@ use fuzzy::Fuzzy;
 use query::Mode;
 
 const MAX_RESULTS: usize = 200;
+/// Installed apps are scanned again when the palette opens this long after the last scan.
+const APPS_STALE: Duration = Duration::from_secs(120);
+/// Apps shown among the commands (the `!` mode lists them all).
+const APPS_AMONG_COMMANDS: usize = 5;
 
 /// What running an item does.
 #[derive(Clone, Debug, PartialEq)]
@@ -54,6 +60,8 @@ pub enum Exec {
     Shell(String),
     /// Ask the assistant (the `?` mode): its plans open for review.
     Ask(String),
+    /// Start an installed application.
+    App(InstalledApp),
     Tab(usize),
     /// Put clipboard history set `n` back on the clipboard.
     ClipSet(usize),
@@ -131,6 +139,10 @@ pub struct PaletteState {
     last_dir: Option<PathBuf>,
     /// Pointer position when the palette opened (hover selects only after it moved).
     pub pointer_at_open: Option<Point>,
+    /// The installed applications (`[open] palette_apps`), from the last scan.
+    pub apps: Vec<InstalledApp>,
+    apps_scanned_at: Option<Instant>,
+    apps_scanning: bool,
 }
 
 impl PaletteState {
@@ -154,6 +166,9 @@ impl PaletteState {
             last_save: Instant::now(),
             last_dir: None,
             pointer_at_open: None,
+            apps: Vec::new(),
+            apps_scanned_at: None,
+            apps_scanning: false,
         }
     }
 
@@ -189,6 +204,33 @@ pub fn open(app: &mut AppCore, base: Mode, text: &str) {
     p.results_key = None;
     p.scroll_to_selected = true;
     p.pointer_at_open = None;
+    scan_apps(app);
+}
+
+/// Scan the installed applications on a worker when the list is missing or stale.
+fn scan_apps(app: &mut AppCore) {
+    let p = &mut app.palette;
+    if !app.config.open.palette_apps || p.apps_scanning || p.apps_scanned_at.is_some_and(|t| t.elapsed() < APPS_STALE) {
+        return;
+    }
+    p.apps_scanning = true;
+    let postman = app.services.mailbox.postman();
+    let spawned = std::thread::Builder::new().name("soyuz-apps".into()).spawn(move || {
+        postman.send(crate::services::mailbox::UiMsg::InstalledApps(soyuz_fs::launch::installed_apps()));
+    });
+    if let Err(e) = spawned {
+        log::warn!("cannot scan the installed apps: {e}");
+        app.palette.apps_scanning = false;
+    }
+}
+
+/// The worker's scan arrived.
+pub fn apps_scanned(app: &mut AppCore, apps: Vec<InstalledApp>) {
+    let p = &mut app.palette;
+    p.apps = apps;
+    p.apps_scanning = false;
+    p.apps_scanned_at = Some(Instant::now());
+    p.version += 1;
 }
 
 pub fn close(app: &mut AppCore) {
@@ -823,6 +865,106 @@ fn rank_ask(app: &AppCore, q: &str) -> Vec<Item> {
     out
 }
 
+/// The installed applications matching `q` (empty: recently started first, then by name).
+fn rank_apps(app: &AppCore, q: &str) -> Vec<Item> {
+    let section = tr!("actions-section-apps");
+    let note = |title: &str, detail: &str| {
+        let mut it = Item::new(Exec::Nothing, title, IconId::AppWindow, section);
+        it.detail = detail.to_string();
+        it.tint = Tint::Neutral;
+        vec![it]
+    };
+    if !app.config.open.palette_apps {
+        return note(tr!("actions-palette-apps-off"), tr!("actions-palette-apps-off-detail"));
+    }
+    if app.palette.apps.is_empty() {
+        return if app.palette.apps_scanning {
+            note(tr!("actions-palette-apps-scanning"), "")
+        } else {
+            note(tr!("actions-palette-apps-none"), "")
+        };
+    }
+    let recent = &app.palette.memory.apps;
+    let empty = q.trim().is_empty();
+    let mut f = Fuzzy::new(q);
+    let mut out = Vec::new();
+    let mut tight = Vec::new();
+    for a in &app.palette.apps {
+        let boost = recent.iter().position(|r| *r == a.id).map_or(0, |i| (12 - i.min(11) as i64) * 6);
+        let (score, hl) = if empty {
+            (0, Vec::new())
+        } else {
+            match (f.indices(&a.name), f.score(&format!("{} {} {}", a.name, a.detail, a.keywords))) {
+                (Some((s, hl)), _) => (s as i64 * 2, hl),
+                (None, Some(s)) => (s as i64, Vec::new()),
+                (None, None) => continue,
+            }
+        };
+        let mut it = Item::new(Exec::App(a.clone()), a.name.clone(), IconId::AppWindow, section);
+        it.detail = a.detail.clone();
+        it.hl = hl;
+        it.score = score + boost;
+        it.tag = Some(if boost > 0 { tr!("actions-tag-recent") } else { tr!("actions-tag-app") }.into());
+        tight.push(!empty && name_match(q, &a.name));
+        out.push(it);
+    }
+    // Names that contain the words first, then scattered matches; stable, so equal scores
+    // keep the scan's name order.
+    let mut ranked: Vec<(bool, Item)> = tight.into_iter().zip(out).collect();
+    ranked.sort_by(|(ta, a), (tb, b)| {
+        tb.cmp(ta)
+            .then_with(|| b.score.cmp(&a.score))
+            .then_with(|| if empty { std::cmp::Ordering::Equal } else { a.title.len().cmp(&b.title.len()) })
+    });
+    if !empty
+        && q.trim().chars().count() >= 3
+        && let Some(best) = ranked.iter().filter(|(t, _)| !t).map(|(_, r)| r.score).max()
+    {
+        ranked.retain(|(t, r)| *t || r.score * 3 >= best);
+    }
+    ranked.into_iter().map(|(_, it)| it).collect()
+}
+
+/// `q` names `name` closely: a part of it (`"code"` in "Visual Studio Code"), the starts of
+/// its words (`"vis stu"`), or its initials (`"vsc"`), ignoring case.
+pub fn name_match(q: &str, name: &str) -> bool {
+    let q = q.trim().to_lowercase();
+    let n = name.to_lowercase();
+    if q.is_empty() {
+        return false;
+    }
+    if n.contains(&q) {
+        return true;
+    }
+    let words: Vec<&str> = n.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let initials: String = words.iter().filter_map(|w| w.chars().next()).collect();
+    (q.chars().count() >= 2 && initials.starts_with(&q))
+        || q.split_whitespace().all(|qw| words.iter().any(|w| w.starts_with(qw)))
+}
+
+/// Commands mode with at least two letters typed: the apps whose names match closely
+/// ([`name_match`]) join the commands, ahead of them when the best app matches better than
+/// the best command.
+fn add_apps(app: &AppCore, q: &str, v: &mut Vec<Item>) {
+    if !app.config.open.palette_apps || q.trim().chars().count() < 2 {
+        return;
+    }
+    let apps: Vec<Item> = rank_apps(app, q)
+        .into_iter()
+        .filter(|i| matches!(i.exec, Exec::App(_)) && name_match(q, &i.title))
+        .take(APPS_AMONG_COMMANDS)
+        .collect();
+    let Some(best_app) = apps.first().map(|a| a.score) else { return };
+    let first_cmd = v.iter().position(|i| matches!(i.exec, Exec::Action(_)));
+    let best_cmd = v.iter().filter(|i| matches!(i.exec, Exec::Action(_))).map(|i| i.score).max();
+    match (first_cmd, best_cmd) {
+        (Some(at), Some(best)) if best_app > best => {
+            v.splice(at..at, apps);
+        }
+        _ => v.extend(apps),
+    }
+}
+
 fn build(app: &mut AppCore) -> Vec<Item> {
     let input = app.palette.input.clone();
     let (mode, q) = query::parse(&input, app.palette.base);
@@ -833,6 +975,7 @@ fn build(app: &mut AppCore) -> Vec<Item> {
                 v = rank_paths(app, q, Some(':')).into_iter().take(1).collect();
             }
             v.extend(rank_commands(app, q));
+            add_apps(app, q, &mut v);
             v
         }
         Mode::Folders => rank_folders(app, q, false),
@@ -850,6 +993,7 @@ fn build(app: &mut AppCore) -> Vec<Item> {
         Mode::Tabs => rank_tabs(app, q),
         Mode::Clipboard => rank_clipboard(app, q),
         Mode::Ask => rank_ask(app, q),
+        Mode::Apps => rank_apps(app, q),
     };
     items.truncate(MAX_RESULTS);
     items
@@ -916,6 +1060,13 @@ pub fn run(app: &mut AppCore, host: &dyn Host, exec: Exec, mods: RunMods) {
             app.palette.dirty = true;
             close(app);
             crate::ai::state::ask_from_palette(app, host, text);
+        }
+        Exec::App(a) => {
+            app.palette.memory.used_app(&a.id);
+            app.palette.dirty = true;
+            close(app);
+            let title = tr!("actions-palette-app-failed", app = &a.name);
+            ops::spawn_launch(app, title, move || soyuz_fs::launch::launch_app(&a).map_err(|e| e.to_string()));
         }
         Exec::Tab(i) => {
             close(app);

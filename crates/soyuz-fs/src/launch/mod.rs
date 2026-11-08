@@ -13,6 +13,7 @@
 //! * macOS: LaunchServices (`LSOpenFromURLSpec`, `LSCopyApplicationURLsForURL`) and
 //!   `NSWorkspace` for Finder reveal; no `open` process (see `macos`).
 
+mod installed;
 pub(crate) mod linux;
 pub(crate) mod lnk;
 mod macos;
@@ -25,6 +26,8 @@ use serde::{Deserialize, Serialize};
 use soyuz_core::{FsError, FsResult};
 
 use crate::err;
+
+pub use installed::{InstalledApp, installed_apps, launch_app};
 
 /// An application that can open a file.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

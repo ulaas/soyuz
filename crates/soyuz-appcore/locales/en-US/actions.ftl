@@ -518,6 +518,16 @@ actions-mode-ask = Ask
 actions-legend-ask = ask
 actions-placeholder-ask = Ask the assistant to do something with files
 actions-section-ask = Assistant
+actions-mode-apps = Apps
+actions-legend-apps = apps
+actions-placeholder-apps = Start an installed app
+actions-section-apps = Applications
+actions-palette-apps-off = Apps in the palette are off
+actions-palette-apps-off-detail = Turn on “List installed apps in the command palette” in Settings › Behaviour
+actions-palette-apps-scanning = Looking for installed apps…
+actions-palette-apps-none = No installed apps found
+# $app: the application's name.
+actions-palette-app-failed = Couldn't start { $app }
 actions-section-recent-asks = Asked earlier
 # $request: what the user typed.
 actions-palette-ask = Ask: { $request }
@@ -535,6 +545,7 @@ actions-clipboard-more = { $names } and { $count } more
 actions-tag-cut = cut
 actions-tag-copied = copied
 actions-tag-recent = recent
+actions-tag-app = app
 actions-tag-current = current
 actions-tag-bookmark = bookmark
 actions-tag-favorite = favorite

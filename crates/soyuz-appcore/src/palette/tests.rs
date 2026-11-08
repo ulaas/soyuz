@@ -105,3 +105,14 @@ fn ranks_in_turkish_and_keeps_english_muscle_memory() {
     assert!(top("isleri duraklat").contains(&Action::JobsPauseAll));
     assert!(top("İŞLERİ DURAKLAT").contains(&Action::JobsPauseAll));
 }
+
+#[test]
+fn app_names_match_closely() {
+    assert!(name_match("code", "Visual Studio Code"));
+    assert!(name_match("vis stu", "Visual Studio Code"));
+    assert!(name_match("vsc", "Visual Studio Code"));
+    assert!(name_match("PAINT", "Paint.NET"));
+    // Scattered letters are not a close match.
+    assert!(!name_match("paint", "Plugin Alliance Installation Manager"));
+    assert!(!name_match("", "Anything"));
+}

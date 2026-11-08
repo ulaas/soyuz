@@ -666,6 +666,10 @@ pub struct OpenSection {
     /// manifest asks for them, e.g. most installers) starts it through the UAC prompt; off =
     /// it fails with an error and only "Run as administrator" starts it.
     pub elevate_when_required: bool,
+    /// The command palette also lists the applications installed on the system (the Start
+    /// menu on Windows, desktop entries on Linux, the Applications folders on macOS): type a
+    /// name to start one, or `!` to list only apps; off = neither.
+    pub palette_apps: bool,
     /// Default applications by file type: the first rule naming the file's extension wins;
     /// files without a rule open with the system's default application.
     pub default_apps: Vec<DefaultApp>,

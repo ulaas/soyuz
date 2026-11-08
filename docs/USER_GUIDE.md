@@ -98,7 +98,7 @@ Pins are kept in `config.toml` (`[[sidebar.portal]]`) and can also be edited in
 | `Backspace`, `Alt+↑` | parent folder |
 | `Alt+←` / `Alt+→`, mouse back / forward | history (right-click the arrows for the list) |
 | `Ctrl+P` | **Go to folder**: fuzzy jump to any folder you visited, ranked by frecency |
-| `Ctrl+K` | **Command palette**: every action; prefixes `:` path, `@` bookmark, `/` search, `>` shell, `#` tab, `?` ask the assistant |
+| `Ctrl+K` | **Command palette**: every action; prefixes `:` path, `@` bookmark, `/` search, `>` shell, `#` tab, `!` installed apps, `?` ask the assistant |
 | typing letters | type-ahead jumps to the first matching name (or filters, see *Behaviour*) |
 | `Ctrl+F` | live filter of the current folder |
 | `Alt+1…9` | bookmarks |
@@ -190,6 +190,14 @@ administrator* ticked, opens with the Windows permission prompt (`[open]
 elevate_when_required`, *Settings → Behaviour → Ask for administrator rights when a
 program needs them*). Any program can also be started elevated from its context menu:
 **Run as administrator** (Windows; **Run as root** through `pkexec` on Linux).
+
+**Starting apps from the palette.** The command palette also finds the apps installed on
+the computer: type part of a name (`code` finds Visual Studio Code, `vsc` too) and the
+closest apps appear with the commands; start with `!` to list only apps, recently started
+ones first. On Windows they come from the Start menu (uninstallers left out; Store apps
+such as Paint or Calculator are not listed yet), on Linux from the desktop entries an
+*Open with* menu shows, on macOS from the Applications folders. Turn it off with `[open]
+palette_apps` (*Settings → Behaviour → List installed apps in the command palette*).
 
 **Unrecognized files.** A file no app is registered for, an unknown type or a file
 without an extension, opens *Open with…* on `Enter` instead of an error
