@@ -15,7 +15,7 @@ use windows_sys::Win32::System::DataExchange::{
 use windows_sys::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetActiveWindow, GetAsyncKeyState};
 
-use super::{build_dropfiles, drop_effect, mode_from_effect, parse_dropfiles, paths_text};
+use super::{build_dropfiles, drop_effect, mode_from_effect, parse_dropfiles};
 use crate::ops::fileops::clipboard::ClipMode;
 
 const CF_DIB: u32 = 8;
@@ -133,10 +133,12 @@ fn get_bytes(_s: &Session, format: u32) -> Option<Vec<u8>> {
     }
 }
 
+/// Files as Explorer puts them: `CF_HDROP` + "Preferred DropEffect", no `CF_UNICODETEXT`
+/// (rich editors such as Word paste text before files, so a copied picture came out as
+/// its path). Ctrl+V in Soyuz still works without text (`paste_key_fallback`).
 pub(super) fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String> {
     let hdrop = build_dropfiles(paths);
     let effect = drop_effect(mode).to_le_bytes();
-    let text: Vec<u8> = paths_text(paths).encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect();
     let fmt_effect = preferred_drop_effect();
     // Allocate everything before touching the clipboard, so a failure leaves the
     // user's current clipboard untouched.
@@ -144,7 +146,6 @@ pub(super) fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String>
     if fmt_effect != 0 {
         blocks.push((fmt_effect, Block::new(&effect)?));
     }
-    blocks.push((CF_UNICODETEXT, Block::new(&text)?));
     let s = Session::open()?;
     // SAFETY: clipboard is open (held by `s`).
     if unsafe { EmptyClipboard() } == 0 {

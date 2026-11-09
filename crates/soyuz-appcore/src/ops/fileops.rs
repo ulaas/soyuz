@@ -239,7 +239,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
             }
             let mode = if action == A::Cut { ClipMode::Cut } else { ClipMode::Copy };
             // The OS clipboard gets the files in the native format (Explorer / Finder /
-            // Nautilus can paste them) plus the paths as text; without a native
+            // Nautilus can paste them; Linux adds the paths as text); without a native
             // mechanism, just the text (Ctrl+V then still reaches the app).
             if !crate::services::os_clipboard::set_files(mode, &sel) {
                 host.copy_text(Clipboard::os_text(&sel));

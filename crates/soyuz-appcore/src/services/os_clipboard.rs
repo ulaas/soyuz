@@ -3,8 +3,9 @@
 //! Finder / Nautilus, honouring move-vs-copy.
 //!
 //! * Windows: `CF_HDROP` (a hand-built `DROPFILES` block) + the registered
-//!   `"Preferred DropEffect"` format + `CF_UNICODETEXT`, through raw user32/kernel32
-//!   calls (`os_clipboard_windows.rs`). No shell or COM APIs.
+//!   `"Preferred DropEffect"` format, through raw user32/kernel32 calls
+//!   (`os_clipboard_windows.rs`). No shell or COM APIs. No text, like Explorer: Word and
+//!   other rich editors would paste the paths instead of the files.
 //! * Linux: `x-special/gnome-copied-files`, `text/uri-list`,
 //!   `application/x-kde-cutselection` and the paths as text, served natively: the Wayland
 //!   `ext-data-control-v1` protocol on our own connection (`os_clipboard_wayland.rs`), or
