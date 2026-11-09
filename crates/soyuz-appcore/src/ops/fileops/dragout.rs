@@ -75,18 +75,19 @@ fn utf16z(s: &str) -> Vec<u8> {
     s.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect()
 }
 
-/// Formats offered for `paths`: `CF_HDROP` (wide `DROPFILES`), "FileNameW" (single item),
-/// `CF_UNICODETEXT` (one path per line) and, when the drag default is an explicit copy or
-/// move, "Preferred DropEffect" (omitted for `auto` / `ask` so targets apply their own
-/// same-volume rules, like a drag from Explorer).
+/// Formats offered for `paths`: `CF_HDROP` (wide `DROPFILES`), "FileNameW" (single item)
+/// and, when the drag default is an explicit copy or move, "Preferred DropEffect" (omitted
+/// for `auto` / `ask` so targets apply their own same-volume rules, like a drag from
+/// Explorer).
+///
+/// No `CF_UNICODETEXT`, like Explorer: rich editors (Word, Outlook, WordPad) take text
+/// before files, so a dragged picture landed as its path instead of being inserted.
 pub fn build_data(paths: &[PathBuf], default: DragDefault) -> DragData {
     let ext: Vec<PathBuf> = paths.iter().map(|p| external_path(p)).collect();
     let mut formats = vec![(Format::Hdrop, crate::services::os_clipboard::build_dropfiles(&ext))];
     if let [one] = ext.as_slice() {
         formats.push((Format::Named("FileNameW".into()), utf16z(&one.to_string_lossy())));
     }
-    let text = ext.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\r\n");
-    formats.push((Format::UnicodeText, utf16z(&text)));
     let preferred = match default {
         DragDefault::Copy => Some(DROPEFFECT_COPY),
         DragDefault::Move => Some(DROPEFFECT_MOVE),
@@ -261,7 +262,7 @@ mod tests {
         let one = vec![PathBuf::from(r"\\?\C:\dir\a.txt")];
         let d = build_data(&one, DragDefault::Auto);
         let kinds: Vec<&Format> = d.formats.iter().map(|(f, _)| f).collect();
-        assert_eq!(kinds, [&Format::Hdrop, &Format::Named("FileNameW".into()), &Format::UnicodeText]);
+        assert_eq!(kinds, [&Format::Hdrop, &Format::Named("FileNameW".into())], "no text: Word would take it");
         let parsed = crate::services::os_clipboard::parse_dropfiles(&d.formats[0].1).unwrap();
         assert_eq!(parsed, vec![PathBuf::from(r"C:\dir\a.txt")], "verbatim prefix stripped");
         assert_eq!(named(&d, "FileNameW").unwrap(), &utf16z(r"C:\dir\a.txt"));
@@ -270,8 +271,7 @@ mod tests {
         let d = build_data(&two, DragDefault::Move);
         assert!(named(&d, "FileNameW").is_none(), "FileNameW only for a single item");
         assert_eq!(named(&d, "Preferred DropEffect").unwrap(), &DROPEFFECT_MOVE.to_le_bytes().to_vec());
-        let text = d.formats.iter().find(|(f, _)| *f == Format::UnicodeText).unwrap();
-        assert_eq!(text.1, utf16z("C:\\a\r\nD:\\b c\\d.txt"));
+        assert!(!d.formats.iter().any(|(f, _)| *f == Format::UnicodeText));
         assert_eq!(crate::services::os_clipboard::parse_dropfiles(&d.formats[0].1).unwrap(), two);
         let d = build_data(&two, DragDefault::Copy);
         assert_eq!(named(&d, "Preferred DropEffect").unwrap(), &DROPEFFECT_COPY.to_le_bytes().to_vec());
@@ -295,14 +295,11 @@ mod tests {
         let kinds: Vec<Format> = got.iter().map(|(f, _)| f.clone()).collect();
         assert_eq!(
             kinds,
-            [Format::Hdrop, Format::UnicodeText, Format::Named("Preferred DropEffect".into())],
+            [Format::Hdrop, Format::Named("Preferred DropEffect".into())],
             "EnumFormatEtc lists the offered formats in order"
         );
         let hdrop = &got[0].1;
         assert_eq!(crate::services::os_clipboard::parse_dropfiles(hdrop).unwrap(), paths);
-        let text: Vec<u16> = got[1].1.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
-        let text = String::from_utf16_lossy(&text[..text.iter().position(|u| *u == 0).unwrap()]);
-        assert_eq!(text, "C:\\Windows\\win.ini\r\nC:\\Users\\Public\\ä ö.txt");
-        assert_eq!(&got[2].1[..4], &DROPEFFECT_COPY.to_le_bytes());
+        assert_eq!(&got[1].1[..4], &DROPEFFECT_COPY.to_le_bytes());
     }
 }
