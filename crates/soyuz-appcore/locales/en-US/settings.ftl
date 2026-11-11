@@ -66,7 +66,7 @@ settings-section-ai-desc = Model providers, API keys, privacy, scope, budgets an
 settings-section-advanced = Advanced
 settings-section-advanced-desc = Edit, export or import config.toml, and make Soyuz your default file manager.
 settings-section-about = About & updates
-settings-section-about-desc = Version, and checking GitHub Releases for a newer Soyuz (only when you ask).
+settings-section-about-desc = Version, and updating Soyuz from GitHub Releases.
 
 ## Export / import
 
@@ -1034,7 +1034,7 @@ settings-about-build = { $kind ->
     [debug] Debug
    *[release] Release
     } build for { $os } / { $arch }. Licensed under the MIT License.
-settings-updates-privacy = Soyuz only asks GitHub for the public release list; no data about you or your files is sent. Downloads are verified (SHA-256, and the installer's signature) and never installed without your click.
+settings-updates-privacy = A check asks GitHub's public release API for the newest release of this repository: one request without identifiers, and nothing about you or your files. Nothing is downloaded before you click. A download is used only if its SHA-256 matches the release's checksum file and the digest GitHub reports; an installer's Authenticode signature is shown for information.
 settings-updates-up-to-date = You're up to date. The newest release is { $latest }.
 settings-updates-failed = Update check failed: { $error }
 settings-updates-download-tooltip = Save { $name } to your Downloads folder
@@ -1084,8 +1084,8 @@ settings-about-button = About Soyuz…
 settings-updates = Updates
 settings-updates-repo = Release repository
 settings-updates-repo-desc = GitHub repository Soyuz updates come from (owner/name or URL). Empty turns the update check off.
-settings-updates-weekly = Check once a week
-settings-updates-weekly-desc = At startup, at most once every 7 days. Only shows a notification; nothing is downloaded.
+settings-updates-auto = Check automatically
+settings-updates-auto-desc = Once a day, in the background. A newer release only shows a notification; nothing is downloaded before you click.
 settings-updates-prereleases = Include pre-releases
 settings-updates-prereleases-desc = Offer release candidates and betas too.
 settings-updates-check = Check for updates
@@ -1446,10 +1446,17 @@ settings-appearance-gpu-memory-performance = Performance
 settings-bookmarks-icon = Bookmark icon
 
 ## Linux (glue)
-settings-updates-privacy-linux = Soyuz only asks GitHub for the public release list; no data about you or your files is sent. Downloads are checked against the release's SHA-256 checksum and never installed without your click.
+settings-updates-privacy-linux = A check asks GitHub's public release API for the newest release of this repository: one request without identifiers, and nothing about you or your files. Nothing is downloaded before you click. A download is used only if its SHA-256 matches the release's checksum file and the digest GitHub reports.
 settings-updates-sig-unknown-linux = Linux releases carry no installer signature; the SHA-256 checksum above was verified.
-settings-updates-install-restart = Install & restart
-settings-updates-install-restart-tooltip = Replace this copy of Soyuz with the downloaded version and start it again. Your settings are kept.
+settings-updates-install = Update and restart
+settings-updates-install-tooltip = Download { $name }, check it, install it and start Soyuz again. Your settings are kept.
+settings-updates-install-msi = Windows Installer shows its progress window while Soyuz is closed, then Soyuz starts again. An installation for all users asks for administrator rights.
+settings-updates-download-only = Download only
+settings-updates-release-page = Release page
+settings-updates-open-failed = Cannot open the release page
+settings-updates-ready = { $version } is installed. Restart Soyuz to use it.
+settings-updates-ready-installer = { $version } is downloaded and verified. Soyuz closes, Windows Installer updates it, and Soyuz starts again.
+settings-updates-restart-now = Restart now
 settings-updates-installing = Installing the update…
 settings-linux-fm1-serving = Serving
 settings-linux-fm1-pending = Starting…

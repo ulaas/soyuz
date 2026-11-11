@@ -276,7 +276,6 @@ services-update-not-found = sürüm bulunamadı (depo adını kontrol edin)
 services-update-http-status = GitHub yanıtı: { $status } { $message }
 services-update-cannot-start = başlatılamıyor: { $error }
 services-update-no-asset = bu sürümde bu platform için indirme yok
-services-update-bad-signature = yükleyicinin imzası geçersiz ({ $code }); indirilen dosya silindi
 services-update-no-checksum = sürüm bu dosya için SHA-256 sağlama toplamı yayımlamıyor, bu yüzden doğrulanamıyor
 services-update-checksums-disagree = sürümün sağlama toplamları birbiriyle uyuşmuyor; indirilmiyor
 services-update-bad-asset-name = hatalı dosya adı
@@ -289,7 +288,35 @@ services-update-cannot-write = indirilen dosya yazılamıyor: { $error }
 services-update-checksum-mismatch = sağlama toplamı uyuşmuyor (beklenen { $expected }…, gelen { $got }…); indirilen dosya silindi
 services-update-cannot-rename = indirilen dosya yeniden adlandırılamıyor: { $error }
 services-update-available = Soyuz { $version } kullanıma sunuldu
-services-update-available-body = Sürüm notlarını okumak ve indirmek için Ayarlar → Hakkında ve güncellemeler bölümünü açın.
+services-update-available-body = Sürüm notlarını okumak ve sürümü almak için Ayarlar → Hakkında ve güncellemeler bölümünü açın.
+services-update-available-install = Tek tıklama sürümü indirir, denetler ve Soyuz'u yeniden başlatır. Bundan önce hiçbir şey indirilmez.
+services-update-action-install = Güncelle ve yeniden başlat
+services-update-action-details = Göster
+services-update-up-to-date = Soyuz güncel (en yeni sürüm { $version })
+services-update-check-failed = Güncelleme denetimi başarısız oldu
+services-update-installed = Soyuz { $version } sürümüne güncellendi
+services-update-not-installed = Güncelleme kurulmadı
+# $error = a full sentence. $current = the version that runs, $version = the one that was not installed.
+services-update-not-installed-body = { $error } Hâlâ Soyuz { $current } kullanıyorsunuz; { $version } kurulmadı.
+services-update-installing = Soyuz { $version } indiriliyor
+services-update-installing-body = Güncelleme kurulunca Soyuz kendiliğinden yeniden başlar.
+services-update-tui-msi = Bu kopya Windows yükleyicisiyle kuruldu. Soyuz uygulamasından (Ayarlar → Hakkında ve güncellemeler) veya sürüm sayfasındaki yükleyiciyle güncelleyin.
+# $kind: "bundle" (a macOS app bundle) | "other".
+services-update-manual = { $kind ->
+    [bundle] Bu kopya imzalı bir uygulama paketinden çalışıyor; Soyuz bu paketi değiştirmez. Yeni sürümü indirin ve uygulamayı onunla değiştirin.
+   *[other] Soyuz bu kopyanın nasıl kurulduğunu belirleyemediği için onu değiştirmez. Yeni sürümü indirin ve bunu kurduğunuz yolla kurun.
+}
+services-update-install-no-permission-here = { $path } konumuna yazılamıyor ({ $error }); hiçbir şey değiştirilmedi
+services-update-swap-rolled-back = yeni dosyalar yerine konamadı ({ $error }); bütün değişiklikler geri alındı, bu sürüm olduğu gibi duruyor
+services-update-swap-broken = yeni dosyalar yerine konamadı ({ $error }) ve şunlar geri konamadı: { $files }. Önceki dosyalar { $backup } klasöründe; onları Soyuz klasörüne geri taşıyın.
+services-update-install-renamed = bu kopya “{ $name }” adıyla çalışıyor; sürümde böyle bir dosya yok. Dosyaya özgün adını geri verin ya da yeni sürümü elle kurun
+services-update-install-no-program = arşivde { $name } yok
+services-update-install-not-program = arşivdeki { $name } bu bilgisayar için bir program değil; hiçbir şey değiştirilmedi
+services-update-msi-bad-path = “{ $path }” yolu Windows Installer'a iletilemiyor
+services-update-msi-cancelled = Yükleyici iptal edildi.
+services-update-msi-busy = Başka bir Soyuz penceresi veya terminal arayüzü hâlâ çalıştığı için yükleyici başlatılmadı. Bütün Soyuz pencerelerini kapatıp yeniden deneyin.
+services-update-msi-exit = Windows Installer { $code } koduyla sonlandı.
+services-update-msi-not-started = Windows Installer başlatılamadı: { $error }
 
 ## Linux (data)
 
@@ -303,11 +330,15 @@ services-clipboard-unavailable = pano kullanılamıyor (Wayland data-control ve 
 services-fm1-failed = "Klasörde göster" kaydedilemedi (org.freedesktop.FileManager1): { $error }
 services-fm1-taken = "Klasörde göster" isteklerini zaten başka bir uygulama ({ $owner }) karşılıyor (org.freedesktop.FileManager1). O uygulamayı kapatın ya da dosya yöneticisi hizmetini kapatın, sonra bu ayarı kapatıp yeniden açın.
 
-# $kind: "system" | "flatpak" | "appimage" | "other".
+# $kind: "system" | "flatpak" | "appimage" | "scoop" | "homebrew" | "msix" | "readonly" | "other".
 services-update-package-managed = { $kind ->
-    [system] Soyuz'un bu kopyası sisteminizin paket yöneticisiyle kuruldu. Güncellemeyi oradan yapın (örneğin dnf, apt veya yazılım merkezi); Soyuz paket yöneticisine ait dosyaların üzerine asla yazmaz.
+    [system] Soyuz'un bu kopyası sisteminizin paket yöneticisiyle kuruldu. Güncellemeyi oradan yapın (örneğin dnf, pacman, bir AUR yardımcısı veya yazılım merkezi); Soyuz paket yöneticisine ait dosyaların üzerine asla yazmaz.
     [flatpak] Soyuz'un bu kopyası Flatpak olarak çalışıyor. “flatpak update” komutuyla veya yazılım merkezinden güncelleyin.
     [appimage] Soyuz'un bu kopyası AppImage olarak çalışıyor. Yeni AppImage dosyasını indirip eskisinin yerine koyun.
+    [scoop] Soyuz'un bu kopyası Scoop ile kuruldu. “scoop update soyuz” komutuyla güncelleyin; Soyuz, Scoop'un yönettiği dosyaların üzerine asla yazmaz.
+    [homebrew] Soyuz'un bu kopyası Homebrew ile kuruldu. “brew upgrade --cask soyuz” komutuyla güncelleyin; Soyuz, Homebrew'un yönettiği dosyaların üzerine asla yazmaz.
+    [msix] Soyuz'un bu kopyası bir MSIX paketi. Yeni paketi sürüm sayfasından kurun; Windows eskisinin yerine koyar.
+    [readonly] Soyuz bu kopyanın bulunduğu klasöre yazamadığı için onu güncelleyemez. Yeni sürümü, klasörün gerektirdiği yetkilerle üzerine açın (örneğin Linux'ta “sudo tar -C /usr/local --strip-components=1 -xf <dosya>”).
    *[other] Soyuz'un bu kopyası kendini güncelleyemez. Yeni sürümü bunu kurduğunuz yolla kurun.
 }
 services-update-install-not-tarball = yerinde yalnızca Linux sürüm arşivi (.tar.gz) kurulabilir

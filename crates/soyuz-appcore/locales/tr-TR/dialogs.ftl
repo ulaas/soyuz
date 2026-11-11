@@ -40,6 +40,9 @@ dialogs-about-process-unix = anonim { $anonymous } · yerleşik { $resident }
 dialogs-about-process-unknown = kullanılamıyor
 dialogs-about-license = MIT Lisansı ile dağıtılır. Yazı tipleri: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL), Hack (MIT / Bitstream Vera). Simgeler: Phosphor (MIT).
 dialogs-about-copy-info = Bilgileri kopyala
+dialogs-about-check-updates = Güncellemeleri denetle
+dialogs-about-update-available = Soyuz { $version } kullanıma sunuldu.
+dialogs-about-update-show = Güncelle…
 
 ## Keyboard shortcuts
 

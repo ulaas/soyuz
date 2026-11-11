@@ -45,6 +45,9 @@ dialogs-about-process-unix = anonymous { $anonymous } · resident { $resident }
 dialogs-about-process-unknown = not available
 dialogs-about-license = Licensed under the MIT License. Fonts: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL), Hack (MIT / Bitstream Vera). Icons: Phosphor (MIT).
 dialogs-about-copy-info = Copy info
+dialogs-about-check-updates = Check for updates
+dialogs-about-update-available = Soyuz { $version } is available.
+dialogs-about-update-show = Update…
 
 ## Keyboard shortcuts
 

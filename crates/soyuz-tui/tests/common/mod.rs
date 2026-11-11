@@ -128,7 +128,7 @@ pub fn test_config() -> Config {
     let mut c = Config::default();
     c.general.show_hidden = false;
     c.general.confirm_delete = true;
-    c.updates.weekly_check = false;
+    c.updates.auto_check = false;
     // Connect to server would ask the real local network for servers (mDNS).
     c.remote.discover = false;
     c.cli.server_enabled = false;

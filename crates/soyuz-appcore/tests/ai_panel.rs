@@ -77,7 +77,7 @@ fn run_core(data: PathBuf) {
     assert!(dir.ends_with(config::PORTABLE_DATA_DIR), "not in portable mode: {}", dir.display());
 
     let mut c = Config::default();
-    c.updates.weekly_check = false;
+    c.updates.auto_check = false;
     c.cli.server_enabled = false;
     c.search.index.enabled = false;
     let startup = Startup { open: Some(data.clone()), secondary: true, safe_mode: false, ..Default::default() };

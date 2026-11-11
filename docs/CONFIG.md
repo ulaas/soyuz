@@ -90,7 +90,7 @@ written as a list of quoted values is an enumeration: use one of them.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `schema` | integer | `6` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
+| `schema` | integer | `7` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
 
 ## `[general]`
 
@@ -581,12 +581,12 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 
 ## `[updates]`
 
-`[updates]`: user-initiated update check against GitHub Releases. Nothing is ever downloaded or installed without a click; there is no telemetry. Defaults: the official repository, no weekly check, stable releases only.
+`[updates]`: the update check against GitHub Releases. Soyuz asks GitHub's public release API for the newest release (one request without identifiers; there is no telemetry) when you ask and, unless `auto_check` is off, once a day. Nothing is ever downloaded or installed without a click. Defaults: the official repository, the daily check on, stable releases only.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `repo` | string | `"ulaas/soyuz"` | GitHub repository to check, `owner/name` or `https://github.com/owner/name`. Empty disables the update check. |
-| `weekly_check` | boolean | `false` | Also check once a week at startup (off by default; only shows a notification). |
+| `auto_check` | boolean | `true` | Check for a newer release in the background, at most once a day (on by default). A newer release only shows a notification: downloading and installing it needs a click. |
 | `include_prereleases` | boolean | `false` | Offer pre-releases (release candidates, betas) too. |
 
 ## `[performance]`

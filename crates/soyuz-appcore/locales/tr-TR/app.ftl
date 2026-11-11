@@ -251,6 +251,7 @@ app-titlebar-menu = Soyuz menüsü
 app-titlebar-new-window = Yeni pencere
 app-titlebar-settings = Ayarlar…
 app-titlebar-shortcuts = Klavye kısayolları
+app-titlebar-check-updates = Güncellemeleri denetle
 app-titlebar-about = Soyuz hakkında
 app-titlebar-quit = Çık
 app-titlebar-minimize = Simge durumuna küçült
@@ -382,3 +383,4 @@ app-a11y-resize-panes = Bölmeleri yeniden boyutlandır
 
 ## fix-svc
 app-restart-cancelled = Yeniden başlatma iptal edildi. Güncelleme kuruldu, bir sonraki açılışta kullanılacak.
+app-restart-cancelled-installer = Yeniden başlatma iptal edildi. Güncelleme kurulmadı; Ayarlar → Hakkında ve güncellemeler bölümünden yeniden başlatın.

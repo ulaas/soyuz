@@ -124,6 +124,8 @@ define_actions! {
         NewSmartFolder, SaveSearchAsSmartFolder, IndexSettings, RebuildIndex, ToggleIndex,
         // Fetch the FFmpeg libraries (`services::updates::ffmpeg_runtime`, Phase V4c).
         DownloadFfmpegRuntime,
+        // The update check and the one-click update (`services::updates`).
+        CheckForUpdates, InstallUpdate,
         // The built-in editors (`KeyContext::Editor`, see [`Action::is_editor`]).
         EditorSave, EditorSaveAs, EditorFind, EditorReplace, EditorGoTo, EditorFindNext,
         EditorFindPrev, EditorCloseDocument, EditorNextDocument, EditorPrevDocument,

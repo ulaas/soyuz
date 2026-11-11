@@ -116,7 +116,7 @@ auto_open_activity = true
 icons = "unicode"
 
 [updates]
-weekly_check = false
+auto_check = false
 
 [cli]
 server_enabled = false

@@ -103,7 +103,25 @@ and tarballs hold both side by side, the MSI installs both into the install fold
 by its PATH option), the MSIX gives each an execution alias (`soyuz-tui.exe` is declared as
 a console app, `desktop4:Subsystem="console"`), the rpm and the Flatpak put both in `bin/`,
 and the signed macOS app carries `soyuz-tui` as a helper tool in `Contents/MacOS/`. The
-Linux in-place updater (`services/updates.rs`) replaces both from the tarball.
+in-app update (`services/updates.rs`) replaces both: from the tarball on Linux and macOS,
+from the portable zip on Windows, and through the MSI for an MSI install.
+
+What "Update and restart" needs from a release, per kind of copy (asset names are matched
+by `soyuz-<version>-<os>-<arch>` plus the extension, checksums by `SHA256SUMS-<os>.txt` /
+`<file>.sha256` and GitHub's asset digest):
+
+| Copy | Asset | How it is installed |
+|---|---|---|
+| Linux tarball (`~/.local`, `/usr/local`, `/opt`) | `…-linux-<arch>.tar.gz` | `bin/` and `lib/soyuz/` replaced by atomic renames |
+| Windows portable (a `portable` file next to the exe) | `…-windows-<arch>-portable.zip` | swapped in place with roll back (`updates/swap.rs`) |
+| Windows MSI (`HKCU` / `HKLM` `Software\Soyuz\Installer`) | `…-windows-<arch>.msi` | `msiexec /i … /passive /norestart INSTALLFOLDER=…` (plus `ALLUSERS=1` per machine) by a helper copy of the exe (`updates/msi.rs`) |
+| macOS tarball in a writable folder | `…-macos-<arch>.tar.gz` | swapped in place like the portable zip |
+| Scoop, Homebrew, rpm / AUR, Flatpak, AppImage, MSIX, read-only folders | none | never; the app says how to update |
+
+The MSI records its folder in `Software\Soyuz\Installer` → `InstallDir` (since the release
+after 0.7.5); installs made by older MSIs are recognised in the default folder of their
+scope only. Keep the `StartMenuShortcut` and `InstallDir` values and the asset names when
+changing the installer or the packaging scripts.
 
 - **Every push to `main`** (and manual runs of *CI*): the `package` job builds
   `soyuz-<v>-windows-x64.zip`, `soyuz-<v>-linux-x64.tar.gz` and

@@ -101,7 +101,7 @@ fn run(data: PathBuf) {
     let (l, r) = (data.join("L"), data.join("R"));
 
     let mut c = Config::default();
-    c.updates.weekly_check = false;
+    c.updates.auto_check = false;
     c.cli.server_enabled = false;
     c.search.index.enabled = false;
     c.sync.scheduler = false;

@@ -349,9 +349,9 @@ previous_versions = true         # list Windows Volume Shadow Copies in "Previou
 shadow_probe_max = 64            # probe HarddiskVolumeShadowCopy1..N if \Device can't be listed
 treemap_diff_content = false     # "Compare as treemap" compares contents byte for byte, not dates and sizes
 
-[updates]                        # update check (manual; nothing installs without a click, no telemetry)
+[updates]                        # update check: a request to GitHub's public release API (no identifiers, no telemetry); nothing downloads or installs without a click
 repo = "ulaas/soyuz"             # GitHub "owner/name" or URL; empty = update check disabled
-weekly_check = false             # also check once a week at startup (notification only)
+auto_check = true                # check in the background once a day (a newer release only shows a notification)
 include_prereleases = false      # offer release candidates / betas too
 [performance]                    # startup and rendering
 gpu_backend = "auto"             # auto | dx12 | vulkan | gl (next start; WGPU_BACKEND wins)

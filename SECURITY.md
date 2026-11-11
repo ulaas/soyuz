@@ -247,5 +247,14 @@ warning.
 Both require paid certificates: a code-signing certificate from a CA trusted by Windows,
 and Apple Developer Program membership. EV certificates on hardware tokens or cloud HSMs
 (Azure Trusted Signing, DigiCert KeyLocker) need the signing step adapted to that
-provider's tooling. SHA-256 checksums (`SHA256SUMS.txt`) are published alongside every
-artifact.
+provider's tooling.
+
+SHA-256 checksums are published alongside every artifact: one `<file>.sha256` per file and
+one list per platform (`SHA256SUMS-windows.txt`, `SHA256SUMS-linux.txt`,
+`SHA256SUMS-macos.txt`; the separate FFmpeg runtime release has `SHA256SUMS.txt`). They are
+what the in-app update relies on: a download is installed only if its SHA-256 equals the
+one in the release's checksum file and the digest GitHub reports for the asset (every
+source that exists must agree, and at least one must exist), all fetched over HTTPS. There
+is no detached-signature check, and the Authenticode signature of an installer is
+reported to the user, not required. Nothing is downloaded or installed without a click;
+the automatic check is a single request to GitHub's public release API.

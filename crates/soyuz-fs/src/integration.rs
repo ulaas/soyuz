@@ -212,6 +212,22 @@ mod imp {
         reg::get_string(reg::Hive::CurrentUser, KEY, Some(DOWNLOADS)).map(PathBuf::from).filter(|p| p.is_absolute())
     }
 
+    pub fn msi_installs() -> Vec<MsiInstall> {
+        const KEY: &str = r"Software\Soyuz\Installer";
+        [(reg::Hive::CurrentUser, false), (reg::Hive::LocalMachine, true)]
+            .into_iter()
+            .filter(|(hive, _)| {
+                reg::has_value(*hive, KEY, "StartMenuShortcut") || reg::has_value(*hive, KEY, "InstallDir")
+            })
+            .map(|(hive, per_machine)| MsiInstall {
+                per_machine,
+                install_dir: reg::get_string(hive, KEY, Some("InstallDir"))
+                    .map(PathBuf::from)
+                    .filter(|p| p.is_absolute()),
+            })
+            .collect()
+    }
+
     pub fn authenticode(path: &Path) -> Signature {
         match crate::sys::windows::wintrust::verify(path) {
             Ok(()) => Signature::Valid,
@@ -279,6 +295,30 @@ pub fn downloads_dir() -> PathBuf {
 /// Authenticode signature check (Windows); [`Signature::Unknown`] elsewhere.
 pub fn authenticode(path: &Path) -> Signature {
     imp::authenticode(path)
+}
+
+/// An installation the Soyuz MSI recorded in the registry (`Software\Soyuz\Installer`,
+/// written by `installer/windows/soyuz.wxs`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MsiInstall {
+    /// Recorded under the machine hive (`ALLUSERS=1`) rather than the user's.
+    pub per_machine: bool,
+    /// The install folder (`InstallDir`; installers up to 0.7.5 did not record it).
+    pub install_dir: Option<PathBuf>,
+}
+
+/// The MSI installations of Soyuz on this computer: the current user's, then the
+/// machine's. Empty where there is no Windows Installer. Reads the registry: call it off
+/// the UI thread.
+pub fn msi_installs() -> Vec<MsiInstall> {
+    #[cfg(windows)]
+    {
+        imp::msi_installs()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
 }
 
 /// Install `$XDG_DATA_HOME/dbus-1/services/org.freedesktop.FileManager1.service` so

@@ -78,7 +78,7 @@ fn run_all(data: &Path) {
 
 fn core(data: &Path) -> AppCore {
     let mut c = Config::default();
-    c.updates.weekly_check = false;
+    c.updates.auto_check = false;
     c.cli.server_enabled = false;
     c.search.index.enabled = false;
     c.layout.preview_pane = false;

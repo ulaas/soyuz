@@ -257,6 +257,7 @@ app-titlebar-menu = Soyuz menu
 app-titlebar-new-window = New window
 app-titlebar-settings = Settings…
 app-titlebar-shortcuts = Keyboard shortcuts
+app-titlebar-check-updates = Check for updates
 app-titlebar-about = About Soyuz
 app-titlebar-quit = Quit
 app-titlebar-minimize = Minimize
@@ -389,3 +390,4 @@ app-a11y-resize-panes = Resize the panes
 
 ## fix-svc
 app-restart-cancelled = Restart cancelled. The update is installed and is used from the next start.
+app-restart-cancelled-installer = Restart cancelled. The update was not installed; start it again from Settings → About & updates.

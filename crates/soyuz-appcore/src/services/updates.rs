@@ -1,22 +1,29 @@
-//! Update check against GitHub Releases.
+//! Update check against GitHub Releases, and the one-click update.
 //!
-//! * **User-initiated only.** "Check for updates" in Settings → About, or (opt-in,
-//!   `[updates] weekly_check`) one background check a week at startup that only shows a
-//!   notification. No telemetry: the only request is the public Releases JSON for the
-//!   configured repository (`[updates] repo`, empty = disabled).
-//! * **Never installs silently.** A download needs a click; it lands in the Downloads
-//!   folder, its SHA-256 is verified against the release's `SHA256SUMS*` file (and/or the
-//!   asset digest GitHub reports), installers get an Authenticode check, and only then is
-//!   the user offered to run the installer.
-//! * **Linux.** Releases ship `soyuz-<ver>-linux-<arch>.tar.gz` (`scripts/package.sh`)
-//!   with `SHA256SUMS-linux.txt` / `<file>.sha256`. There is no Authenticode, so the
-//!   signature is reported as [`Signature::Unknown`]. A copy installed from that tarball
-//!   (e.g. under `~/.local`) can replace itself: [`install_tarball`] re-verifies the
-//!   download, extracts `bin/soyuz` and `bin/soyuz-tui` (when the archive has it) next to
-//!   the running executable and renames them over the installed ones atomically (the
-//!   running one, `soyuz` or `soyuz-tui`, last); [`request_restart`] + [`take_restart`] /
-//!   [`exec_restart`] start the new build. Package-manager, Flatpak and AppImage copies are never overwritten
-//!   ([`install_kind`], [`self_update_note`]).
+//! * **The check.** "Check for updates" (Settings → About & updates, the app menu, the
+//!   command palette) and, unless `[updates] auto_check` is off, one background check a
+//!   day ([`pump`]). A check is one request for the public Releases JSON of the configured
+//!   repository (`[updates] repo`, empty = disabled): no identifiers, no telemetry. A
+//!   newer release is announced (a notification with a button, the update page); nothing
+//!   is downloaded.
+//! * **Nothing is downloaded or installed without a click.** "Update and restart"
+//!   ([`install`]) downloads the release file for this copy, verifies it, installs it and
+//!   restarts Soyuz, with progress and cancel. "Download" ([`download`]) only saves the
+//!   verified file to the Downloads folder.
+//! * **Verification.** A download is used only if its SHA-256 equals the one in the
+//!   release's checksum file (`SHA256SUMS*` / `<file>.sha256`, fetched over HTTPS) and the
+//!   digest GitHub reports for the asset: every source that exists must agree and at
+//!   least one must exist ([`expected_sha256`]). The Authenticode signature of an
+//!   installer is reported, for information.
+//! * **How it installs** depends on how this copy was installed ([`kind`]):
+//!   the Linux tarball replaces its files by atomic renames ([`install_tarball_to`]); the
+//!   Windows portable zip and the macOS tarball are swapped in place with a full roll
+//!   back on failure ([`swap`]); an MSI install runs the next MSI through a helper that
+//!   starts Soyuz again ([`msi`]). Copies owned by a package manager (Scoop, Homebrew,
+//!   rpm / AUR, Flatpak, AppImage, MSIX) or in a folder Soyuz cannot write to are never
+//!   touched: the user is told how to update them ([`how_to_update`]).
+//! * **Restart.** [`request_restart`] + [`take_restart`] / [`exec_restart`] start the new
+//!   build once the app has closed the normal way (pending jobs are asked about).
 //!
 //! Network work runs on short-lived worker threads with their own tiny tokio runtime; the
 //! UI reads a shared [`Phase`] snapshot and is woken with `request_repaint`.
@@ -28,7 +35,7 @@ use std::sync::Arc;
 
 use crate::host::Wake;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -36,6 +43,15 @@ use sha2::{Digest, Sha256};
 use soyuz_fs::integration::Signature;
 
 pub mod ffmpeg_runtime;
+pub mod kind;
+pub mod msi;
+pub mod swap;
+
+pub use kind::{
+    InstallFacts, InstallKind, asset_for_this_copy, detect_install, how_to_update, install_kind, install_kind_for,
+    install_kind_with, pick_asset_for, running_exe, self_update_note,
+};
+pub use msi::InstallerPlan;
 
 /// Current app version.
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
@@ -45,8 +61,10 @@ const MAX_JSON: usize = 4 << 20;
 const MAX_SUMS: usize = 1 << 20;
 /// Largest asset we download.
 const MAX_ASSET: u64 = 1 << 30;
-/// Interval of the opt-in background check.
-const WEEK: Duration = Duration::from_secs(7 * 24 * 3600);
+/// Interval of the automatic background check (`[updates] auto_check`).
+const DAY: Duration = Duration::from_secs(24 * 3600);
+/// How often a running session looks whether the daily check is due again.
+const AUTO_RECHECK: Duration = Duration::from_secs(3600);
 /// File in the config dir remembering when the last check ran.
 const STAMP_FILE: &str = "update-check.json";
 
@@ -307,13 +325,28 @@ pub fn is_newer(latest: &Version, current: &str) -> bool {
     Version::parse(current).is_none_or(|c| *latest > c)
 }
 
-/// The asset to download for this OS/arch. Installed copies prefer the `.msi` installer,
-/// then a regular `.zip`; portable copies (a `portable` marker next to the exe) prefer the
-/// `-portable.zip`, then any `.zip`. Names follow `soyuz-<ver>-<os>-<arch>[-portable].<ext>`
-/// and only names with that `soyuz-<ver>-` prefix are considered: anything else on the
-/// release (checksum lists, source tarballs, an `ffmpeg-runtime-*` archive) is never the
-/// app.
+/// The asset to download by hand for this OS/arch. Installed copies prefer the `.msi`
+/// installer, then a regular `.zip`; portable copies (a `portable` marker next to the exe)
+/// prefer the `-portable.zip`, then any `.zip`. Names follow
+/// `soyuz-<ver>-<os>-<arch>[-portable].<ext>` and only names with that `soyuz-<ver>-`
+/// prefix are considered: anything else on the release (checksum lists, source tarballs,
+/// an `ffmpeg-runtime-*` archive) is never the app. ([`pick_asset_for`] picks for the
+/// way a copy was installed.)
 pub fn pick_asset<'a>(release: &'a Release, os: &str, arch: &str, portable: bool) -> Option<&'a Asset> {
+    // (extension, wants the portable flavour)
+    let order: &[(&str, Option<bool>)] = match (os, portable) {
+        ("windows", false) => &[(".msi", None), (".zip", Some(false)), (".zip", None)],
+        ("windows", true) => &[(".zip", Some(true)), (".zip", None)],
+        ("linux", _) => &[(".tar.gz", None), (".tgz", None), (".zip", None)],
+        (_, true) => &[(".zip", Some(true)), (".zip", None), (".tar.gz", None)],
+        _ => &[(".zip", Some(false)), (".zip", None), (".tar.gz", None), (".dmg", None)],
+    };
+    pick_in_order(release, os, arch, order)
+}
+
+/// The first app archive of `release` for `os` / `arch` in `order`, a list of
+/// `(extension, portable flavour wanted)`.
+fn pick_in_order<'a>(release: &'a Release, os: &str, arch: &str, order: &[(&str, Option<bool>)]) -> Option<&'a Asset> {
     let prefix = format!("soyuz-{}-", release.version).to_ascii_lowercase();
     let os_words: &[&str] = match os {
         "windows" => &["windows", "win64"],
@@ -332,39 +365,11 @@ pub fn pick_asset<'a>(release: &'a Release, os: &str, arch: &str, portable: bool
             && (arch_words.iter().any(|w| n.contains(w)) || n.contains("universal"))
     };
     let is_portable = |a: &Asset| a.name.to_ascii_lowercase().contains("portable");
-    // (extension, wants the portable flavour)
-    let order: &[(&str, Option<bool>)] = match (os, portable) {
-        ("windows", false) => &[(".msi", None), (".zip", Some(false)), (".zip", None)],
-        ("windows", true) => &[(".zip", Some(true)), (".zip", None)],
-        ("linux", _) => &[(".tar.gz", None), (".tgz", None), (".zip", None)],
-        (_, true) => &[(".zip", Some(true)), (".zip", None), (".tar.gz", None)],
-        _ => &[(".zip", Some(false)), (".zip", None), (".tar.gz", None), (".dmg", None)],
-    };
     order.iter().find_map(|(ext, flavour)| {
         release.assets.iter().find(|a| {
             fits(a) && a.name.to_ascii_lowercase().ends_with(ext) && flavour.is_none_or(|p| is_portable(a) == p)
         })
     })
-}
-
-static PORTABLE: AtomicBool = AtomicBool::new(false);
-
-/// Whether this copy runs in portable mode (computed by the check worker, not the UI thread).
-pub fn running_portable() -> bool {
-    PORTABLE.load(AtomicOrdering::Relaxed)
-}
-
-fn detect_portable() {
-    let p = std::env::current_exe()
-        .ok()
-        .and_then(|e| e.parent().map(Path::to_path_buf))
-        .is_some_and(|d| soyuz_core::config::portable_dir(&d).is_some());
-    PORTABLE.store(p, AtomicOrdering::Relaxed);
-}
-
-/// [`pick_asset`] for the running copy.
-pub fn asset_for_this_copy(release: &Release) -> Option<&Asset> {
-    pick_asset(release, std::env::consts::OS, std::env::consts::ARCH, running_portable())
 }
 
 /// Checksum files of a release (`SHA256SUMS*`, `*.sha256`), best match for `asset` first.
@@ -422,7 +427,7 @@ pub fn safe_file_name(name: &str) -> Option<String> {
 
 // ---- shared state ----------------------------------------------------------------------
 
-/// What the update panel shows.
+/// What the update page shows.
 #[derive(Clone, Debug, Default)]
 pub enum Phase {
     #[default]
@@ -438,6 +443,7 @@ pub enum Phase {
         got: u64,
         total: u64,
     },
+    /// "Download": the verified file is in the Downloads folder.
     Downloaded {
         release: Arc<Release>,
         path: PathBuf,
@@ -446,20 +452,81 @@ pub enum Phase {
         /// A detached signature file was published but is not verified (no key configured).
         detached_sig: bool,
     },
+    /// "Update and restart": the verified download is being installed.
+    Installing {
+        release: Arc<Release>,
+    },
+    /// "Update and restart": installed (or, for an MSI install, ready for Windows
+    /// Installer); Soyuz restarts to finish.
+    Ready {
+        release: Arc<Release>,
+        restart: Restart,
+    },
     Failed(String),
 }
 
-#[derive(Default)]
+impl Phase {
+    /// A worker is running.
+    pub fn busy(&self) -> bool {
+        matches!(self, Phase::Checking | Phase::Downloading { .. } | Phase::Installing { .. })
+    }
+}
+
+/// Something the next [`pump`] tells the user as a notification.
+#[derive(Clone, Debug)]
+enum Notice {
+    Available(Arc<Release>),
+    UpToDate(String),
+    CheckFailed(String),
+    InstallFailed(String),
+    /// How the update installed before this start ended (`error`: why it was not).
+    Installed {
+        version: String,
+        error: Option<String>,
+    },
+}
+
 struct Shared {
     phase: Phase,
-    /// Set by the weekly check when it found an update the user has not been told about.
-    pending_notice: Option<String>,
-    started_weekly: bool,
+    notices: Vec<Notice>,
+    /// When [`pump`] next looks whether the automatic check is due (`None` = not yet
+    /// this session).
+    next_auto: Option<Instant>,
+    /// The version the automatic check has announced this session.
+    notified: Option<String>,
+    /// The running check also reports its result as a notification.
+    announce: bool,
+    /// [`Phase::Ready`]: restart at the next [`pump`].
+    restart_now: bool,
     cancel: Option<Arc<AtomicBool>>,
 }
 
-static STATE: Mutex<Shared> =
-    Mutex::new(Shared { phase: Phase::Idle, pending_notice: None, started_weekly: false, cancel: None });
+static STATE: Mutex<Shared> = Mutex::new(Shared {
+    phase: Phase::Idle,
+    notices: Vec::new(),
+    next_auto: None,
+    notified: None,
+    announce: false,
+    restart_now: false,
+    cancel: None,
+});
+
+/// Whether this process does anything by itself: the automatic check, and the
+/// housekeeping after an update. Off until a real app session turns it on
+/// ([`enable_background`]), so nothing built on the core (tests, tools) ever reaches the
+/// network or touches the install folder on its own.
+static BACKGROUND: AtomicBool = AtomicBool::new(false);
+
+/// Turn on the automatic update check (`[updates] auto_check`) and the housekeeping
+/// after an update for this process. The app binaries call it once at startup.
+pub fn enable_background() {
+    BACKGROUND.store(true, AtomicOrdering::Relaxed);
+}
+
+/// Whether [`enable_background`] was called.
+pub fn background_enabled() -> bool {
+    BACKGROUND.load(AtomicOrdering::Relaxed)
+}
 
 /// Current phase (cheap clone).
 pub fn phase() -> Phase {
@@ -471,14 +538,10 @@ fn set(phase: Phase, wake: &Wake) {
     wake();
 }
 
-fn busy() -> bool {
-    matches!(STATE.lock().phase, Phase::Checking | Phase::Downloading { .. })
-}
-
 /// Forget the result (e.g. after the repo setting changed).
 pub fn reset() {
     let mut s = STATE.lock();
-    if !matches!(s.phase, Phase::Checking | Phase::Downloading { .. }) {
+    if !s.phase.busy() && !matches!(s.phase, Phase::Ready { .. }) {
         s.phase = Phase::Idle;
     }
 }
@@ -541,23 +604,63 @@ async fn fetch_latest(repo: &str, prereleases: bool) -> Result<Release, String> 
     parse_releases(&json, prereleases)
 }
 
-/// Start a manual check in the background ("Check for updates").
-pub fn check(repo: String, prereleases: bool, wake: Wake) {
-    if busy() {
-        return;
+/// Start a check in the background ("Check for updates"). With `announce` the result is
+/// also shown as a notification (for a frontend that has no update page in view).
+pub fn check(repo: String, prereleases: bool, announce: bool, wake: Wake) {
+    {
+        let mut s = STATE.lock();
+        if s.phase.busy() {
+            return;
+        }
+        s.phase = Phase::Checking;
+        s.announce = announce;
     }
-    set(Phase::Checking, &wake);
-    spawn("soyuz-update-check", move || {
-        detect_portable();
-        let res = runtime().map_err(|e| e.to_string()).and_then(|rt| rt.block_on(fetch_latest(&repo, prereleases)));
-        write_stamp();
-        let phase = match res {
-            Ok(r) if is_newer(&r.version, CURRENT) => Phase::Available(Arc::new(r)),
-            Ok(r) => Phase::UpToDate { latest: r.version.to_string() },
-            Err(e) => Phase::Failed(e),
-        };
-        set(phase, &wake);
-    });
+    wake();
+    spawn("soyuz-update-check", move || run_check(&repo, prereleases, None, &wake));
+}
+
+/// One check on a worker thread; the phase is already [`Phase::Checking`]. `auto` is the
+/// phase before an automatic check: its failure is logged and that phase comes back.
+fn run_check(repo: &str, prereleases: bool, auto: Option<Phase>, wake: &Wake) {
+    detect_install();
+    let res = runtime().map_err(|e| e.to_string()).and_then(|rt| rt.block_on(fetch_latest(repo, prereleases)));
+    write_stamp();
+    let mut s = STATE.lock();
+    let announce = std::mem::take(&mut s.announce);
+    s.phase = match res {
+        Ok(r) if is_newer(&r.version, CURRENT) => {
+            let r = Arc::new(r);
+            let version = r.version.to_string();
+            // The automatic check announces a release once per session; a check asked
+            // for from outside the update page, every time.
+            if announce || (auto.is_some() && s.notified.as_deref() != Some(version.as_str())) {
+                s.notices.push(Notice::Available(r.clone()));
+            }
+            s.notified = Some(version);
+            Phase::Available(r)
+        }
+        Ok(r) => {
+            let latest = r.version.to_string();
+            if announce {
+                s.notices.push(Notice::UpToDate(latest.clone()));
+            }
+            Phase::UpToDate { latest }
+        }
+        Err(e) => match auto {
+            Some(before) => {
+                log::info!("automatic update check: {e}");
+                before
+            }
+            None => {
+                if announce {
+                    s.notices.push(Notice::CheckFailed(e.clone()));
+                }
+                Phase::Failed(e)
+            }
+        },
+    };
+    drop(s);
+    wake();
 }
 
 fn spawn(name: &str, f: impl FnOnce() + Send + 'static) {
@@ -567,49 +670,181 @@ fn spawn(name: &str, f: impl FnOnce() + Send + 'static) {
     }
 }
 
-/// Download `asset` of `release` into `dir`, verify it, and report [`Phase::Downloaded`].
-pub fn download(release: Arc<Release>, dir: PathBuf, wake: Wake) {
-    if busy() {
-        return;
+/// Authenticode exists on Windows only: other platforms and other files report
+/// `Unknown` honestly instead of "unsigned". Information for the user; the checksum
+/// decides whether a download is used.
+fn signature_of(path: &Path) -> Signature {
+    let lower = path.to_string_lossy().to_ascii_lowercase();
+    if cfg!(windows) && (lower.ends_with(".msi") || lower.ends_with(".exe")) {
+        soyuz_fs::integration::authenticode(path)
+    } else {
+        Signature::Unknown
     }
-    let Some(asset) = asset_for_this_copy(&release).cloned() else {
-        set(Phase::Failed(tr!("services-update-no-asset").into()), &wake);
-        return;
-    };
+}
+
+/// "Download": save the asset of `release` for this copy into `dir`, verify it, and
+/// report [`Phase::Downloaded`]. Nothing is installed.
+pub fn download(release: Arc<Release>, dir: PathBuf, wake: Wake) {
+    let asset = asset_for_this_copy(&release).cloned();
     let cancel = Arc::new(AtomicBool::new(false));
-    {
+    let asset = {
         let mut s = STATE.lock();
+        if s.phase.busy() {
+            return;
+        }
+        let Some(asset) = asset else {
+            s.phase = Phase::Failed(tr!("services-update-no-asset").into());
+            drop(s);
+            wake();
+            return;
+        };
         s.cancel = Some(cancel.clone());
         s.phase = Phase::Downloading { release: release.clone(), asset: asset.name.clone(), got: 0, total: asset.size };
-    }
+        asset
+    };
     wake();
     spawn("soyuz-update-download", move || {
         let res = runtime()
             .map_err(|e| e.to_string())
             .and_then(|rt| rt.block_on(download_verified(&release, &asset, &dir, &cancel, &wake)));
-        STATE.lock().cancel = None;
-        let phase = match res {
+        let mut s = STATE.lock();
+        s.cancel = None;
+        s.phase = match res {
             Ok((path, sha256)) => {
-                let lower = path.to_string_lossy().to_ascii_lowercase();
-                // Authenticode exists on Windows only: other platforms report `Unknown`
-                // honestly instead of "unsigned".
-                let signature = if cfg!(windows) && (lower.ends_with(".msi") || lower.ends_with(".exe")) {
-                    soyuz_fs::integration::authenticode(&path)
-                } else {
-                    Signature::Unknown
-                };
-                if let Signature::Invalid(hr) = signature {
-                    let _ = std::fs::remove_file(&path);
-                    Phase::Failed(tr!("services-update-bad-signature", code = format!("0x{hr:08X}")))
-                } else {
-                    let detached_sig = signature_asset(&release, &asset.name).is_some();
-                    Phase::Downloaded { release, path, sha256, signature, detached_sig }
-                }
+                let signature = signature_of(&path);
+                let detached_sig = signature_asset(&release, &asset.name).is_some();
+                Phase::Downloaded { release, path, sha256, signature, detached_sig }
             }
+            // Cancelled: the offer is back.
+            Err(_) if cancel.load(AtomicOrdering::SeqCst) => Phase::Available(release),
             Err(e) => Phase::Failed(e),
         };
-        set(phase, &wake);
+        drop(s);
+        wake();
     });
+}
+
+/// Whether "Update and restart" works for a copy of `kind` in this frontend. The
+/// terminal UI leaves an MSI install to the app: Windows Installer's window and the
+/// restart belong to the desktop.
+pub fn can_install(kind: InstallKind, tui: bool) -> bool {
+    kind.self_installs() && !(tui && matches!(kind, InstallKind::WindowsMsi { .. }))
+}
+
+/// "Update and restart": download the asset of `release` for this copy, verify it,
+/// install it the way this copy was installed and report [`Phase::Ready`]; the next
+/// [`pump`] then restarts Soyuz. A copy that does not install itself gets
+/// [`Phase::Failed`] with what to do instead; [`cancel`] brings the offer back.
+pub fn install(release: Arc<Release>, wake: Wake) {
+    let kind = install_kind();
+    let asset = asset_for_this_copy(&release).cloned();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let asset = {
+        let mut s = STATE.lock();
+        if s.phase.busy() {
+            return;
+        }
+        let refused = match (&asset, how_to_update(kind)) {
+            (_, Some(note)) => Some(note),
+            (None, None) => Some(tr!("services-update-no-asset").into()),
+            (Some(_), None) => None,
+        };
+        let (Some(asset), None) = (asset, refused.clone()) else {
+            s.phase = Phase::Failed(refused.unwrap_or_default());
+            drop(s);
+            wake();
+            return;
+        };
+        s.cancel = Some(cancel.clone());
+        s.phase = Phase::Downloading { release: release.clone(), asset: asset.name.clone(), got: 0, total: asset.size };
+        asset
+    };
+    wake();
+    spawn("soyuz-update-install", move || {
+        let res = install_worker(&release, &asset, kind, &cancel, &wake);
+        let mut s = STATE.lock();
+        s.cancel = None;
+        s.phase = match res {
+            Ok(restart) => {
+                s.restart_now = true;
+                Phase::Ready { release, restart }
+            }
+            // Cancelled: the offer is back.
+            Err(_) if cancel.load(AtomicOrdering::SeqCst) => Phase::Available(release),
+            Err(e) => {
+                s.notices.push(Notice::InstallFailed(e.clone()));
+                Phase::Failed(e)
+            }
+        };
+        drop(s);
+        wake();
+    });
+}
+
+/// The work of [`install`]: download into a fresh work folder, verify, install.
+fn install_worker(
+    release: &Arc<Release>,
+    asset: &Asset,
+    kind: InstallKind,
+    cancel: &AtomicBool,
+    wake: &Wake,
+) -> Result<Restart, String> {
+    let fail = |e: &dyn std::fmt::Display| tr!("services-update-install-failed", error = e.to_string());
+    let work = swap::new_work_dir().map_err(|e| fail(&e))?;
+    let result = (|| {
+        let rt = runtime().map_err(|e| e.to_string())?;
+        let (path, sha256) = rt.block_on(download_verified(release, asset, &work, cancel, wake))?;
+        log::info!("update: {} verified ({sha256}), signature {:?}", asset.name, signature_of(&path));
+        set(Phase::Installing { release: release.clone() }, wake);
+        let exe = running_exe().map_err(|e| fail(&e))?;
+        install_downloaded(&path, &sha256, &exe, kind, &work, &release.version.to_string())
+    })();
+    match &result {
+        // The helper and the MSI stay until Windows Installer is done.
+        Ok(Restart::Installer(_)) => {}
+        Ok(Restart::Exec(_)) => {
+            let _ = std::fs::remove_dir_all(&work);
+            // The new build says so when it starts.
+            msi::write_result(
+                &soyuz_core::config::config_dir(),
+                &release.version.to_string(),
+                &msi::Outcome::Installed,
+            );
+        }
+        Err(_) => {
+            let _ = std::fs::remove_dir_all(&work);
+        }
+    }
+    result
+}
+
+/// Install the verified download `path` (SHA-256 `sha256`) over the copy `exe` belongs
+/// to, the way a copy of `kind` is installed; `work` is the update's work folder.
+/// Copies that do not install themselves are refused with what to do instead, and
+/// nothing is touched. Blocking.
+pub fn install_downloaded(
+    path: &Path,
+    sha256: &str,
+    exe: &Path,
+    kind: InstallKind,
+    work: &Path,
+    version: &str,
+) -> Result<Restart, String> {
+    let arch = std::env::consts::ARCH;
+    match kind {
+        InstallKind::Tarball => install_tarball_to(path, sha256, exe, kind).map(Restart::Exec),
+        InstallKind::WindowsPortable => {
+            swap::install_archive_to(path, sha256, exe, swap::Payload::WindowsZip, arch).map(Restart::Exec)
+        }
+        InstallKind::MacArchive => {
+            swap::install_archive_to(path, sha256, exe, swap::Payload::MacTarball, arch).map(Restart::Exec)
+        }
+        InstallKind::WindowsMsi { per_machine } => {
+            msi::prepare(work, path.to_path_buf(), sha256.to_string(), exe, per_machine, version.to_string())
+                .map(|plan| Restart::Installer(Box::new(plan)))
+        }
+        other => Err(how_to_update(other).unwrap_or_else(|| tr!("services-update-no-asset").into())),
+    }
 }
 
 async fn download_verified(
@@ -732,65 +967,7 @@ fn unique_path(dir: &Path, name: &str) -> PathBuf {
     (1..1000).map(|n| dir.join(format!("{stem} ({n}){ext}"))).find(|p| !p.exists()).unwrap_or(first)
 }
 
-// ---- Linux self-update -----------------------------------------------------------------
-
-/// How the running copy was installed (decides whether it may replace itself).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InstallKind {
-    /// Windows / macOS: installers are run by the user ([`run_installer`]).
-    Installer,
-    /// Linux, unpacked from the release tarball (`~/.local`, `/usr/local`, `/opt`, a
-    /// build folder): [`install_tarball`] can update it in place.
-    Tarball,
-    /// Linux, under `/usr` (rpm / deb / distribution package).
-    Package,
-    Flatpak,
-    AppImage,
-}
-
-impl InstallKind {
-    /// `$kind` selector of `services-update-package-managed`.
-    pub fn key(self) -> &'static str {
-        match self {
-            InstallKind::Installer | InstallKind::Tarball => "other",
-            InstallKind::Package => "system",
-            InstallKind::Flatpak => "flatpak",
-            InstallKind::AppImage => "appimage",
-        }
-    }
-}
-
-/// [`InstallKind`] of an executable at `exe` on `os`, with environment lookup `env`.
-pub fn install_kind_for(os: &str, exe: &Path, env: impl Fn(&str) -> Option<std::ffi::OsString>) -> InstallKind {
-    if os != "linux" {
-        return InstallKind::Installer;
-    }
-    let set = |k: &str| env(k).is_some_and(|v| !v.is_empty());
-    if set("FLATPAK_ID") || exe.starts_with("/app") {
-        InstallKind::Flatpak
-    } else if set("APPIMAGE") || (set("APPDIR") && env("APPDIR").is_some_and(|d| exe.starts_with(d))) {
-        InstallKind::AppImage
-    } else if exe.starts_with("/usr") && !exe.starts_with("/usr/local") {
-        InstallKind::Package
-    } else {
-        InstallKind::Tarball
-    }
-}
-
-/// [`InstallKind`] of the running copy.
-pub fn install_kind() -> InstallKind {
-    let exe = std::env::current_exe().unwrap_or_default();
-    install_kind_for(std::env::consts::OS, &exe, |k| std::env::var_os(k))
-}
-
-/// Linux copies that must be updated elsewhere: what to tell the user (`None` = this
-/// copy can update itself, or the platform uses installers).
-pub fn self_update_note() -> Option<String> {
-    match install_kind() {
-        InstallKind::Installer | InstallKind::Tarball => None,
-        k => Some(tr!("services-update-package-managed", kind = k.key())),
-    }
-}
+// ---- Linux tarball install -------------------------------------------------------------
 
 /// Largest `bin/soyuz` / `bin/soyuz-tui` accepted from a tarball.
 const MAX_BINARY: u64 = 512 << 20;
@@ -1194,6 +1371,13 @@ impl<R: std::io::Read> std::io::Read for HashingReader<R> {
     }
 }
 
+/// The SHA-256 (lower-case hex) of everything `r` yields.
+fn sha256_of(r: impl std::io::Read) -> std::io::Result<String> {
+    let mut hashing = HashingReader { inner: r, hasher: Sha256::new() };
+    std::io::copy(&mut hashing, &mut std::io::sink())?;
+    Ok(hex(&hashing.hasher.finalize()))
+}
+
 /// A new temp file `.soyuz-update-<pid>-<random>.tmp` in `dir`, opened read + write.
 /// `create_new` (`O_CREAT | O_EXCL`) never opens an existing file and never follows a
 /// symlink planted at the name, so nobody can redirect the write.
@@ -1218,76 +1402,78 @@ fn create_temp_in(dir: &Path) -> std::io::Result<(std::fs::File, PathBuf)> {
     Err(last.unwrap_or_else(|| std::io::ErrorKind::AlreadyExists.into()))
 }
 
-/// [`install_tarball_to`] for the running executable.
-pub fn install_tarball(archive: &Path, sha256: &str) -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|e| tr!("services-update-install-failed", error = e.to_string()))?;
-    // `/proc/self/exe` of a replaced binary reads `… (deleted)`.
-    let exe = exe.to_str().and_then(|s| s.strip_suffix(" (deleted)")).map(PathBuf::from).unwrap_or(exe);
-    install_tarball_to(archive, sha256, &exe, install_kind())
+// ---- restart ---------------------------------------------------------------------------
+
+/// How Soyuz comes back after an update.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Restart {
+    /// The new files are in place: start this executable.
+    Exec(PathBuf),
+    /// An MSI install: start the helper that runs Windows Installer and then Soyuz.
+    Installer(Box<InstallerPlan>),
 }
 
-/// Result of the last background install started with [`install_async`]
-/// (`None` = none finished yet).
-static INSTALLED: Mutex<Option<Result<PathBuf, String>>> = Mutex::new(None);
-static INSTALLING: AtomicBool = AtomicBool::new(false);
-
-/// Run [`install_tarball`] on a worker thread; poll [`install_status`].
-pub fn install_async(archive: PathBuf, sha256: String, wake: Wake) {
-    if INSTALLING.swap(true, AtomicOrdering::SeqCst) {
-        return;
+impl Restart {
+    /// The update is already installed (a restart only switches to it).
+    pub fn installed(&self) -> bool {
+        matches!(self, Restart::Exec(_))
     }
-    *INSTALLED.lock() = None;
-    let spawned = std::thread::Builder::new().name("soyuz-update-install".into()).spawn(move || {
-        let r = install_tarball(&archive, &sha256);
-        *INSTALLED.lock() = Some(r);
-        INSTALLING.store(false, AtomicOrdering::SeqCst);
-        wake();
-    });
-    if let Err(e) = spawned {
-        INSTALLING.store(false, AtomicOrdering::SeqCst);
-        *INSTALLED.lock() = Some(Err(tr!("services-update-cannot-start", error = e.to_string())));
-    }
-}
-
-/// `(installing, last result)` of [`install_async`].
-pub fn install_status() -> (bool, Option<Result<PathBuf, String>>) {
-    (INSTALLING.load(AtomicOrdering::SeqCst), INSTALLED.lock().clone())
 }
 
 /// A restart asked for by the close in progress (dropped if that close is cancelled).
-static RESTART: Mutex<Option<PathBuf>> = Mutex::new(None);
+static RESTART: Mutex<Option<Restart>> = Mutex::new(None);
 /// The restart confirmed when the app actually exited ([`arm_restart`]).
-static RESTART_ARMED: Mutex<Option<PathBuf>> = Mutex::new(None);
+static RESTART_ARMED: Mutex<Option<Restart>> = Mutex::new(None);
 
-/// Restart into `exe` if the window close that the caller now starts (by sending
-/// `ViewportCommand::Close`) goes through: the app calls [`arm_restart`] on exit and
-/// [`cancel_restart`] when it cancels the close; `main` calls [`take_restart`] after
-/// the event loop ends.
-pub fn request_restart(exe: PathBuf) {
-    *RESTART.lock() = Some(exe);
+/// Restart as `restart` says if the window close that the caller now starts (the Quit
+/// action) goes through: the app calls [`arm_restart`] on exit and [`cancel_restart`]
+/// when it cancels the close; `main` calls [`take_restart`] after the event loop ends.
+pub fn request_restart(restart: Restart) {
+    *RESTART.lock() = Some(restart);
 }
 
 /// The close was cancelled (pending jobs, unsaved documents): forget the restart, so a
-/// later, ordinary quit does not start the new binary. Returns whether one was pending.
-pub fn cancel_restart() -> bool {
-    RESTART.lock().take().is_some()
+/// later, ordinary quit does not start the new binary or the installer. Returns the
+/// restart that was pending.
+pub fn cancel_restart() -> Option<Restart> {
+    RESTART.lock().take()
 }
 
 /// The app is exiting: a requested restart now happens.
 pub fn arm_restart() {
-    if let Some(exe) = RESTART.lock().take() {
-        *RESTART_ARMED.lock() = Some(exe);
+    if let Some(restart) = RESTART.lock().take() {
+        *RESTART_ARMED.lock() = Some(restart);
     }
 }
 
-/// The executable to restart into, if a restart was requested and the app exited.
-pub fn take_restart() -> Option<PathBuf> {
+/// The restart to carry out, if one was requested and the app exited.
+pub fn take_restart() -> Option<Restart> {
     RESTART_ARMED.lock().take()
 }
 
-/// Start `exe` with this process's arguments: on unix the process image is replaced
-/// (`execv`, same PID), elsewhere a new process is spawned. Returns only on failure.
-pub fn exec_restart(exe: &Path) -> std::io::Error {
+/// [`Phase::Ready`] whose restart did not happen (the close was cancelled): restart at
+/// the next [`pump`].
+pub fn restart_now() {
+    let mut s = STATE.lock();
+    if matches!(s.phase, Phase::Ready { .. }) {
+        s.restart_now = true;
+    }
+}
+
+/// Carry out `restart` and end this process. [`Restart::Exec`] starts the executable
+/// with this process's arguments: on unix the process image is replaced (`execv`, same
+/// PID), elsewhere a new process is spawned. [`Restart::Installer`] starts the update
+/// helper. Returns only on failure.
+pub fn exec_restart(restart: &Restart) -> std::io::Error {
+    let exe = match restart {
+        Restart::Exec(exe) => exe,
+        Restart::Installer(plan) => {
+            return match msi::spawn_helper(plan) {
+                Ok(()) => std::process::exit(0),
+                Err(e) => e,
+            };
+        }
+    };
     let mut cmd = std::process::Command::new(exe);
     cmd.args(std::env::args_os().skip(1));
     #[cfg(unix)]
@@ -1304,15 +1490,20 @@ pub fn exec_restart(exe: &Path) -> std::io::Error {
     }
 }
 
-/// Start the downloaded installer (`msiexec /i`) — only ever called from an explicit click.
+/// `msiexec.exe` of this Windows installation.
+fn msiexec_path() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .map(|r| PathBuf::from(r).join("System32").join("msiexec.exe"))
+        .filter(|p| p.is_file())
+        .unwrap_or_else(|| PathBuf::from("msiexec.exe"))
+}
+
+/// Start a downloaded installer with its own windows (`msiexec /i`), for a copy that
+/// does not update itself. Only ever called from an explicit click.
 pub fn run_installer(path: &Path) -> std::io::Result<()> {
     let lower = path.to_string_lossy().to_ascii_lowercase();
     if lower.ends_with(".msi") {
-        let msiexec = std::env::var_os("SystemRoot")
-            .map(|r| PathBuf::from(r).join("System32").join("msiexec.exe"))
-            .filter(|p| p.is_file())
-            .unwrap_or_else(|| PathBuf::from("msiexec.exe"));
-        std::process::Command::new(msiexec).arg("/i").arg(path).spawn().map(drop)
+        std::process::Command::new(msiexec_path()).arg("/i").arg(path).spawn().map(drop)
     } else if lower.ends_with(".exe") {
         std::process::Command::new(path).spawn().map(drop)
     } else {
@@ -1320,7 +1511,7 @@ pub fn run_installer(path: &Path) -> std::io::Result<()> {
     }
 }
 
-// ---- weekly check --------------------------------------------------------------------
+// ---- automatic check -------------------------------------------------------------------
 
 fn stamp_path() -> PathBuf {
     soyuz_core::config::config_dir().join(STAMP_FILE)
@@ -1333,6 +1524,10 @@ fn read_stamp() -> Option<SystemTime> {
 }
 
 fn write_stamp() {
+    // Only a real app session keeps the stamp (never a test's check in the real config folder).
+    if !background_enabled() {
+        return;
+    }
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let path = stamp_path();
     if let Some(dir) = path.parent() {
@@ -1343,62 +1538,463 @@ fn write_stamp() {
     }
 }
 
-/// Whether a weekly check is due given the last check time.
-pub fn weekly_due(last: Option<SystemTime>, now: SystemTime) -> bool {
-    last.is_none_or(|t| now.duration_since(t).is_ok_and(|d| d >= WEEK))
+/// Whether the automatic check is due given the last check time: a day after it (never
+/// when the clock went backwards).
+pub fn check_due(last: Option<SystemTime>, now: SystemTime) -> bool {
+    last.is_none_or(|t| now.duration_since(t).is_ok_and(|d| d >= DAY))
 }
 
-/// Per-frame hook: starts the opt-in weekly check once per session and turns its result
-/// into a notification.
+/// What the automatic check asks for with these settings: `(repository, pre-releases)`,
+/// `None` when it is turned off (`auto_check = false`, or no repository).
+pub fn auto_check_target(u: &soyuz_core::config::Updates) -> Option<(String, bool)> {
+    (u.auto_check && !u.repo.trim().is_empty()).then(|| (u.repo.clone(), u.include_prereleases))
+}
+
+/// The background work of a session, on a worker thread: once (`first`) the
+/// housekeeping after an update, then the automatic check when one is due.
+fn background(first: bool, auto: Option<(String, bool)>, wake: Wake) {
+    if first {
+        let kind = detect_install();
+        if matches!(kind, InstallKind::WindowsPortable | InstallKind::MacArchive)
+            && let Ok(exe) = running_exe()
+            && let Some(dir) = exe.parent()
+        {
+            swap::remove_leftovers(dir);
+        }
+        swap::remove_old_work_dirs();
+        if let Some((version, outcome)) = msi::take_result(&soyuz_core::config::config_dir()) {
+            STATE.lock().notices.push(Notice::Installed { version, error: outcome.error() });
+            wake();
+        }
+    }
+    let Some((repo, prereleases)) = auto else { return };
+    if !check_due(read_stamp(), SystemTime::now()) {
+        return;
+    }
+    let before = {
+        let mut s = STATE.lock();
+        // Never in the way of what the user is doing or has been offered.
+        if !matches!(s.phase, Phase::Idle | Phase::UpToDate { .. } | Phase::Available(_) | Phase::Failed(_)) {
+            return;
+        }
+        std::mem::replace(&mut s.phase, Phase::Checking)
+    };
+    run_check(&repo, prereleases, Some(before), &wake);
+}
+
+/// The notification for `notice`.
+fn toast_for(notice: Notice, tui: bool) -> crate::models::toasts::Toast {
+    use crate::models::toasts::Toast;
+    use soyuz_core::config::Action;
+    match notice {
+        Notice::Available(release) => {
+            let kind = install_kind();
+            let title = tr!("services-update-available", version = release.version.to_string());
+            let mut toast = if can_install(kind, tui) {
+                Toast::info(title)
+                    .body(tr!("services-update-available-install"))
+                    .action(tr!("services-update-action-install"), Action::InstallUpdate)
+            } else {
+                let body = match how_to_update(kind) {
+                    Some(note) if kind.managed() => note,
+                    _ => tr!("services-update-available-body").into(),
+                };
+                Toast::info(title).body(body).action(tr!("services-update-action-details"), Action::InstallUpdate)
+            };
+            // Time to read it and decide.
+            toast.duration = Some(20.0);
+            toast
+        }
+        Notice::UpToDate(latest) => Toast::info(tr!("services-update-up-to-date", version = latest)),
+        Notice::CheckFailed(e) => Toast::warning(tr!("services-update-check-failed")).body(e),
+        Notice::InstallFailed(e) => Toast::error(tr!("services-update-not-installed")).body(e),
+        Notice::Installed { version, error: None } => {
+            Toast::success(tr!("services-update-installed", version = version))
+        }
+        Notice::Installed { version, error: Some(e) } => Toast::error(tr!("services-update-not-installed")).body(tr!(
+            "services-update-not-installed-body",
+            version = version,
+            current = CURRENT,
+            error = e
+        )),
+    }
+}
+
+/// `Action::CheckForUpdates`: start a check. The GUI opens Settings → About & updates,
+/// where the result shows; the terminal UI gets it as a notification.
+pub fn check_from_action(app: &mut crate::core::AppCore) {
+    use crate::models::toasts::Toast;
+    let tui = app.frontend_kind == crate::core::FrontendKind::Tui;
+    let u = &app.config.updates;
+    if u.repo.trim().is_empty() {
+        app.ui.toasts.push(Toast::warning(tr!("services-update-check-failed")).body(tr!("services-update-no-repo")));
+        return;
+    }
+    check(u.repo.clone(), u.include_prereleases, tui, app.wake.clone());
+    if !tui {
+        app.frontend
+            .push(crate::models::frontend::FrontendCmd::OpenSettings(Some(crate::models::settings::Section::About)));
+    }
+}
+
+/// `Action::InstallUpdate` (the button of the "update available" notification, the
+/// palette): "Update and restart" where this copy installs itself, else what to do
+/// instead. Without a known newer release it checks first.
+pub fn install_from_action(app: &mut crate::core::AppCore) {
+    use crate::models::toasts::Toast;
+    let tui = app.frontend_kind == crate::core::FrontendKind::Tui;
+    let release = match phase() {
+        Phase::Available(r) => r,
+        Phase::Ready { .. } => return restart_now(),
+        _ => return check_from_action(app),
+    };
+    let kind = install_kind();
+    let version = release.version.to_string();
+    if can_install(kind, tui) {
+        install(release, app.wake.clone());
+        if tui {
+            app.ui.toasts.push(
+                Toast::info(tr!("services-update-installing", version = version))
+                    .body(tr!("services-update-installing-body")),
+            );
+        }
+    } else if tui {
+        let how = match kind {
+            InstallKind::WindowsMsi { .. } => tr!("services-update-tui-msi").to_string(),
+            k => how_to_update(k).unwrap_or_default(),
+        };
+        let mut toast =
+            Toast::info(tr!("services-update-available", version = version)).body(format!("{how}\n{}", release.url));
+        toast.duration = Some(20.0);
+        app.ui.toasts.push(toast);
+    }
+    if !tui {
+        app.frontend
+            .push(crate::models::frontend::FrontendCmd::OpenSettings(Some(crate::models::settings::Section::About)));
+    }
+}
+
+/// Open the release page `url` in the browser registered for it, on a worker thread
+/// (`soyuz_fs::launch::open_url`: registry or MIME lookups and a process spawn stay off
+/// the UI thread). Only `https://` pages are opened; failures come back as a toast.
+pub fn open_release_page(app: &mut crate::core::AppCore, url: &str) {
+    use crate::models::toasts::Toast;
+    if !url.starts_with("https://") {
+        return;
+    }
+    let postman = app.services.mailbox.postman();
+    let url = url.to_string();
+    let spawned = std::thread::Builder::new().name("soyuz-update-link".into()).spawn(move || {
+        if let Err(e) = soyuz_fs::launch::open_url(&url) {
+            postman.send(crate::services::mailbox::UiMsg::Notice(
+                Toast::error(tr!("settings-updates-open-failed")).body(format!("{url}\n{e}")),
+            ));
+        }
+    });
+    if let Err(e) = spawned {
+        app.ui.toasts.push(Toast::error(tr!("settings-updates-open-failed")).body(e.to_string()));
+    }
+}
+
+/// The palette offers "Update and restart" only while a newer release is known.
+pub fn palette_shows(a: &soyuz_core::config::Action) -> bool {
+    *a != soyuz_core::config::Action::InstallUpdate || matches!(phase(), Phase::Available(_) | Phase::Ready { .. })
+}
+
+/// Per-frame hook. In an app session ([`enable_background`]): once, the housekeeping
+/// after an update; then, while `[updates] auto_check` is on, the daily check (looked at
+/// once an hour). Always: results become notifications, and an installed update
+/// restarts Soyuz through the ordinary Quit (pending jobs are asked about).
 pub fn pump(app: &mut crate::core::AppCore) {
     ffmpeg_runtime::pump(app);
-    let notice = {
+    let (notices, restart) = {
         let mut s = STATE.lock();
-        if !s.started_weekly {
-            s.started_weekly = true;
-            let u = &app.config.updates;
-            if u.weekly_check && !u.repo.trim().is_empty() {
-                let (repo, pre, wake) = (u.repo.clone(), u.include_prereleases, app.wake.clone());
+        let now = Instant::now();
+        if background_enabled() && s.next_auto.is_none_or(|t| now >= t) {
+            let first = s.next_auto.is_none();
+            s.next_auto = Some(now + AUTO_RECHECK);
+            let auto = auto_check_target(&app.config.updates);
+            if first || auto.is_some() {
+                let wake = app.wake.clone();
                 drop(s);
-                spawn("soyuz-update-weekly", move || {
-                    detect_portable();
-                    if !weekly_due(read_stamp(), SystemTime::now()) || busy() {
-                        return;
-                    }
-                    STATE.lock().phase = Phase::Checking;
-                    let res = runtime().map_err(|e| e.to_string()).and_then(|rt| rt.block_on(fetch_latest(&repo, pre)));
-                    write_stamp();
-                    let mut s = STATE.lock();
-                    s.phase = match res {
-                        Ok(r) if is_newer(&r.version, CURRENT) => {
-                            s.pending_notice = Some(r.version.to_string());
-                            Phase::Available(Arc::new(r))
-                        }
-                        Ok(r) => Phase::UpToDate { latest: r.version.to_string() },
-                        Err(e) => {
-                            log::info!("weekly update check: {e}");
-                            Phase::Idle
-                        }
-                    };
-                    drop(s);
-                    wake();
-                });
-                return;
+                spawn("soyuz-update-auto", move || background(first, auto, wake));
+                s = STATE.lock();
             }
         }
-        s.pending_notice.take()
+        let restart_now = std::mem::take(&mut s.restart_now);
+        let restart = match &s.phase {
+            Phase::Ready { restart, .. } if restart_now => Some(restart.clone()),
+            _ => None,
+        };
+        (std::mem::take(&mut s.notices), restart)
     };
-    if let Some(v) = notice {
-        app.ui.toasts.push(
-            crate::models::toasts::Toast::info(tr!("services-update-available", version = v.to_string()))
-                .body(tr!("services-update-available-body")),
-        );
+    let tui = app.frontend_kind == crate::core::FrontendKind::Tui;
+    for notice in notices {
+        app.ui.toasts.push(toast_for(notice, tui));
+    }
+    if let Some(restart) = restart {
+        request_restart(restart);
+        app.cmds.push(crate::cmd::Cmd::Action(soyuz_core::config::Action::Quit));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A local HTTP server on 127.0.0.1 that answers `GET <path>` with the bytes of
+    /// `routes` (404 otherwise) and counts the requests per path. No test talks to the
+    /// real network.
+    fn serve(routes: Vec<(&'static str, Vec<u8>)>) -> (String, Arc<Mutex<Vec<String>>>) {
+        use std::io::{BufRead as _, BufReader};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut first = String::new();
+                if reader.read_line(&mut first).is_err() {
+                    continue;
+                }
+                let mut line = String::new();
+                while reader.read_line(&mut line).is_ok_and(|n| n > 2) {
+                    line.clear();
+                }
+                let path = first.split_whitespace().nth(1).unwrap_or("").to_string();
+                log.lock().push(path.clone());
+                let reply = match routes.iter().find(|(p, _)| *p == path) {
+                    Some((_, body)) => {
+                        let mut r =
+                            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len())
+                                .into_bytes();
+                        r.extend_from_slice(body);
+                        r
+                    }
+                    None => b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+                };
+                let _ = stream.write_all(&reply);
+            }
+        });
+        (base, seen)
+    }
+
+    fn sha_of(bytes: &[u8]) -> String {
+        hex(&Sha256::digest(bytes))
+    }
+
+    /// A release whose asset `name` and checksum list `sums` live on the mock server.
+    fn mock_release(base: &str, name: &str, digest: Option<String>, sums: bool) -> (Arc<Release>, Asset) {
+        let asset = Asset { name: name.into(), url: format!("{base}/{name}"), size: 0, sha256: digest };
+        let mut assets = vec![asset.clone()];
+        if sums {
+            assets.push(Asset {
+                name: "SHA256SUMS-windows.txt".into(),
+                url: format!("{base}/SHA256SUMS-windows.txt"),
+                size: 0,
+                sha256: None,
+            });
+        }
+        let release = Release {
+            tag: "v9.0.0".into(),
+            version: v("9.0.0"),
+            title: "Soyuz 9.0.0".into(),
+            notes: String::new(),
+            url: format!("{base}/release"),
+            prerelease: false,
+            published: String::new(),
+            assets,
+        };
+        (Arc::new(release), asset)
+    }
+
+    fn fetch(release: &Release, asset: &Asset, dir: &Path) -> Result<(PathBuf, String), String> {
+        let cancel = AtomicBool::new(false);
+        let wake = crate::host::no_wake();
+        runtime().unwrap().block_on(download_verified(release, asset, dir, &cancel, &wake))
+    }
+
+    fn files_in(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> =
+            std::fs::read_dir(dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn a_download_is_kept_only_when_every_checksum_matches() {
+        const NAME: &str = "soyuz-9.0.0-windows-x64-portable.zip";
+        let body = b"the release archive".to_vec();
+        let good = sha_of(&body);
+        let other = sha_of(b"something else");
+        let sums = |hash: &str| format!("{hash}  {NAME}\n{}  another-file.zip\n", "1".repeat(64)).into_bytes();
+        let d = tempfile::tempdir().unwrap();
+
+        // The checksum file and GitHub's digest agree with the download: kept.
+        let (base, seen) = serve(vec![
+            ("/soyuz-9.0.0-windows-x64-portable.zip", body.clone()),
+            ("/SHA256SUMS-windows.txt", sums(&good)),
+        ]);
+        let (release, asset) = mock_release(&base, NAME, Some(good.clone()), true);
+        let (path, sha) = fetch(&release, &asset, d.path()).unwrap();
+        assert_eq!((sha.as_str(), std::fs::read(&path).unwrap()), (good.as_str(), body.clone()));
+        assert_eq!(files_in(d.path()), [NAME], "no partial file left");
+        // The digest alone is enough when the release has no checksum file.
+        let (release, asset) = mock_release(&base, NAME, Some(good.clone()), false);
+        assert!(fetch(&release, &asset, d.path()).is_ok());
+        // The two sources disagree: refused before anything is downloaded.
+        let before = seen.lock().len();
+        let (release, asset) = mock_release(&base, NAME, Some(other.clone()), true);
+        assert_eq!(fetch(&release, &asset, d.path()).unwrap_err(), tr!("services-update-checksums-disagree"));
+        assert_eq!(seen.lock()[before..], ["/SHA256SUMS-windows.txt"], "the archive was not requested");
+        // No checksum anywhere: refused, nothing downloaded.
+        let (release, asset) = mock_release(&base, NAME, None, false);
+        let before = seen.lock().len();
+        assert_eq!(fetch(&release, &asset, d.path()).unwrap_err(), tr!("services-update-no-checksum"));
+        assert_eq!(seen.lock().len(), before);
+
+        // The download is not what the checksum file promises: deleted, never installed.
+        let d = tempfile::tempdir().unwrap();
+        let (base, _) = serve(vec![
+            ("/soyuz-9.0.0-windows-x64-portable.zip", b"tampered".to_vec()),
+            ("/SHA256SUMS-windows.txt", sums(&good)),
+        ]);
+        let (release, asset) = mock_release(&base, NAME, None, true);
+        let err = fetch(&release, &asset, d.path()).unwrap_err();
+        assert!(err.contains("checksum mismatch"), "{err}");
+        assert!(files_in(d.path()).is_empty(), "the bad download is gone");
+        // The same with GitHub's digest as the only source.
+        let (release, asset) = mock_release(&base, NAME, Some(good.clone()), false);
+        assert!(fetch(&release, &asset, d.path()).is_err());
+        assert!(files_in(d.path()).is_empty());
+        // A checksum file that does not list the archive is no checksum.
+        let (base, _) = serve(vec![
+            ("/soyuz-9.0.0-windows-x64-portable.zip", body.clone()),
+            ("/SHA256SUMS-windows.txt", sums(&good).split_off(NAME.len() + 67)),
+        ]);
+        let (release, asset) = mock_release(&base, NAME, None, true);
+        assert_eq!(fetch(&release, &asset, d.path()).unwrap_err(), tr!("services-update-no-checksum"));
+        // A missing archive is an error, not an empty file.
+        let (release, asset) = mock_release(&base, "soyuz-9.0.0-windows-arm64-portable.zip", Some(good), false);
+        assert!(fetch(&release, &asset, d.path()).is_err());
+        assert!(files_in(d.path()).is_empty());
+    }
+
+    #[test]
+    fn a_verified_portable_zip_is_installed_and_a_managed_copy_is_never_touched() {
+        use std::io::Write as _;
+        // The new release: a portable zip with a (minimal) program for this processor.
+        let machine: u16 = match std::env::consts::ARCH {
+            "aarch64" => 0xAA64,
+            "x86" => 0x014C,
+            _ => 0x8664,
+        };
+        let mut program = vec![0u8; 0x80];
+        program[..2].copy_from_slice(b"MZ");
+        program[0x3c] = 0x40;
+        program[0x40..0x44].copy_from_slice(b"PE\0\0");
+        program[0x44..0x46].copy_from_slice(&machine.to_le_bytes());
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for name in ["soyuz.exe", "soyuz-tui.exe"] {
+            w.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            w.write_all(&program).unwrap();
+        }
+        let body = w.finish().unwrap().into_inner();
+        const NAME: &str = "soyuz-9.0.0-windows-x64-portable.zip";
+        let sums = format!("{}  {NAME}\n", sha_of(&body)).into_bytes();
+        let (base, _) = serve(vec![("/soyuz-9.0.0-windows-x64-portable.zip", body), ("/SHA256SUMS-windows.txt", sums)]);
+        let (release, asset) = mock_release(&base, NAME, None, true);
+
+        // An installed copy (dummy files in a temp folder, never the real install).
+        let d = tempfile::tempdir().unwrap();
+        let (install, work) = (d.path().join("Soyuz"), d.path().join("work"));
+        std::fs::create_dir_all(install.join("portable-data")).unwrap();
+        std::fs::create_dir_all(&work).unwrap();
+        let exe = install.join("soyuz.exe");
+        for (name, data) in
+            [("soyuz.exe", "old"), ("soyuz-tui.exe", "old"), ("portable", ""), ("portable-data/config.toml", "mine")]
+        {
+            std::fs::write(install.join(name), data).unwrap();
+        }
+        let (path, sha) = fetch(&release, &asset, &work).unwrap();
+
+        // Copies something else owns, or that cannot be written: refused, untouched.
+        use InstallKind::*;
+        for kind in [Scoop, Homebrew, Package, Flatpak, AppImage, Msix, ReadOnly, Manual] {
+            let err = install_downloaded(&path, &sha, &exe, kind, &work, "9.0.0").unwrap_err();
+            assert_eq!(Some(err), how_to_update(kind), "{kind:?}");
+            assert_eq!(std::fs::read(&exe).unwrap(), b"old", "{kind:?}");
+            assert_eq!(files_in(&install), ["portable", "portable-data", "soyuz-tui.exe", "soyuz.exe"], "{kind:?}");
+        }
+        // A download that changed after it was verified is not installed either.
+        assert!(install_downloaded(&path, &"0".repeat(64), &exe, WindowsPortable, &work, "9.0.0").is_err());
+        assert_eq!(std::fs::read(&exe).unwrap(), b"old");
+
+        // The portable copy: swapped in place, restart into the same path.
+        let restart = install_downloaded(&path, &sha, &exe, WindowsPortable, &work, "9.0.0").unwrap();
+        assert_eq!(restart, Restart::Exec(exe.clone()));
+        assert!(restart.installed());
+        assert_eq!(std::fs::read(&exe).unwrap(), program);
+        assert_eq!(std::fs::read(install.join("soyuz-tui.exe")).unwrap(), program);
+        assert_eq!(std::fs::read(install.join("portable-data/config.toml")).unwrap(), b"mine");
+
+        // An MSI install: nothing is installed in the app's process. The plan names the
+        // same folder and scope, and the installed files are as they were.
+        std::fs::write(&exe, b"msi install").unwrap();
+        let msi_path = work.join("soyuz-9.0.0-windows-x64.msi");
+        std::fs::write(&msi_path, b"msi").unwrap();
+        let restart =
+            install_downloaded(&msi_path, &sha_of(b"msi"), &exe, WindowsMsi { per_machine: true }, &work, "9.0.0")
+                .unwrap();
+        let Restart::Installer(plan) = &restart else { panic!("{restart:?}") };
+        assert!(!restart.installed());
+        assert_eq!(
+            (plan.install_dir.as_path(), plan.per_machine, plan.version.as_str()),
+            (install.as_path(), true, "9.0.0")
+        );
+        assert_eq!(plan.relaunch, exe);
+        assert!(plan.helper.starts_with(&work) && plan.helper.is_file());
+        assert_eq!(std::fs::read(&exe).unwrap(), b"msi install");
+    }
+
+    #[test]
+    fn the_automatic_check_is_on_by_default_and_daily() {
+        let mut u = soyuz_core::config::Updates::default();
+        assert!(u.auto_check, "on for everyone who never chose");
+        assert_eq!(auto_check_target(&u), Some((soyuz_core::config::DEFAULT_UPDATE_REPO.to_string(), false)));
+        u.include_prereleases = true;
+        assert_eq!(auto_check_target(&u).map(|t| t.1), Some(true));
+        // The Settings switch, and an empty repository, turn it off.
+        u.auto_check = false;
+        assert_eq!(auto_check_target(&u), None);
+        let empty = soyuz_core::config::Updates { repo: "  ".into(), ..Default::default() };
+        assert_eq!(auto_check_target(&empty), None);
+        // Nothing built on the core checks by itself: only the app binaries turn it on.
+        assert!(!background_enabled());
+
+        let now = SystemTime::now();
+        assert!(check_due(None, now));
+        assert!(!check_due(Some(now - Duration::from_secs(3600)), now));
+        assert!(!check_due(Some(now - DAY + Duration::from_secs(60)), now));
+        assert!(check_due(Some(now - DAY), now));
+        assert!(check_due(Some(now - 7 * DAY), now));
+        assert!(!check_due(Some(now + Duration::from_secs(60)), now), "clock skew: not due");
+    }
+
+    #[test]
+    fn only_some_copies_update_from_the_terminal_ui() {
+        use InstallKind::*;
+        for kind in [Tarball, WindowsPortable, MacArchive] {
+            assert!(can_install(kind, false) && can_install(kind, true), "{kind:?}");
+        }
+        let msi = WindowsMsi { per_machine: false };
+        assert!(can_install(msi, false) && !can_install(msi, true));
+        for kind in [Manual, Scoop, Homebrew, Package, Flatpak, AppImage, Msix, ReadOnly] {
+            assert!(!can_install(kind, false) && !can_install(kind, true), "{kind:?}");
+        }
+    }
 
     const FIXTURE: &str = include_str!("updates_fixture.json");
 
@@ -1552,17 +2148,11 @@ mod tests {
     }
 
     #[test]
-    fn file_names_and_weekly_schedule() {
+    fn file_names() {
         assert_eq!(safe_file_name("soyuz-1.0.0.msi").as_deref(), Some("soyuz-1.0.0.msi"));
         assert_eq!(safe_file_name(r"..\..\evil.msi").as_deref(), Some("....evil.msi"));
         assert_eq!(safe_file_name(".."), None);
         assert_eq!(safe_file_name("a/b:c"), Some("abc".into()));
-
-        let now = SystemTime::now();
-        assert!(weekly_due(None, now));
-        assert!(!weekly_due(Some(now - Duration::from_secs(3600)), now));
-        assert!(weekly_due(Some(now - WEEK), now));
-        assert!(!weekly_due(Some(now + Duration::from_secs(60)), now), "clock skew: not due");
 
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(unique_path(dir.path(), "a.msi"), dir.path().join("a.msi"));
@@ -1615,24 +2205,6 @@ mod tests {
         let sums: Vec<&str> = checksum_assets(&r, &a.name).iter().map(|s| s.name.as_str()).collect();
         assert_eq!(sums[0], "soyuz-0.2.0-linux-x86_64.tar.gz.sha256", "own .sha256 first");
         assert!(sums.contains(&"SHA256SUMS-linux.txt"));
-    }
-
-    #[test]
-    fn install_kinds() {
-        let none = |_: &str| None;
-        let k = |exe: &str| install_kind_for("linux", Path::new(exe), none);
-        assert_eq!(k("/usr/bin/soyuz"), InstallKind::Package);
-        assert_eq!(k("/usr/local/bin/soyuz"), InstallKind::Tarball);
-        assert_eq!(k("/home/me/.local/bin/soyuz"), InstallKind::Tarball);
-        assert_eq!(k("/app/bin/soyuz"), InstallKind::Flatpak);
-        let flatpak = |v: &str| (v == "FLATPAK_ID").then(|| "io.github.x".into());
-        assert_eq!(install_kind_for("linux", Path::new("/opt/x"), flatpak), InstallKind::Flatpak);
-        let appimage = |v: &str| (v == "APPIMAGE").then(|| "/home/me/Soyuz.AppImage".into());
-        assert_eq!(
-            install_kind_for("linux", Path::new("/tmp/.mount_x/usr/bin/soyuz"), appimage),
-            InstallKind::AppImage
-        );
-        assert_eq!(install_kind_for("windows", Path::new("C:/x/soyuz.exe"), none), InstallKind::Installer);
     }
 
     /// A minimal ustar archive with `entries` (name, data, type flag).
@@ -1949,16 +2521,17 @@ mod tests {
 
     #[test]
     fn restart_request_round_trip() {
+        let exec = || Restart::Exec(PathBuf::from("/x/soyuz"));
         assert_eq!(take_restart(), None);
-        request_restart(PathBuf::from("/x/soyuz"));
+        request_restart(exec());
         assert_eq!(take_restart(), None, "not before the app exits");
         arm_restart();
-        assert_eq!(take_restart(), Some(PathBuf::from("/x/soyuz")));
+        assert_eq!(take_restart(), Some(exec()));
         assert_eq!(take_restart(), None);
         // A cancelled close forgets the restart: a later ordinary exit does not restart.
-        request_restart(PathBuf::from("/x/soyuz"));
-        assert!(cancel_restart());
-        assert!(!cancel_restart());
+        request_restart(exec());
+        assert_eq!(cancel_restart(), Some(exec()));
+        assert_eq!(cancel_restart(), None);
         arm_restart();
         assert_eq!(take_restart(), None);
     }

@@ -13,7 +13,7 @@ use crate::time::DateFormat;
 use super::keys::KeyPreset;
 
 /// Current schema version written by [`save_pretty`](super::save_pretty).
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -1270,28 +1270,30 @@ pub struct Git {
     pub refresh_secs: u64,
 }
 
-/// `[updates]`: user-initiated update check against GitHub Releases. Nothing
-/// is ever downloaded or installed without a click; there is no telemetry. Defaults: the
-/// official repository, no weekly check, stable releases only.
+/// `[updates]`: the update check against GitHub Releases. Soyuz asks GitHub's public
+/// release API for the newest release (one request without identifiers; there is no
+/// telemetry) when you ask and, unless `auto_check` is off, once a day. Nothing is ever
+/// downloaded or installed without a click. Defaults: the official repository, the daily
+/// check on, stable releases only.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Updates {
     /// GitHub repository to check, `owner/name` or `https://github.com/owner/name`.
     /// Empty disables the update check.
     pub repo: String,
-    /// Also check once a week at startup (off by default; only shows a notification).
-    pub weekly_check: bool,
+    /// Check for a newer release in the background, at most once a day (on by default).
+    /// A newer release only shows a notification: downloading and installing it needs a click.
+    pub auto_check: bool,
     /// Offer pre-releases (release candidates, betas) too.
     pub include_prereleases: bool,
 }
 
-/// The official repository, checked by "Check for updates" unless `[updates] repo` says
-/// otherwise.
+/// The official repository, checked unless `[updates] repo` says otherwise.
 pub const DEFAULT_UPDATE_REPO: &str = "ulaas/soyuz";
 
 impl Default for Updates {
     fn default() -> Self {
-        Updates { repo: DEFAULT_UPDATE_REPO.into(), weekly_check: false, include_prereleases: false }
+        Updates { repo: DEFAULT_UPDATE_REPO.into(), auto_check: true, include_prereleases: false }
     }
 }
 

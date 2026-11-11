@@ -354,6 +354,7 @@ fn app_menu(ui: &mut Ui, app: &mut SoyuzApp) {
     menu_separator(ui);
     item(ui, &mut cmds, ph::GEAR_SIX, tr!("app-titlebar-settings"), Action::Settings);
     item(ui, &mut cmds, ph::KEYBOARD, tr!("app-titlebar-shortcuts"), Action::ShowKeybindings);
+    item(ui, &mut cmds, ph::ARROWS_CLOCKWISE, tr!("app-titlebar-check-updates"), Action::CheckForUpdates);
     item(ui, &mut cmds, ph::INFO, tr!("app-titlebar-about"), Action::About);
     menu_separator(ui);
     item(ui, &mut cmds, ph::SIGN_OUT, tr!("app-titlebar-quit"), Action::Quit);

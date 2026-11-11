@@ -308,7 +308,7 @@ impl SoyuzApp {
 }
 
 impl SoyuzApp {
-    /// The close went through: an "Install & restart" now restarts.
+    /// The close went through: an "Update and restart" now restarts.
     fn exit(&mut self) {
         self.core.on_exit();
         crate::ui::dnd::linux_dnd::shutdown();

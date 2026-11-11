@@ -31,7 +31,7 @@ impl Sandbox {
         std::fs::create_dir_all(&cfg).unwrap();
         std::fs::write(
             cfg.join("config.toml"),
-            "[updates]\nweekly_check = false\n[cli]\nserver_enabled = false\n[search.index]\nenabled = false\n[ai]\nenabled = false\n",
+            "[updates]\nauto_check = false\n[cli]\nserver_enabled = false\n[search.index]\nenabled = false\n[ai]\nenabled = false\n",
         )
         .unwrap();
         let data = tmp.path().join("data");

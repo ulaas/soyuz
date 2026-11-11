@@ -51,7 +51,9 @@ with 100 000 entries scroll smoothly, and a dead network share cannot hang the w
   cancellable and the same on every machine. CI fails the build if a shell API sneaks in.
 - **Fully configurable.** Every behaviour has a setting, in the settings window and in a
   hot-reloaded `config.toml` that keeps your comments.
-- **Private.** No telemetry. Update checks only when you ask.
+- **Private.** No telemetry. Once a day Soyuz asks GitHub's public release API whether a
+  newer release exists: one request with no identifiers, and a switch in Settings turns it
+  off. Nothing is downloaded or installed until you click.
 
 ## Features
 

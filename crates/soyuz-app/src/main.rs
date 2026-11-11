@@ -336,6 +336,11 @@ fn run_tui(_startup: soyuz_app::app::Startup, _screen_reader: bool) -> ExitCode 
 }
 
 fn main() -> ExitCode {
+    // Started by "Update and restart" of an MSI install: run Windows Installer and start
+    // Soyuz again. Nothing else happens in this process (no log file, no window).
+    if let Some(code) = soyuz_app::services::updates::msi::helper_main() {
+        return ExitCode::from(code.clamp(0, 255) as u8);
+    }
     soyuz_app::devscript::mark_process_start();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if tui_requested(&args) {
@@ -427,6 +432,8 @@ Run `soyuz <command> --help` for usage."
             }
         }
     }
+    // A real app session: the daily update check (`[updates] auto_check`) may run.
+    soyuz_app::services::updates::enable_background();
     soyuz_app::services::filemanager1::set_forced(dbus_file_manager);
     // Further command-line paths open as tabs once the window runs.
     soyuz_app::services::filemanager1::open_paths_later(extra);
@@ -539,9 +546,9 @@ Run `soyuz <command> --help` for usage."
     );
     // Normally gone already (quitting closes it): never hand a launch to a dying process.
     soyuz_app::services::instance::shutdown();
-    // "Install & restart" after an in-place update: start the new binary.
-    if let Some(exe) = soyuz_app::services::updates::take_restart() {
-        let e = soyuz_app::services::updates::exec_restart(&exe);
+    // "Update and restart": start the new binary, or the helper that runs the installer.
+    if let Some(restart) = soyuz_app::services::updates::take_restart() {
+        let e = soyuz_app::services::updates::exec_restart(&restart);
         log::error!("soyuz: restart failed: {e}");
         err!("soyuz: restart failed: {e}");
     }

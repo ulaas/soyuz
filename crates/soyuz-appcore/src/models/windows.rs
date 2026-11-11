@@ -1156,7 +1156,7 @@ mod tests {
         let dir = soyuz_core::config::config_dir();
         assert!(dir.ends_with(soyuz_core::config::PORTABLE_DATA_DIR), "not in portable mode: {}", dir.display());
         let mut c = soyuz_core::config::Config::default();
-        c.updates.weekly_check = false;
+        c.updates.auto_check = false;
         c.cli.server_enabled = false;
         c.search.index.enabled = false;
         c.layout.preview_pane = false;

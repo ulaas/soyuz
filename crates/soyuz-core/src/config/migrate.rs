@@ -59,7 +59,40 @@ pub const MIGRATIONS: &[Migration] = &[
         describe: "fonts: LCD text with normal hinting and gamma 0.8 replaces crisp hinting and gamma 0.45",
         apply: lcd_text_v6,
     },
+    Migration {
+        from: 6,
+        describe: "updates: the opt-in weekly check is the daily check, on by default (auto_check)",
+        apply: updates_auto_check_v7,
+    },
 ];
+
+/// v6 → v7: the update check runs by itself once a day unless `[updates] auto_check` is
+/// off; `weekly_check` is gone. Saved configs carry every key, so the old default
+/// `weekly_check = false` is indistinguishable from a choice and is dropped (the new
+/// default, on, applies; Settings → About & updates turns it off). `weekly_check = true`
+/// becomes `auto_check = true`; an `auto_check` already in the file wins.
+fn updates_auto_check_v7(doc: &mut DocumentMut) -> Result<(), String> {
+    let Some(updates) = doc.get_mut("updates").and_then(|u| u.as_table_like_mut()) else { return Ok(()) };
+    let Some(old) = updates.get("weekly_check") else { return Ok(()) };
+    let Some(weekly) = old.as_bool() else { return Err("`[updates] weekly_check` must be true or false".into()) };
+    let keep_new = updates.contains_key("auto_check");
+    // Re-insert every key in place so a renamed one keeps its position and comments.
+    let entries: Vec<(toml_edit::Key, toml_edit::Item)> =
+        updates.iter().map(|(k, v)| (updates.key(k).cloned().unwrap_or_else(|| k.into()), v.clone())).collect();
+    updates.clear();
+    for (key, item) in entries {
+        let name = match key.get() {
+            "weekly_check" if keep_new || !weekly => continue,
+            "weekly_check" => "auto_check",
+            other => other,
+        };
+        updates.insert(name, item);
+        if let Some(mut k) = updates.key_mut(name) {
+            *k.leaf_decor_mut() = key.leaf_decor().clone();
+        }
+    }
+    Ok(())
+}
 
 /// v5 → v6: the new text look. Saved configs carry every key, so a file still holding the
 /// old defaults moves to the new ones; other values were chosen, and stay.
@@ -314,6 +347,42 @@ mod tests {
         Migration { from: 1, describe: "rename old_name", apply: rename_key },
         Migration { from: 2, describe: "add [extra]", apply: add_section },
     ];
+
+    #[test]
+    fn updates_v7_turns_the_weekly_check_into_the_daily_one() {
+        let parse = |t: &str| super::super::parse_str(t).unwrap();
+        // The old default (written out by every saved config) goes: the check is on.
+        let text = "schema = 6\n[updates]\nrepo = \"me/soyuz\"\nweekly_check = false\ninclude_prereleases = true\n";
+        let (out, from) = migrate_text_with(text, MIGRATIONS, 7).unwrap().unwrap();
+        assert_eq!(from, 6);
+        assert!(out.contains("schema = 7") && !out.contains("weekly_check") && !out.contains("auto_check"), "{out}");
+        let l = parse(&out);
+        assert!(l.warnings.is_empty(), "{:?}", l.warnings);
+        assert!(l.config.updates.auto_check && l.config.updates.include_prereleases);
+        assert_eq!(l.config.updates.repo, "me/soyuz");
+        assert_eq!(migrate_text_with(&out, MIGRATIONS, 7).unwrap(), None, "done once");
+        // Opted in: stays on under the new name, in place, with its comment.
+        let text = "schema = 6\n[updates]\nweekly_check = true # yes\ninclude_prereleases = false\n";
+        let (out, _) = migrate_text_with(text, MIGRATIONS, 7).unwrap().unwrap();
+        assert!(out.contains("auto_check = true # yes") && !out.contains("weekly_check"), "{out}");
+        assert!(out.find("auto_check") < out.find("include_prereleases"), "the key keeps its place: {out}");
+        // An explicit new key wins (a choice made by hand stays).
+        let text = "schema = 6\n[updates]\nauto_check = false\nweekly_check = true\n";
+        let (out, _) = migrate_text_with(text, MIGRATIONS, 7).unwrap().unwrap();
+        assert!(out.contains("auto_check = false") && !out.contains("weekly_check"), "{out}");
+        assert!(!parse(&out).config.updates.auto_check);
+        // No [updates], or no key: nothing to do. A bad value is an error.
+        let (out, _) =
+            migrate_text_with("schema = 6\n[general]\nshow_hidden = true\n", MIGRATIONS, 7).unwrap().unwrap();
+        assert!(!out.contains("[updates]"), "{out}");
+        assert!(migrate_text_with("schema = 6\n[updates]\nweekly_check = 1\n", MIGRATIONS, 7).is_err());
+        // A key restored by hand after the migration is ignored without a warning.
+        let l = parse("schema = 7\n[updates]\nweekly_check = false\n");
+        assert!(l.warnings.is_empty() && l.config.updates.auto_check, "{:?}", l.warnings);
+        // A new install, and an old file that never had the key: on.
+        assert!(crate::config::Config::default().updates.auto_check);
+        assert!(parse("").config.updates.auto_check);
+    }
 
     #[test]
     fn lcd_text_moves_old_defaults_only() {

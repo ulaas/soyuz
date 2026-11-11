@@ -573,11 +573,39 @@ impl Dialog for AboutDialog {
                 .color(p.text_tertiary)
                 .size(crate::theme::font::px(11.5)),
         );
+        ui.add_space(8.0);
+        // A newer release the check has found, or the way to look for one. Either one
+        // closes this dialog and opens Settings → About & updates.
+        let phase = crate::services::updates::phase();
+        let newer = match &phase {
+            crate::services::updates::Phase::Available(rel) => Some(rel.version.to_string()),
+            _ => None,
+        };
+        let mut updates = false;
+        ui.horizontal(|ui| {
+            let (icon, label) = match &newer {
+                Some(version) => {
+                    ui.label(RichText::new(tr!("dialogs-about-update-available", version = version)).color(p.accent));
+                    (ph::DOWNLOAD_SIMPLE, tr!("dialogs-about-update-show"))
+                }
+                None => (ph::ARROWS_CLOCKWISE, tr!("dialogs-about-check-updates")),
+            };
+            updates =
+                crate::ui::widgets::pill_button(ui, Some(icon), label, crate::ui::widgets::Btn::Secondary).clicked();
+        });
+        if updates {
+            let action = if newer.is_some() {
+                soyuz_core::config::Action::InstallUpdate
+            } else {
+                soyuz_core::config::Action::CheckForUpdates
+            };
+            ctx.cmds.push(Cmd::Action(action));
+        }
         let (close, copy) = footer(ui, tr!("common-close"), tr!("dialogs-about-copy-info"));
         if copy {
             ctx.cmds.push(Cmd::CopyText(crate::models::about::copy_text(&facts)));
         }
-        !close && !enter_default(ui)
+        !close && !updates && !enter_default(ui)
     }
 }
 

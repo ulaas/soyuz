@@ -110,6 +110,14 @@
       </Component>
     </ComponentGroup>
 
+    <!-- The install folder, read by the in-app update: "Update and restart" runs the next
+         MSI into the same folder and scope (services/updates.rs in soyuz-appcore). -->
+    <ComponentGroup Id="InstallInfo" Directory="INSTALLFOLDER">
+      <Component Id="InstallDirValue" Guid="886098ca-7f17-44d7-ba60-f67305db7655">
+        <RegistryValue Root="HKMU" Key="Software\Soyuz\Installer" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
     <!-- ===== Optional: "Open in Soyuz" context-menu verb (not the default verb) ===== -->
     <ComponentGroup Id="ContextMenuKeys" Directory="INSTALLFOLDER">
       <Component Id="OpenInSoyuzDirectory" Guid="5c2c7c1a-2f43-4f8e-8f0b-6a1d4e9b7a11">
@@ -159,6 +167,7 @@
       <ComponentGroupRef Id="FfmpegRuntime" />
       <?endif?>
       <ComponentGroupRef Id="StartMenu" />
+      <ComponentGroupRef Id="InstallInfo" />
       <Feature Id="ContextMenu" Title="“Open in Soyuz” on folders" Description="Adds an “Open in Soyuz” entry to the right-click menu of folders and drives. File Explorer stays the default; make Soyuz the default file manager in Settings → Advanced." Level="1000">
         <ComponentGroupRef Id="ContextMenuKeys" />
       </Feature>

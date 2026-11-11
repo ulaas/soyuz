@@ -63,7 +63,7 @@ settings-section-ai-desc = Model sağlayıcıları, API anahtarları, gizlilik, 
 settings-section-advanced = Gelişmiş
 settings-section-advanced-desc = config.toml dosyasını düzenleyin, dışa veya içe aktarın; Soyuz'u varsayılan dosya yöneticiniz yapın.
 settings-section-about = Hakkında ve güncellemeler
-settings-section-about-desc = Sürüm ve GitHub Releases'ta daha yeni bir Soyuz olup olmadığını denetleme (yalnızca siz istediğinizde).
+settings-section-about-desc = Sürüm ve Soyuz'u GitHub Releases üzerinden güncelleme.
 
 ## Dışa / içe aktarma
 
@@ -1004,7 +1004,7 @@ settings-about-build = { $os } / { $arch } için { $kind ->
     [debug] hata ayıklama
    *[release] sürüm
     } derlemesi. MIT Lisansı ile lisanslanmıştır.
-settings-updates-privacy = Soyuz GitHub'dan yalnızca herkese açık sürüm listesini ister; sizinle veya dosyalarınızla ilgili hiçbir veri gönderilmez. İndirilenler doğrulanır (SHA-256 ve yükleyicinin imzası) ve siz tıklamadan asla yüklenmez.
+settings-updates-privacy = Denetim, GitHub'ın herkese açık sürüm API'sinden bu deponun en yeni sürümünü sorar: kimlik bilgisi içermeyen tek bir istek; sizinle veya dosyalarınızla ilgili hiçbir şey gönderilmez. Siz tıklamadan hiçbir şey indirilmez. İndirilen dosya yalnızca SHA-256 değeri sürümün sağlama toplamı dosyasıyla ve GitHub'ın bildirdiği özetle eşleşirse kullanılır; yükleyicinin Authenticode imzası bilgi olarak gösterilir.
 settings-updates-up-to-date = Güncelsiniz. En yeni sürüm { $latest }.
 settings-updates-failed = Güncelleme denetimi başarısız oldu: { $error }
 settings-updates-download-tooltip = { $name } dosyasını İndirilenler klasörünüze kaydet
@@ -1051,8 +1051,8 @@ settings-about-button = Soyuz hakkında…
 settings-updates = Güncellemeler
 settings-updates-repo = Sürüm deposu
 settings-updates-repo-desc = Soyuz güncellemelerinin geldiği GitHub deposu (sahip/ad veya URL). Boş bırakmak güncelleme denetimini kapatır.
-settings-updates-weekly = Haftada bir denetle
-settings-updates-weekly-desc = Başlangıçta, en fazla 7 günde bir. Yalnızca bildirim gösterir; hiçbir şey indirilmez.
+settings-updates-auto = Otomatik denetle
+settings-updates-auto-desc = Günde bir kez, arka planda. Yeni bir sürüm yalnızca bildirim gösterir; siz tıklamadan hiçbir şey indirilmez.
 settings-updates-prereleases = Ön sürümleri dahil et
 settings-updates-prereleases-desc = Sürüm adaylarını ve betaları da önerir.
 settings-updates-check = Güncellemeleri denetle
@@ -1388,10 +1388,17 @@ settings-appearance-gpu-memory-performance = Performans
 settings-bookmarks-icon = Yer imi simgesi
 
 ## Linux (glue)
-settings-updates-privacy-linux = Soyuz GitHub'dan yalnızca herkese açık sürüm listesini ister; sizinle veya dosyalarınızla ilgili hiçbir veri gönderilmez. İndirilenler sürümün SHA-256 sağlama toplamıyla denetlenir ve siz tıklamadan asla yüklenmez.
+settings-updates-privacy-linux = Denetim, GitHub'ın herkese açık sürüm API'sinden bu deponun en yeni sürümünü sorar: kimlik bilgisi içermeyen tek bir istek; sizinle veya dosyalarınızla ilgili hiçbir şey gönderilmez. Siz tıklamadan hiçbir şey indirilmez. İndirilen dosya yalnızca SHA-256 değeri sürümün sağlama toplamı dosyasıyla ve GitHub'ın bildirdiği özetle eşleşirse kullanılır.
 settings-updates-sig-unknown-linux = Linux sürümlerinde yükleyici imzası yoktur; yukarıdaki SHA-256 sağlama toplamı doğrulandı.
-settings-updates-install-restart = Yükle ve yeniden başlat
-settings-updates-install-restart-tooltip = Soyuz'un bu kopyasını indirilen sürümle değiştirir ve yeniden başlatır. Ayarlarınız korunur.
+settings-updates-install = Güncelle ve yeniden başlat
+settings-updates-install-tooltip = { $name } dosyasını indirir, denetler, kurar ve Soyuz'u yeniden başlatır. Ayarlarınız korunur.
+settings-updates-install-msi = Soyuz kapalıyken Windows Installer ilerleme penceresini gösterir, ardından Soyuz yeniden başlar. Tüm kullanıcılar için yapılmış bir kurulum yönetici izni ister.
+settings-updates-download-only = Yalnızca indir
+settings-updates-release-page = Sürüm sayfası
+settings-updates-open-failed = Sürüm sayfası açılamıyor
+settings-updates-ready = { $version } kuruldu. Kullanmak için Soyuz'u yeniden başlatın.
+settings-updates-ready-installer = { $version } indirildi ve doğrulandı. Soyuz kapanır, Windows Installer onu günceller ve Soyuz yeniden başlar.
+settings-updates-restart-now = Şimdi yeniden başlat
 settings-updates-installing = Güncelleme yükleniyor…
 settings-linux-fm1-serving = Hizmet veriyor
 settings-linux-fm1-pending = Başlatılıyor…

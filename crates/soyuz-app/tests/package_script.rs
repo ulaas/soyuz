@@ -227,6 +227,10 @@ fn installer_sources_are_consistent() {
     assert!(wxs.contains(r#"UpgradeCode="4d03f89e-9d28-4139-aa95-0e950320af14""#));
     assert!(wxs.contains(r#"Scope="perUserOrMachine""#), "per-user by default, per-machine optional");
     assert!(wxs.contains("<MajorUpgrade"));
+    // What the in-app update reads to tell an MSI install and its folder
+    // (`soyuz_fs::integration::msi_installs`): both values stay.
+    assert!(wxs.contains(r#"Key="Software\Soyuz\Installer" Name="StartMenuShortcut""#));
+    assert!(wxs.contains(r#"Key="Software\Soyuz\Installer" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]""#));
     // The terminal UI ships next to soyuz.exe (same folder, so the PATH entry covers it).
     assert!(wxs.contains(r#"Source="$(var.BinDir)\soyuz.exe""#));
     assert!(wxs.contains(r#"Source="$(var.BinDir)\soyuz-tui.exe""#));

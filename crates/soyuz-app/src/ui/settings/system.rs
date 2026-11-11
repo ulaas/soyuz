@@ -1,5 +1,6 @@
-//! Settings pages for OS integration: "About & updates" (manual update check
-//! against GitHub Releases) and the "Default file manager" opt-in at the top of the General page.
+//! Settings pages for OS integration: "About & updates" (the update check against
+//! GitHub Releases, "Update and restart" and the automatic-check switch) and the
+//! "Default file manager" opt-in at the top of the General page.
 //! Registry and network work runs on worker threads; the UI only reads snapshots.
 
 use std::path::PathBuf;
@@ -16,6 +17,7 @@ use crate::services::updates::{self, Phase};
 use crate::theme::icons::ph;
 use crate::theme::palette;
 use crate::ui::toasts::Toast;
+use crate::ui::widgets::{Btn, pill_button};
 
 const CTX_ABOUT: &str = "About updates version";
 const CTX_FM: &str = "General default file manager explorer folders drives integration os desktop mimeapps dbus";
@@ -49,7 +51,7 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
 
     let phase = updates::phase();
-    let busy = matches!(phase, Phase::Checking | Phase::Downloading { .. });
+    let busy = phase.busy();
     let mut check = false;
     let d = &mut app.gui.settings.draft;
     let repo_before = d.updates.repo.clone();
@@ -58,11 +60,11 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             text(ui, &mut d.updates.repo, "owner/soyuz", 220.0);
         });
         r.row_kw(
-            tr!("settings-updates-weekly"),
-            tr!("settings-updates-weekly-desc"),
-            "automatic weekly background",
+            tr!("settings-updates-auto"),
+            tr!("settings-updates-auto-desc"),
+            "automatic daily background check notify notification",
             |ui| {
-                switch(ui, &mut d.updates.weekly_check);
+                switch(ui, &mut d.updates.auto_check);
             },
         );
         r.row_kw(
@@ -73,11 +75,9 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.updates.include_prereleases);
             },
         );
-        let privacy = if cfg!(target_os = "linux") {
-            tr!("settings-updates-privacy-linux")
-        } else {
-            tr!("settings-updates-privacy")
-        };
+        // Authenticode is a Windows matter; the other platforms' text leaves it out.
+        let privacy =
+            if cfg!(windows) { tr!("settings-updates-privacy") } else { tr!("settings-updates-privacy-linux") };
         r.block("", privacy, |ui| {
             ui.horizontal(|ui| {
                 let can = !d.updates.repo.trim().is_empty() && !busy;
@@ -100,7 +100,7 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         updates::reset();
     }
     if check {
-        updates::check(d.updates.repo.clone(), d.updates.include_prereleases, crate::host::egui_wake(ui.ctx()));
+        updates::check(d.updates.repo.clone(), d.updates.include_prereleases, false, crate::host::egui_wake(ui.ctx()));
     }
     if !matches!(phase, Phase::Idle) {
         let mut reveal: Option<PathBuf> = None;
@@ -119,6 +119,71 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     any
 }
 
+/// A small wrapped note under the buttons.
+fn note(ui: &mut Ui, text: &str, color: egui::Color32) {
+    ui.add(egui::Label::new(RichText::new(text).size(crate::theme::font::px(11.5)).color(color)).wrap());
+}
+
+/// What to do about the newer release `rel`, by how this copy was installed: "Update and
+/// restart" where Soyuz installs it itself, how to update a copy something else manages,
+/// a download to install by hand otherwise. Always the release page.
+fn offer(ui: &mut Ui, app: &mut SoyuzApp, rel: &std::sync::Arc<updates::Release>) {
+    let p = palette(ui.ctx());
+    let kind = updates::install_kind();
+    if kind.managed() {
+        // Never downloaded or installed here: the package manager does that.
+        if let Some(how) = updates::how_to_update(kind) {
+            note(ui, &how, p.text_secondary);
+            ui.add_space(6.0);
+        }
+    } else if let Some(a) = updates::asset_for_this_copy(rel) {
+        let own = kind.self_installs();
+        ui.horizontal(|ui| {
+            if own
+                && pill_button(ui, Some(ph::ROCKET_LAUNCH), tr!("settings-updates-install"), Btn::Primary)
+                    .on_hover_text(tr!("settings-updates-install-tooltip", name = &a.name))
+                    .clicked()
+            {
+                updates::install(rel.clone(), crate::host::egui_wake(ui.ctx()));
+            }
+            let label = if own { tr!("settings-updates-download-only") } else { tr!("settings-updates-download") };
+            if small_button(ui, Some(ph::DOWNLOAD_SIMPLE), label, false)
+                .on_hover_text(tr!("settings-updates-download-tooltip", name = &a.name))
+                .clicked()
+            {
+                // Resolving the Downloads folder reads the registry: do it on the worker.
+                let rel = rel.clone();
+                let wake = crate::host::egui_wake(ui.ctx());
+                std::thread::spawn(move || {
+                    updates::download(rel, integration::downloads_dir(), wake);
+                });
+            }
+            ui.label(
+                RichText::new(format!("{} · {}", a.name, mib(a.size)))
+                    .size(crate::theme::font::px(11.5))
+                    .color(p.text_tertiary),
+            );
+        });
+        if matches!(kind, updates::InstallKind::WindowsMsi { .. }) {
+            note(ui, tr!("settings-updates-install-msi"), p.text_tertiary);
+        } else if let Some(why) = updates::how_to_update(kind) {
+            note(ui, &why, p.text_tertiary);
+        }
+    } else {
+        note(ui, tr!("settings-updates-no-asset"), p.text_tertiary);
+    }
+    ui.horizontal(|ui| {
+        if rel.url.starts_with("https://")
+            && small_button(ui, Some(ph::ARROW_SQUARE_OUT), tr!("settings-updates-release-page"), false).clicked()
+        {
+            updates::open_release_page(&mut app.core, &rel.url);
+        }
+        if small_button(ui, Some(ph::CLIPBOARD_TEXT), tr!("settings-updates-copy-link"), false).clicked() {
+            app.core.cmds.push(Cmd::CopyText(rel.url.clone()));
+        }
+    });
+}
+
 fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<PathBuf>) {
     let p = palette(ui.ctx());
     match phase {
@@ -133,44 +198,13 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             ui.label(RichText::new(tr!("settings-updates-up-to-date", latest = latest.to_string())).color(p.success));
         }
         Phase::Failed(e) => {
-            ui.label(RichText::new(tr!("settings-updates-failed", error = e.to_string())).color(p.danger));
+            let text = tr!("settings-updates-failed", error = e.to_string());
+            ui.add(egui::Label::new(RichText::new(text).color(p.danger)).wrap());
         }
         Phase::Available(rel) => {
             release_header(ui, rel);
-            let asset = updates::asset_for_this_copy(rel);
             ui.add_space(8.0);
-            ui.horizontal(|ui| match asset {
-                Some(a) => {
-                    if small_button(ui, Some(ph::DOWNLOAD_SIMPLE), tr!("settings-updates-download"), false)
-                        .on_hover_text(tr!("settings-updates-download-tooltip", name = &a.name))
-                        .clicked()
-                    {
-                        // Resolving the Downloads folder reads the registry: do it on the worker.
-                        let rel = rel.clone();
-                        let wake = crate::host::egui_wake(ui.ctx());
-                        std::thread::spawn(move || {
-                            updates::download(rel, integration::downloads_dir(), wake);
-                        });
-                    }
-                    ui.label(
-                        RichText::new(format!("{} · {}", a.name, mib(a.size)))
-                            .size(crate::theme::font::px(11.5))
-                            .color(p.text_tertiary),
-                    );
-                }
-                None => {
-                    ui.label(
-                        RichText::new(tr!("settings-updates-no-asset"))
-                            .size(crate::theme::font::px(11.5))
-                            .color(p.text_tertiary),
-                    );
-                }
-            });
-            ui.horizontal(|ui| {
-                if small_button(ui, Some(ph::CLIPBOARD_TEXT), tr!("settings-updates-copy-link"), false).clicked() {
-                    app.core.cmds.push(Cmd::CopyText(rel.url.clone()));
-                }
-            });
+            offer(ui, app, rel);
         }
         Phase::Downloading { asset, got, total, .. } => {
             ui.label(
@@ -184,6 +218,30 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             )));
             if small_button(ui, Some(ph::X_CIRCLE), tr!("settings-cancel"), true).clicked() {
                 updates::cancel();
+            }
+        }
+        Phase::Installing { release } => {
+            release_header(ui, release);
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(RichText::new(tr!("settings-updates-installing")).color(p.text_secondary));
+            });
+        }
+        Phase::Ready { release, restart } => {
+            let version = release.version.to_string();
+            let text = if restart.installed() {
+                tr!("settings-updates-ready", version = version)
+            } else {
+                tr!("settings-updates-ready-installer", version = version)
+            };
+            ui.add(egui::Label::new(RichText::new(text).color(p.success)).wrap());
+            ui.add_space(6.0);
+            // Soyuz restarts by itself; the button is for a restart that was cancelled
+            // (a question about running jobs or unsaved documents).
+            if pill_button(ui, Some(ph::ARROW_CLOCKWISE), tr!("settings-updates-restart-now"), Btn::Primary).clicked() {
+                updates::restart_now();
+                ui.ctx().request_repaint();
             }
         }
         Phase::Downloaded { release, path, sha256, signature, detached_sig } => {
@@ -210,19 +268,12 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             };
             ui.label(RichText::new(sig_text).size(crate::theme::font::px(11.5)).color(sig_color));
             if *detached_sig {
-                ui.label(
-                    RichText::new(tr!("settings-updates-detached-sig"))
-                        .size(crate::theme::font::px(11.5))
-                        .color(p.text_tertiary),
-                );
+                note(ui, tr!("settings-updates-detached-sig"), p.text_tertiary);
+            }
+            if let Some(how) = updates::self_update_note() {
+                note(ui, &how, p.text_secondary);
             }
             ui.add_space(6.0);
-            if cfg!(target_os = "linux") && linux_install(ui, path, sha256) {
-                // Installed: close every window (with the pending-jobs check); `main`
-                // then restarts into the new binary.
-                app.core.workspaces.quitting = true;
-                ui.ctx().send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
-            }
             let is_installer =
                 path.extension().is_some_and(|e| e.eq_ignore_ascii_case("msi") || e.eq_ignore_ascii_case("exe"));
             let confirm_id = egui::Id::unique("soyuz.settings.update.confirm_run");
@@ -240,11 +291,7 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             });
             if confirming {
                 ui.add_space(4.0);
-                ui.label(
-                    RichText::new(tr!("settings-updates-run-note"))
-                        .size(crate::theme::font::px(11.5))
-                        .color(p.text_secondary),
-                );
+                note(ui, tr!("settings-updates-run-note"), p.text_secondary);
                 ui.horizontal(|ui| {
                     if small_button(ui, Some(ph::ROCKET_LAUNCH), tr!("settings-updates-run-now"), false).clicked() {
                         confirming = false;
@@ -268,61 +315,6 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             ui.ctx().data_mut(|d| d.insert_temp(confirm_id, confirming));
         }
     }
-}
-
-/// Linux: "Install & restart" for a downloaded release tarball when this copy can
-/// update itself (unpacked from the tarball), else how to update it instead. True once
-/// the new binary is in place and a restart was requested.
-fn linux_install(ui: &mut Ui, path: &std::path::Path, sha256: &str) -> bool {
-    let p = palette(ui.ctx());
-    if let Some(note) = updates::self_update_note() {
-        ui.label(RichText::new(note).size(crate::theme::font::px(11.5)).color(p.text_secondary));
-        ui.add_space(4.0);
-        return false;
-    }
-    let tarball = path.to_string_lossy().to_ascii_lowercase().ends_with(".tar.gz");
-    if !tarball || updates::install_kind() != updates::InstallKind::Tarball {
-        return false;
-    }
-    // Set by the click so a result left over from an earlier install never restarts.
-    let started_id = egui::Id::unique("soyuz.settings.update.install_started");
-    let started = ui.ctx().data(|d| d.get_temp::<bool>(started_id)).unwrap_or(false);
-    let (installing, result) = updates::install_status();
-    ui.horizontal(|ui| {
-        ui.add_enabled_ui(!installing, |ui| {
-            if small_button(ui, Some(ph::ROCKET_LAUNCH), tr!("settings-updates-install-restart"), false)
-                .on_hover_text(tr!("settings-updates-install-restart-tooltip"))
-                .clicked()
-            {
-                ui.ctx().data_mut(|d| d.insert_temp(started_id, true));
-                updates::install_async(path.to_path_buf(), sha256.to_string(), crate::host::egui_wake(ui.ctx()));
-            }
-        });
-        if installing {
-            ui.spinner();
-            ui.label(
-                RichText::new(tr!("settings-updates-installing"))
-                    .size(crate::theme::font::px(11.5))
-                    .color(p.text_secondary),
-            );
-        }
-    });
-    let mut restart = false;
-    if started && !installing {
-        match result {
-            Some(Ok(exe)) => {
-                ui.ctx().data_mut(|d| d.insert_temp(started_id, false));
-                updates::request_restart(exe);
-                restart = true;
-            }
-            Some(Err(e)) => {
-                ui.label(RichText::new(e).size(crate::theme::font::px(11.5)).color(p.danger));
-            }
-            None => {}
-        }
-    }
-    ui.add_space(4.0);
-    restart
 }
 
 fn release_header(ui: &mut Ui, rel: &updates::Release) {

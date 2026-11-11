@@ -99,7 +99,7 @@ fn run_core(data: PathBuf) {
     let mut c = Config::default();
     c.general.show_hidden = false;
     c.general.honour_dot_hidden = true;
-    c.updates.weekly_check = false;
+    c.updates.auto_check = false;
     c.cli.server_enabled = false;
     c.search.index.enabled = false;
     let startup = Startup { open: Some(data.clone()), secondary: true, safe_mode: false, ..Default::default() };

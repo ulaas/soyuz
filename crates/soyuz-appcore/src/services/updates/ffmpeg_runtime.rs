@@ -430,7 +430,7 @@ fn new_name_in(dir: &Path, prefix: &str) -> Option<PathBuf> {
 }
 
 /// A new, empty folder `<dir>/<prefix><random>` (`create_dir` never reuses one).
-fn new_dir_in(dir: &Path, prefix: &str) -> std::io::Result<PathBuf> {
+pub(super) fn new_dir_in(dir: &Path, prefix: &str) -> std::io::Result<PathBuf> {
     for _ in 0..8 {
         let p = new_name_in(dir, prefix).ok_or(std::io::ErrorKind::AlreadyExists)?;
         match std::fs::create_dir(&p) {

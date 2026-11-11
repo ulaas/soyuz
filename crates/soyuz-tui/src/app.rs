@@ -636,7 +636,7 @@ where
             match ev {
                 TuiEvent::Term(e) => events.push(e),
                 TuiEvent::Terminate => {
-                    // No `on_exit`: an "Install & restart" does not restart into a
+                    // No `on_exit`: an "Update and restart" does not restart into a
                     // terminal that is going away.
                     app.core.save_all();
                     crate::signals::notify_saved();
@@ -667,7 +667,7 @@ fn restore_for_panic() {
 /// (`crate::overlay::Overlay::pick`) before the core builds its key map: the TUI's default
 /// keys, plus the legacy alternatives when the kitty keyboard protocol is not used (never on
 /// Windows), plus the Windows Terminal stand-ins when `WT_SESSION` is set.
-/// After the loop the terminal is restored and an "Install & restart" update restarts the
+/// After the loop the terminal is restored and an "Update and restart" update restarts the
 /// process (`services::updates`).
 ///
 /// `screen_reader`: `--screen-reader`, screen-reader mode for this run only
@@ -712,6 +712,8 @@ pub fn run(config: Config, startup: Startup, screen_reader: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // A real app session: the daily update check (`[updates] auto_check`) may run.
+    soyuz_appcore::services::updates::enable_background();
     let mut app = App::new(config, startup);
     app.input_gate = gate;
     app.sr_override = screen_reader;
@@ -728,8 +730,8 @@ pub fn run(config: Config, startup: Startup, screen_reader: bool) -> ExitCode {
     drop(io_);
     crash::clear_tui_hooks();
     drop(app);
-    if let Some(exe) = soyuz_appcore::services::updates::take_restart() {
-        let e = soyuz_appcore::services::updates::exec_restart(&exe);
+    if let Some(restart) = soyuz_appcore::services::updates::take_restart() {
+        let e = soyuz_appcore::services::updates::exec_restart(&restart);
         log::error!("soyuz: restart failed: {e}");
         let _ = writeln!(io::stderr(), "soyuz: restart failed: {e}");
         return ExitCode::FAILURE;

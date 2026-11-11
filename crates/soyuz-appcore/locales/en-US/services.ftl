@@ -305,7 +305,6 @@ services-update-http-status = GitHub replied { $status } { $message }
 services-update-cannot-start = cannot start: { $error }
 services-update-no-asset = this release has no download for this platform
 # $code: Windows error code, e.g. 0x800B0100.
-services-update-bad-signature = the installer's signature is invalid ({ $code }); the download was deleted
 services-update-no-checksum = the release publishes no SHA-256 checksum for this file, so it cannot be verified
 services-update-checksums-disagree = the release's checksums disagree with each other; not downloading
 services-update-bad-asset-name = bad asset name
@@ -319,7 +318,35 @@ services-update-cannot-write = cannot write the download: { $error }
 services-update-checksum-mismatch = checksum mismatch (expected { $expected }…, got { $got }…); the download was deleted
 services-update-cannot-rename = cannot rename the download: { $error }
 services-update-available = Soyuz { $version } is available
-services-update-available-body = Open Settings → About & updates to read the release notes and download it.
+services-update-available-body = Open Settings → About & updates to read the release notes and get it.
+services-update-available-install = One click downloads it, checks it and restarts Soyuz. Nothing is downloaded before that.
+services-update-action-install = Update and restart
+services-update-action-details = Show
+services-update-up-to-date = Soyuz is up to date ({ $version } is the newest release)
+services-update-check-failed = Update check failed
+services-update-installed = Soyuz was updated to { $version }
+services-update-not-installed = The update was not installed
+# $error = a full sentence. $current = the version that runs, $version = the one that was not installed.
+services-update-not-installed-body = { $error } You still have Soyuz { $current }; { $version } was not installed.
+services-update-installing = Downloading Soyuz { $version }
+services-update-installing-body = Soyuz restarts by itself when the update is installed.
+services-update-tui-msi = This copy was set up by the Windows installer. Update it from the Soyuz app (Settings → About & updates) or with the installer from the release page.
+# $kind: "bundle" (a macOS app bundle) | "other".
+services-update-manual = { $kind ->
+    [bundle] This copy runs from a signed app bundle, which Soyuz does not change. Download the new version and replace the app with it.
+   *[other] Soyuz cannot tell how this copy was installed, so it does not replace it. Download the new version and install it the way you installed this one.
+}
+services-update-install-no-permission-here = cannot write to { $path } ({ $error }); nothing was changed
+services-update-swap-rolled-back = the new files could not be put in place ({ $error }); every change was undone and this version is as it was
+services-update-swap-broken = the new files could not be put in place ({ $error }) and these could not be put back: { $files }. The previous files are in { $backup }; move them back into the Soyuz folder.
+services-update-install-renamed = this copy runs as “{ $name }”, a name the release does not have; give it its original name or install the new version by hand
+services-update-install-no-program = the archive does not contain { $name }
+services-update-install-not-program = { $name } in the archive is not a program for this computer; nothing was changed
+services-update-msi-bad-path = the path “{ $path }” cannot be passed to Windows Installer
+services-update-msi-cancelled = The installer was cancelled.
+services-update-msi-busy = Another Soyuz window or the terminal UI was still running, so the installer was not started. Close every Soyuz window and try again.
+services-update-msi-exit = Windows Installer ended with code { $code }.
+services-update-msi-not-started = Windows Installer could not be started: { $error }
 
 ## Linux (data)
 
@@ -333,11 +360,15 @@ services-clipboard-unavailable = the clipboard is not available (no Wayland data
 services-fm1-failed = Could not register "show in folder" (org.freedesktop.FileManager1): { $error }
 services-fm1-taken = Another app ({ $owner }) already handles "show in folder" (org.freedesktop.FileManager1). Close it or turn off its file-manager service, then turn this setting off and on again.
 
-# $kind: "system" | "flatpak" | "appimage" | "other".
+# $kind: "system" | "flatpak" | "appimage" | "scoop" | "homebrew" | "msix" | "readonly" | "other".
 services-update-package-managed = { $kind ->
-    [system] This copy of Soyuz was installed by your system's package manager. Update it there (for example with dnf, apt or your software center); Soyuz never overwrites package-managed files.
+    [system] This copy of Soyuz was installed by your system's package manager. Update it there (for example with dnf, pacman, an AUR helper or your software center); Soyuz never overwrites package-managed files.
     [flatpak] This copy of Soyuz runs as a Flatpak. Update it with “flatpak update” or your software center.
     [appimage] This copy of Soyuz runs as an AppImage. Download the new AppImage and replace the old file.
+    [scoop] This copy of Soyuz was installed with Scoop. Update it with “scoop update soyuz”; Soyuz never overwrites files Scoop manages.
+    [homebrew] This copy of Soyuz was installed with Homebrew. Update it with “brew upgrade --cask soyuz”; Soyuz never overwrites files Homebrew manages.
+    [msix] This copy of Soyuz is an MSIX package. Install the new package from the release page; Windows replaces the old one.
+    [readonly] Soyuz cannot write to the folder this copy is in, so it cannot update it. Unpack the new version over it with the rights that folder needs (on Linux, for example, “sudo tar -C /usr/local --strip-components=1 -xf <file>”).
    *[other] This copy of Soyuz cannot update itself. Install the new version the same way you installed this one.
 }
 services-update-install-not-tarball = only the Linux release tarball (.tar.gz) can be installed in place

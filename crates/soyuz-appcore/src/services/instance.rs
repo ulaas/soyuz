@@ -21,7 +21,7 @@
 //!   [`MERGE`] (Explorer starts one process per selected folder) into tabs of one window,
 //!   and raises the window with [`WindowCmd::Raise`] (the launcher granted the foreground).
 //! * [`shutdown`] drops the endpoint as soon as quitting starts, so a launch during exit
-//!   (or "Install & restart") starts a fresh process instead of talking to a dying one.
+//!   (or "Update and restart") starts a fresh process instead of talking to a dying one.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};

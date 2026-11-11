@@ -1437,14 +1437,36 @@ not available in the terminal UI; they show a short notice instead.
   Soyuz to `PATH` so `soyuz C:\some\folder` works in a terminal. Newer MSIs upgrade in place.
 - **Portable zip** — `soyuz-<version>-windows-x64-portable.zip` runs from any folder and keeps
   its settings beside the exe (see below).
-- **Updates** — Settings → *About & updates*. Enter the GitHub repository Soyuz is released
-  from (`[updates] repo`), then **Check for updates**. Soyuz fetches only the public release
-  list; it sends nothing about you. A newer release shows its notes and a **Download & verify**
-  button: the file goes to your Downloads folder, its SHA-256 must match the release's
-  `SHA256SUMS` file (or GitHub's digest), and installers must carry a valid Authenticode
-  signature or be unsigned (a broken signature deletes the download). Nothing runs until you
-  click **Run installer…** and confirm. *Check once a week* (off by default) only shows a
-  notification.
+- **Updates** — Once a day Soyuz asks GitHub's public release API whether the repository
+  in `[updates] repo` has a newer release. That is one HTTPS request with no identifiers:
+  nothing about you or your files is sent, and nothing is downloaded. Turn it off with
+  Settings → *About & updates* → *Check automatically* (`[updates] auto_check = false`).
+  **Check for updates** (on that page, in the app menu, the command palette and the About
+  window) asks at once. A newer release shows a notification and, on the page, its notes.
+  - **Update and restart** downloads the file for your copy, verifies it, installs it and
+    starts Soyuz again. You see the progress and can cancel the download. A download is
+    used only if its SHA-256 equals the one in the release's checksum file
+    (`SHA256SUMS-<os>.txt` or `<file>.sha256`) and the digest GitHub reports for the file:
+    every source that exists must agree, and at least one must exist. An installer's
+    Authenticode signature is shown for information.
+  - A **portable** copy swaps its files in place: the files in use move into a folder named
+    `.soyuz-update-old-…` next to them (deleted at the next start), the new ones take their
+    names, and if anything fails every file goes back, so the old version still starts.
+    `portable-data` is never touched.
+  - An **MSI** install closes Soyuz, runs the new MSI with Windows Installer's progress
+    window into the same folder and for the same users (an installation for all users asks
+    for administrator rights), and starts Soyuz again. Close other Soyuz windows and
+    `soyuz-tui` first. If the installer fails or you cancel it, the old version is still
+    installed and starts again with a note.
+  - Copies another tool manages are never changed by Soyuz, which tells you how to update
+    them instead: `scoop update soyuz`, `brew upgrade --cask soyuz`, your package manager
+    (rpm, AUR), `flatpak update`, a new AppImage or MSIX package. The same goes for a copy
+    in a folder you cannot write to.
+  - A zip unpacked without the `portable` file, and the macOS app bundle, get **Download**:
+    the verified file goes to your Downloads folder for you to install (an MSI can be
+    started from there with **Run installer…**).
+  - In the terminal UI the notification's button updates portable and tarball copies the
+    same way; an MSI install is updated from the app.
 - **Default file manager** — Settings → *General* (top) → **Make Soyuz the default** opens folders
   and drives from other apps, the desktop and Win+R in Soyuz. Soyuz writes an "Open in Soyuz"
   verb for `Directory` and `Drive` under `HKEY_CURRENT_USER\Software\Classes` (your account
@@ -1464,9 +1486,10 @@ you install system-wide yourself.
   `tar -C ~/.local --strip-components=1 -xf soyuz-<version>-linux-<arch>.tar.gz` (make sure
   `~/.local/bin` is on `PATH`); system-wide: the same with `sudo tar -C /usr/local …`.
   Uninstall by deleting those files. The portable mode below works on Linux too. A copy
-  installed this way updates itself: Settings → *About & updates* downloads the new tarball,
-  checks its SHA-256 checksum and offers **Install & restart** (a system-wide copy under
-  `/usr/local` needs the `sudo tar` command above instead).
+  installed this way updates itself: **Update and restart** (Settings → *About & updates*, or
+  the button of the "update available" notification) downloads the new tarball, checks its
+  SHA-256 checksum, replaces the files and restarts Soyuz. A system-wide copy under
+  `/usr/local` that you cannot write to needs the `sudo tar` command above instead.
 - **Install the RPM** — `sudo dnf install ./soyuz-<version>-1.*.<arch>.rpm` (Fedora,
   openSUSE); remove it with `sudo dnf remove soyuz`. Package-managed copies are updated by
   the package manager, never by Soyuz itself. Settings live in `~/.config/soyuz/`, the search
@@ -1628,7 +1651,8 @@ Put an empty file named `portable` next to the executable and Soyuz keeps everyt
 | `sync_reports/<profile>/*.json` | run and dry-run reports |
 | `smart_folders.toml` | smart folders (saved live queries) |
 | `index/` | the background search index (machine-local; `%LOCALAPPDATA%\soyuz\data\index` when not portable) |
-| `update-check.json` | when the weekly update check last ran |
+| `update-check.json` | when the update check last ran |
+| `update-result.json` | how the last "Update and restart" ended (shown once at the next start, then deleted) |
 
 ## Troubleshooting
 

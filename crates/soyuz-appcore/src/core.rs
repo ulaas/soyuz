@@ -619,12 +619,15 @@ impl AppCore {
         }
     }
 
-    /// A window close was cancelled (to ask first): an "Install & restart" that started
-    /// it no longer restarts; the update stays installed for the next start.
+    /// A window close was cancelled (to ask first): an "Update and restart" that started
+    /// it no longer restarts. An update that is already in place is used from the next
+    /// start; one that waits for Windows Installer is offered again on the update page.
     fn close_cancelled(&mut self) {
-        if crate::services::updates::cancel_restart() {
+        if let Some(restart) = crate::services::updates::cancel_restart() {
             self.workspaces.quitting = false;
-            self.ui.toasts.push(crate::models::toasts::Toast::info(tr!("app-restart-cancelled")));
+            let note =
+                if restart.installed() { tr!("app-restart-cancelled") } else { tr!("app-restart-cancelled-installer") };
+            self.ui.toasts.push(crate::models::toasts::Toast::info(note));
         }
     }
 
@@ -660,7 +663,7 @@ impl AppCore {
     /// The process is exiting (the close went through).
     pub fn on_exit(&mut self) {
         crate::services::instance::shutdown();
-        // An "Install & restart" now restarts.
+        // An "Update and restart" now restarts.
         crate::services::updates::arm_restart();
     }
 
