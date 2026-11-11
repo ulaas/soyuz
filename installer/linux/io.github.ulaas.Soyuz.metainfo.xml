@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.8.0" date="2026-11-11" type="development">
+      <description>
+        <p>Soyuz checks for a new version once a day and installs it in one click: Update and
+          restart downloads the release, checks it against the release's checksums, installs
+          it and starts Soyuz again. Nothing is downloaded before the click, and the check
+          can be switched off in Settings.</p>
+      </description>
+    </release>
     <release version="0.7.5" date="2026-11-08" type="development">
       <description>
         <p>The command palette starts the applications installed on the computer: type part of
