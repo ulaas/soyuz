@@ -87,6 +87,13 @@
   </requires>
 
   <releases>
+    <release version="0.8.1" date="2026-11-11" type="development">
+      <description>
+        <p>SQLite is updated for a security fix in the bundled library, and rustix for a
+          memory-safety fix. This is also the first release that Soyuz 0.8.0 can install by
+          itself with Update and restart.</p>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-11-11" type="development">
       <description>
         <p>Soyuz checks for a new version once a day and installs it in one click: Update and

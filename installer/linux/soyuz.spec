@@ -3,13 +3,13 @@
 #
 #   scripts/package.sh --rpm                       # builds the tarball, then this spec
 #   rpmbuild -bb installer/linux/soyuz.spec \
-#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.8.0"
+#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.8.1"
 #
 # The org.freedesktop.FileManager1 D-Bus activation file is deliberately NOT installed:
 # Soyuz writes it to the user's ~/.local/share/dbus-1/services/ only on opt-in
 # (docs/RELEASING.md, "Linux").
 
-%{!?soyuz_version: %global soyuz_version 0.8.0}
+%{!?soyuz_version: %global soyuz_version 0.8.1}
 %{!?soyuz_arch: %global soyuz_arch %{_arch}}
 # 1 when the tarball carries the FFmpeg runtime (scripts/package.sh --ffmpeg-dir sets it):
 # lib/soyuz/lib*.so.* go to %{_libdir}/soyuz/ (private; the exe looks in
@@ -114,6 +114,10 @@ fi
 %endif
 
 %changelog
+* Wed Nov 11 2026 The Soyuz contributors - 0.8.1-1
+- Version 0.8.1: SQLite and rustix updated for security fixes (RUSTSEC-2026-0459,
+  RUSTSEC-2026-0486).
+
 * Wed Nov 11 2026 The Soyuz contributors - 0.8.0-1
 - Version 0.8.0: a daily update check, on by default, and "Update and restart",
   which installs a release in one click.
