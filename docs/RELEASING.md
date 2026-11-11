@@ -204,7 +204,7 @@ check matches assets by OS / arch words, and `services::updates::pick_asset` onl
 
 That release is the LGPL "complete corresponding source" offer and the place users (and the
 in-app runtime download, Phase V4c) get replacement libraries from. It is published
-immediately (not a draft); app releases stay drafts for review.
+immediately too; the app release is published by the same job once its files are uploaded.
 
 ### Updating the pins
 

@@ -87,6 +87,13 @@
   </requires>
 
   <releases>
+    <release version="0.8.2" date="2026-11-12" type="development">
+      <description>
+        <p>Releases are published as soon as they are built, so the update check sees a new
+          version without waiting for a manual step. A watcher test that could fail on a busy
+          machine is steadier. Nothing changes in the app itself.</p>
+      </description>
+    </release>
     <release version="0.8.1" date="2026-11-11" type="development">
       <description>
         <p>SQLite is updated for a security fix in the bundled library, and rustix for a

@@ -113,8 +113,8 @@ jobs:
       - name: Install Linux system libraries
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
             pkg-config libasound2-dev \
             libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
             libgl1-mesa-dev libfontconfig1-dev
@@ -242,8 +242,8 @@ jobs:
       - name: Install the build tools (Linux)
         if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
             build-essential curl ca-certificates git tar xz-utils gnupg \
             nasm meson ninja-build pkg-config cmake patchelf binutils \
             zlib1g-dev libva-dev libdrm-dev \
@@ -265,7 +265,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ matrix.target }}" == win64 ]]; then
-            sudo apt-get update >/dev/null && sudo apt-get install -y --no-install-recommends mingw-w64 >/dev/null
+            sudo apt-get -o Acquire::Retries=5 update >/dev/null && sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends mingw-w64 >/dev/null
             x86_64-w64-mingw32-gcc -static -I "$OUT/include" -o "$OUT/layout_probe.exe" third_party/ffmpeg/layout_probe.c
           else
             cc -I "$OUT/include" -o "$OUT/layout_probe" third_party/ffmpeg/layout_probe.c
@@ -306,8 +306,8 @@ jobs:
     steps:
       - name: Install the 7.1 runtime libraries and a C toolchain
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
+          apt-get -o Acquire::Retries=5 update
+          apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
             ca-certificates curl git build-essential pkg-config \
             libavcodec61 libavformat61 libavutil59 libswscale8 libswresample5
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -320,7 +320,7 @@ jobs:
       - name: Layout oracle against the 7.1 headers
         run: |
           set -euo pipefail
-          apt-get install -y --no-install-recommends \
+          apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
           cc -o "$RUNNER_TEMP/layout_probe" third_party/ffmpeg/layout_probe.c
           "$RUNNER_TEMP/layout_probe" > "$RUNNER_TEMP/layout.json"
@@ -377,8 +377,8 @@ jobs:
       - name: Install Linux system libraries
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
             pkg-config libasound2-dev \
             libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
             libgl1-mesa-dev libfontconfig1-dev

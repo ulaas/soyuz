@@ -8,11 +8,17 @@
 # handled; the ffmpeg-runtime-* releases are skipped. The asset names are chosen so the
 # in-app update check (soyuz-appcore services/updates.rs, pick_asset) never picks them:
 # none starts with "soyuz-<version>-" or ends in .zip / .tar.gz / .msi / .sha256.
+#
+# release.yml publishes with GITHUB_TOKEN, which fires no `release` event for other workflows,
+# so this also runs when the Release workflow finishes for a version tag.
 name: Package manifests
 
 on:
   release:
     types: [published]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -24,13 +30,15 @@ permissions:
   contents: write
 
 concurrency:
-  group: package-manifests-${{ github.event.release.tag_name || inputs.tag }}
+  group: package-manifests-${{ github.event.release.tag_name || inputs.tag || github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
   render:
     name: Render and attach manifests
-    if: startsWith(github.event.release.tag_name || inputs.tag, 'v')
+    if: >-
+      startsWith(github.event.release.tag_name || inputs.tag || github.event.workflow_run.head_branch, 'v') &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -42,7 +50,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag || github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
@@ -68,7 +76,7 @@ jobs:
       - name: Render the manifests
         shell: bash
         env:
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag || github.event.workflow_run.head_branch }}
           PUBLISHED_AT: ${{ github.event.release.published_at }}
         run: |
           set -euo pipefail
@@ -120,5 +128,5 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag || github.event.workflow_run.head_branch }}
         run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$OUT"/*

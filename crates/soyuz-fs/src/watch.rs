@@ -765,12 +765,21 @@ mod tests {
         std::thread::sleep(Duration::from_millis(1200)); // first liveness sample
         w.debouncer.as_ref().unwrap().lock().unwatch(&dir).unwrap();
         std::fs::write(dir.join("unseen.txt"), b"1").unwrap();
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + Duration::from_secs(20);
         let mut rescanned = false;
+        let (mut written, mut n) = (Instant::now(), 0);
         while Instant::now() < deadline && !rescanned {
             if let Ok(ev) = rx.recv_timeout(Duration::from_millis(100)) {
                 assert_eq!(ev.id, id);
                 rescanned = matches!(ev.kind, WatchKind::Rescan);
+            }
+            // On a busy machine the liveness thread may take its first sample only after the
+            // write above, which then is its baseline: keep changing the directory, so a
+            // later sample sees a change whenever the first one was taken.
+            if !rescanned && written.elapsed() >= Duration::from_millis(700) {
+                n += 1;
+                std::fs::write(dir.join(format!("unseen-{n}.txt")), b"1").unwrap();
+                written = Instant::now();
             }
         }
         assert!(rescanned, "a silent watch must be reported as Rescan");
