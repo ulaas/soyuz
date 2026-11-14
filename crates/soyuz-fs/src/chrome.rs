@@ -70,6 +70,21 @@ pub fn set_dark_mode(hwnd: isize, dark: bool) -> bool {
     }
 }
 
+/// Background colour of the app's windows (Windows): what a resize shows in the part it
+/// uncovers until the next frame is presented, instead of white. Applies to every window
+/// of the app (they share one window class).
+pub fn set_background(hwnd: isize, rgb: [u8; 3]) -> bool {
+    #[cfg(windows)]
+    {
+        crate::sys::windows::chrome::set_background(hwnd, rgb)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (hwnd, rgb);
+        false
+    }
+}
+
 /// Apply a system backdrop (Windows 11 22H2+, build 22621). The window must be created
 /// transparent for the material to show through.
 pub fn set_backdrop(hwnd: isize, kind: Backdrop) -> bool {

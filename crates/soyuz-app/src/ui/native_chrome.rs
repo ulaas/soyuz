@@ -116,11 +116,22 @@ pub fn main_hwnd() -> isize {
     HWND.load(Ordering::Relaxed)
 }
 
-/// Per-frame sync: follow the theme for the DWM frame tint.
+/// Per-frame sync: follow the theme for the DWM frame tint and the window background.
 pub fn sync_theme(ctx: &Context) {
     let hwnd = HWND.load(Ordering::Relaxed);
     if hwnd == 0 {
         return;
+    }
+    // The colour Windows erases a resized window to before the next frame arrives. With a
+    // system backdrop the window hooks erase to black instead (the material shows there).
+    if !backdrop_active() {
+        let fill = ctx.global_style().visuals.panel_fill;
+        let key = egui::Id::unique("soyuz.native.background");
+        if ctx.data(|d| d.get_temp::<egui::Color32>(key)) != Some(fill) {
+            ctx.data_mut(|d| d.insert_temp(key, fill));
+            let ok = soyuz_fs::chrome::set_background(hwnd, [fill.r(), fill.g(), fill.b()]);
+            log::debug!("window background {fill:?}: {ok}");
+        }
     }
     let dark = ctx.theme() == egui::Theme::Dark;
     let key = egui::Id::unique("soyuz.native.dark");

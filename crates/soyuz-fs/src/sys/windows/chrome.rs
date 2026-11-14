@@ -10,25 +10,25 @@
 use std::ffi::c_void;
 use std::mem::{size_of, transmute, zeroed};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, Ordering};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmExtendFrameIntoClientArea, DwmSetWindowAttribute};
 use windows_sys::Win32::Graphics::Gdi::{
-    BLACK_BRUSH, FillRect, GetMonitorInfoW, GetStockObject, HBRUSH, HDC, InvalidateRect, MONITOR_DEFAULTTONEAREST,
-    MONITORINFO, MonitorFromWindow, ScreenToClient,
+    BLACK_BRUSH, CreateSolidBrush, DeleteObject, FillRect, GetMonitorInfoW, GetStockObject, HBRUSH, HDC, HGDIOBJ,
+    InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, ScreenToClient,
 };
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_STYLE, GetClientRect, GetWindowLongPtrW, GetWindowPlacement, HTCLIENT, HTMAXBUTTON, IsWindowVisible, IsZoomed,
-    SIZE_MAXIMIZED, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, STYLESTRUCT, SW_HIDE, SW_MAXIMIZE, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageW, SetWindowLongPtrW, SetWindowPlacement,
-    SetWindowPos, ShowWindow, WINDOWPLACEMENT, WM_ERASEBKGND, WM_MOUSEMOVE, WM_NCDESTROY, WM_NCHITTEST,
-    WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SIZE, WM_STYLECHANGING,
-    WS_MAXIMIZE, WS_SYSMENU,
+    GCLP_HBRBACKGROUND, GWL_STYLE, GetClientRect, GetWindowLongPtrW, GetWindowPlacement, HTCLIENT, HTMAXBUTTON,
+    IsWindowVisible, IsZoomed, SIZE_MAXIMIZED, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, STYLESTRUCT, SW_HIDE,
+    SW_MAXIMIZE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageW,
+    SetClassLongPtrW, SetWindowLongPtrW, SetWindowPlacement, SetWindowPos, ShowWindow, WINDOWPLACEMENT, WM_ERASEBKGND,
+    WM_MOUSEMOVE, WM_NCDESTROY, WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE,
+    WM_NCMOUSEMOVE, WM_SIZE, WM_STYLECHANGING, WS_MAXIMIZE, WS_SYSMENU,
 };
 
 use super::wide_str;
@@ -177,6 +177,35 @@ pub(crate) fn set_backdrop(hwnd: isize, kind: i32) -> bool {
     // SAFETY: valid window handle and a live MARGINS struct.
     let _ = unsafe { DwmExtendFrameIntoClientArea(hwnd as HWND, &margins) };
     set_attr_i32(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, kind)
+}
+
+/// The brush [`set_background`] gave the window class (0: none yet).
+static BACKGROUND_BRUSH: AtomicIsize = AtomicIsize::new(0);
+
+/// Give the class of `hwnd` a solid background brush of `rgb`. The windowing library
+/// registers its class without one, so the part of a window that a resize uncovers stays
+/// unpainted (it shows white) until the next frame is presented; with a brush Windows
+/// erases it to this colour first. The class is shared by all of the app's windows.
+pub(crate) fn set_background(hwnd: isize, rgb: [u8; 3]) -> bool {
+    if hwnd == 0 {
+        return false;
+    }
+    // COLORREF is 0x00BBGGRR.
+    let color = u32::from(rgb[0]) | u32::from(rgb[1]) << 8 | u32::from(rgb[2]) << 16;
+    // SAFETY: plain GDI / user32 calls; `hwnd` is a window of this process, the brush is
+    // owned by the class from here on, and the one it replaces is ours and no longer used.
+    unsafe {
+        let brush = CreateSolidBrush(color);
+        if brush.is_null() {
+            return false;
+        }
+        SetClassLongPtrW(hwnd as HWND, GCLP_HBRBACKGROUND, brush as isize);
+        let old = BACKGROUND_BRUSH.swap(brush as isize, Ordering::Relaxed);
+        if old != 0 {
+            DeleteObject(old as HGDIOBJ);
+        }
+    }
+    true
 }
 
 // --- Snap Layouts subclass ----------------------------------------------------------
