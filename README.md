@@ -127,7 +127,8 @@ has a `.sha256`, and `SHA256SUMS-<os>.txt` lists them all.
 | `soyuz-<version>-windows-x64.zip` | Unzip anywhere and run `soyuz.exe`. Settings go to `%APPDATA%\soyuz`. |
 | `soyuz-<version>-windows-x64-portable.zip` | Same, plus an empty `portable` file next to the exe: settings stay in `portable-data\` beside it. |
 | `soyuz-<version>-linux-x64.tar.gz` | Unpack anywhere and run `soyuz`. |
-| `soyuz-<version>-macos-arm64.tar.gz` | Apple silicon. Unpack and run `soyuz`; unsigned (right-click → Open the first time). |
+| `soyuz-<version>-macos-arm64.dmg` | Apple silicon, macOS 11 or later. Open it and drag Soyuz to Applications. Ad-hoc signed, not notarized: the first time, Control-click Soyuz → Open (or System Settings → Privacy & Security → Open Anyway). |
+| `soyuz-<version>-macos-arm64.tar.gz` | Apple silicon. Unpack and run `soyuz` from a terminal; unsigned (right-click → Open the first time). |
 
 Every package also contains `soyuz-tui` (`soyuz-tui.exe` on Windows), the terminal UI as a
 console program: run `soyuz-tui [folder]` in a terminal.
@@ -186,7 +187,16 @@ sudo apt-get install pkg-config libasound2-dev libxkbcommon-dev libwayland-dev l
   libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libfontconfig1-dev
 ```
 
-**macOS** — Xcode command-line tools.
+**macOS** — Xcode command-line tools. Packaging (Apple silicon only):
+
+```sh
+./scripts/package-macos.sh                         # dist/soyuz-<version>-macos-arm64.dmg (+ dist/Soyuz.app)
+./scripts/package-macos.sh --ffmpeg-dir ffmpeg-rt  # with the FFmpeg runtime in Contents/Frameworks
+```
+
+It builds `aarch64-apple-darwin`, assembles `Soyuz.app` (icon, `installer/macos/Info.plist`),
+signs it ad-hoc (or with `MACOS_SIGN_IDENTITY`, plus notarization with `MACOS_NOTARIZE=1`)
+and writes a compressed disk image with an Applications link; `--help` lists the options.
 
 ## Architecture
 

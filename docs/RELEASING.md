@@ -256,6 +256,39 @@ grouping). Both use `git cliff` when it is installed, only read the repository a
 commit. Commits after the newest tag go under *Unreleased*; regenerate before tagging.
 Hand edits to entries are overwritten on the next run; re-apply them afterwards.
 
+## macOS
+
+`scripts/package-macos.sh` (`--help` lists its options; runs with macOS's bash 3.2) builds
+`cargo build --release --locked --target aarch64-apple-darwin -p soyuz-app -p soyuz-tui`
+(Apple silicon only, `MACOSX_DEPLOYMENT_TARGET=11.0`) and writes to `dist/`:
+
+- `Soyuz.app`: `Contents/MacOS/soyuz` (what Finder, the Dock and Spotlight start; no
+  Terminal window) and `soyuz-tui` (the terminal UI, for a terminal), `Info.plist` from
+  `installer/macos/Info.plist` (version from `Cargo.toml`, `LSArchitecturePriority` arm64,
+  `LSMinimumSystemVersion` 11.0, the Desktop / Documents / Downloads / removable / network
+  volume and local network usage descriptions, an `LSEnvironment` `PATH` with Homebrew's
+  prefixes), `Resources/Soyuz.icns` (16–1024 px from the repository's PNG icons; the largest
+  source is 512 px, so 512@2x is upscaled), and with `--ffmpeg-dir` the FFmpeg runtime
+  thinned to arm64 in `Contents/Frameworks` (install names `@rpath/…`) with its licence texts
+  in `Contents/Resources/ffmpeg`. The script fails when a Mach-O file is not arm64-only or
+  links anything outside the system and the bundle.
+- `soyuz-<v>-macos-arm64.dmg`: the app and an `/Applications` link, UDZO-compressed, built
+  with `hdiutil`; `.sha256` and `SHA256SUMS-macos.txt` (merged with `package.ps1`'s tarball
+  entry). The in-app update check offers the disk image to a copy that runs from an app
+  bundle (it never swaps files inside a bundle).
+
+Signing is inside out (dylibs, `soyuz-tui`, then the bundle with `--deep`), with the
+hardened runtime and `installer/macos/entitlements.plist`, then `codesign --verify --deep
+--strict`. Without `MACOS_SIGN_IDENTITY` it is ad-hoc (`-s -`, `--timestamp=none`): the
+app runs, but Gatekeeper asks once on first open. With a Developer ID identity the image is
+signed too, and `MACOS_NOTARIZE=1` submits it to `notarytool` (`MACOS_NOTARY_PROFILE`, or
+`APPLE_ID` + `APPLE_TEAM_ID` + `APPLE_APP_PASSWORD`) and staples it. The *Release*
+workflow's unsigned macOS job runs it after `package.ps1`.
+
+No `CFBundleDocumentTypes`: LaunchServices passes documents and folders to an app as an
+"open documents" event, which winit does not deliver, so Soyuz is not offered as a folder
+handler in Finder (Linux declares `inode/directory` in its desktop entry).
+
 ## Linux
 
 ### Artifacts
