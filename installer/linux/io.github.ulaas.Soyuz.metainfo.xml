@@ -87,6 +87,12 @@
   </requires>
 
   <releases>
+    <release version="0.8.3" date="2026-11-15" type="development">
+      <description>
+        <p>On Windows, the part of the window that a resize uncovers shows the app's background
+          instead of flashing white.</p>
+      </description>
+    </release>
     <release version="0.8.2" date="2026-11-12" type="development">
       <description>
         <p>Releases are published as soon as they are built, so the update check sees a new
