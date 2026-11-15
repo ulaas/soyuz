@@ -1,2 +1,4 @@
 # Snapshot files of the terminal UI tests (crate::snapshot) compare byte for byte: LF on every OS.
 crates/soyuz-tui/tests/snapshots/** text eol=lf
+# The macOS Info.plist template is checked byte for byte (package_script tests): LF on every OS.
+installer/macos/Info.plist text eol=lf

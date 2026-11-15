@@ -337,8 +337,15 @@ fn installer_sources_are_consistent() {
     let entitlements = std::fs::read_to_string(root.join("installer/macos/entitlements.plist")).unwrap();
     assert!(entitlements.contains("com.apple.security.cs.disable-library-validation"));
     let release = std::fs::read_to_string(root.join(".github/workflows/release.yml")).unwrap();
-    assert!(release.contains("--entitlements installer/macos/entitlements.plist"));
-    assert!(release.contains("Contents/Frameworks"));
+    // The release's macOS job signs and stages the runtime through scripts/package-macos.sh:
+    // the dylibs in Contents/Frameworks, the app with the entitlements above.
+    assert!(release.contains("./scripts/package-macos.sh --ffmpeg-dir ffmpeg-rt"));
+    let mac = std::fs::read_to_string(root.join("scripts/package-macos.sh")).unwrap();
+    assert!(
+        mac.contains(r#"entitlements="installer/macos/entitlements.plist""#)
+            && mac.contains(r#"--entitlements "$entitlements""#)
+    );
+    assert!(mac.contains("Contents/Frameworks"));
     // The runtime goes on its own release tag, never on the app's (the update check).
     assert!(release.contains(r#"tag="ffmpeg-runtime-$FFMPEG_VERSION""#) && release.contains("--latest=false"));
     assert!(release.contains("pattern: soyuz-*"));
