@@ -87,6 +87,12 @@
   </requires>
 
   <releases>
+    <release version="0.8.4" date="2026-11-16" type="development">
+      <description>
+        <p>Soyuz for the Mac: Soyuz.app for Apple silicon in a disk image, signed with a
+          Developer ID and notarized, which updates itself in place. No change on Linux.</p>
+      </description>
+    </release>
     <release version="0.8.3" date="2026-11-15" type="development">
       <description>
         <p>On Windows, the part of the window that a resize uncovers shows the app's background
