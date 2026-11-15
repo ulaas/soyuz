@@ -71,13 +71,32 @@ impl MacBin {
     pub(crate) fn list(&self) -> Vec<TrashItem> {
         let known = self.idx().entries();
         let mut out = Vec::new();
-        let Ok(rd) = std::fs::read_dir(&self.root) else { return out };
-        for de in rd.flatten() {
-            let id = de.file_name().to_string_lossy().into_owned();
+        let names: Vec<std::ffi::OsString> = match std::fs::read_dir(&self.root) {
+            Ok(rd) => rd.flatten().map(|de| de.file_name()).collect(),
+            // macOS privacy protection: listing `~/.Trash` needs Full Disk Access, while
+            // moving into it and reaching a known name inside it do not. Show what this
+            // index put there instead of an empty trash.
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                log::warn!(
+                    "trash: {} cannot be listed ({e}); showing only items Soyuz moved there \
+                     (grant Soyuz Full Disk Access to see everything)",
+                    self.root.display()
+                );
+                known
+                    .keys()
+                    .map(PathBuf::from)
+                    .filter(|p| p.parent() == Some(self.root.as_path()))
+                    .filter_map(|p| p.file_name().map(ToOwned::to_owned))
+                    .collect()
+            }
+            Err(_) => return out,
+        };
+        for name in names {
+            let id = name.to_string_lossy().into_owned();
             if IGNORED.contains(&id.as_str()) {
                 continue;
             }
-            let p = de.path();
+            let p = self.root.join(&name);
             let Ok(e) = crate::list::stat(&p, false) else { continue };
             let item = match known.get(&p.to_string_lossy().into_owned()) {
                 Some(k) => TrashItem {
@@ -279,5 +298,31 @@ mod tests {
         .unwrap();
         assert_eq!(n, 1);
         assert!(bin.list().is_empty());
+    }
+
+    /// A trash folder that can be entered but not listed (macOS privacy protection on
+    /// `~/.Trash` without Full Disk Access) still shows what Soyuz moved there.
+    #[cfg(unix)]
+    #[test]
+    fn unlistable_bin_falls_back_to_the_index() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let bin = MacBin { root: d.path().join(".Trash"), index: d.path().join("idx").join("trash-index.json") };
+        let f = d.path().join("a.txt");
+        std::fs::write(&f, b"1").unwrap();
+        let item = bin.trash(&f).unwrap();
+        std::fs::write(bin.root.join("foreign.bin"), b"zz").unwrap();
+        std::fs::set_permissions(&bin.root, std::fs::Permissions::from_mode(0o300)).unwrap();
+        if std::fs::read_dir(&bin.root).is_ok() {
+            // Running as root: permissions do not apply.
+            std::fs::set_permissions(&bin.root, std::fs::Permissions::from_mode(0o700)).unwrap();
+            return;
+        }
+        let items = bin.list();
+        assert_eq!(items.len(), 1, "only the indexed item is reachable");
+        assert_eq!(items[0].id, item.id);
+        assert_eq!(items[0].original, f);
+        assert_eq!(bin.restore(&items[0], None).unwrap(), f);
+        std::fs::set_permissions(&bin.root, std::fs::Permissions::from_mode(0o700)).unwrap();
     }
 }
