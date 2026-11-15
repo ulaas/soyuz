@@ -311,6 +311,9 @@ pub fn pick_asset_for<'a>(release: &'a Release, os: &str, arch: &str, kind: Inst
         InstallKind::WindowsMsi { .. } => &[(".msi", None)],
         InstallKind::WindowsPortable | InstallKind::Scoop => &[(".zip", Some(true))],
         InstallKind::Tarball | InstallKind::MacArchive | InstallKind::Homebrew => &[(".tar.gz", None), (".tgz", None)],
+        // A macOS app bundle (the only `Manual` copy there): the disk image, else the
+        // zipped bundle; never the tarball of bare executables (they start in Terminal).
+        InstallKind::Manual if os == "macos" => &[(".dmg", None), (".zip", Some(false)), (".zip", None)],
         _ => return super::pick_asset(release, os, arch, false),
     };
     super::pick_in_order(release, os, arch, order)
@@ -505,6 +508,19 @@ mod tests {
         assert_eq!(name("macos", "aarch64", MacArchive), Some("soyuz-0.8.0-macos-arm64.tar.gz"));
         assert_eq!(name("macos", "aarch64", Homebrew), Some("soyuz-0.8.0-macos-arm64.tar.gz"));
         assert_eq!(name("macos", "aarch64", Manual), Some("soyuz-0.8.0-macos-universal.zip"), "the app bundle");
+        let bundle =
+            |names: &[&str]| pick_asset_for(&release(names), "macos", "aarch64", Manual).map(|a| a.name.clone());
+        assert_eq!(
+            bundle(&[
+                "soyuz-0.8.0-macos-arm64.tar.gz",
+                "soyuz-0.8.0-macos-arm64.dmg",
+                "soyuz-0.8.0-macos-universal.zip"
+            ])
+            .as_deref(),
+            Some("soyuz-0.8.0-macos-arm64.dmg"),
+            "the disk image first"
+        );
+        assert_eq!(bundle(&["soyuz-0.8.0-macos-arm64.tar.gz"]), None, "never the bare executables");
         assert_eq!(name("macos", "x86_64", MacArchive), None, "no Intel tarball: nothing to swap in");
 
         // A copy that installs itself never falls back to another format: an MSI install
