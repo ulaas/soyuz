@@ -18,12 +18,18 @@
 //! * **How it installs** depends on how this copy was installed ([`kind`]):
 //!   the Linux tarball replaces its files by atomic renames ([`install_tarball_to`]); the
 //!   Windows portable zip and the macOS tarball are swapped in place with a full roll
-//!   back on failure ([`swap`]); an MSI install runs the next MSI through a helper that
-//!   starts Soyuz again ([`msi`]). Copies owned by a package manager (Scoop, Homebrew,
+//!   back on failure ([`swap`]); a Developer ID signed `Soyuz.app` is replaced as a whole
+//!   by the bundle in the release's disk image, after its identity, version, signature,
+//!   team and notarization are checked (`bundle`, macOS); an MSI install runs the next
+//!   MSI through a helper that starts Soyuz again ([`msi`]). Copies owned by a package manager (Scoop, Homebrew,
 //!   rpm / AUR, Flatpak, AppImage, MSIX) or in a folder Soyuz cannot write to are never
 //!   touched: the user is told how to update them ([`how_to_update`]).
 //! * **Restart.** [`request_restart`] + [`take_restart`] / [`exec_restart`] start the new
 //!   build once the app has closed the normal way (pending jobs are asked about).
+//! * **Test feed (debug builds only).** `SOYUZ_UPDATE_FEED=<url>` makes the check read
+//!   that Releases JSON instead of GitHub's, and accepts `http://` loopback downloads from
+//!   it, to drive a real update end to end against a local server. A build without
+//!   debug assertions never reads the variable.
 //!
 //! Network work runs on short-lived worker threads with their own tiny tokio runtime; the
 //! UI reads a shared [`Phase`] snapshot and is woken with `request_repaint`.
@@ -42,14 +48,16 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use soyuz_fs::integration::Signature;
 
+#[cfg(target_os = "macos")]
+pub mod bundle;
 pub mod ffmpeg_runtime;
 pub mod kind;
 pub mod msi;
 pub mod swap;
 
 pub use kind::{
-    InstallFacts, InstallKind, asset_for_this_copy, detect_install, how_to_update, install_kind, install_kind_for,
-    install_kind_with, pick_asset_for, running_exe, self_update_note,
+    BundleBlock, InstallFacts, InstallKind, asset_for_this_copy, bundle_of, detect_install, how_to_update,
+    install_kind, install_kind_for, install_kind_with, pick_asset_for, running_exe, self_update_note,
 };
 pub use msi::InstallerPlan;
 
@@ -262,10 +270,26 @@ pub struct Release {
     pub assets: Vec<Asset>,
 }
 
+/// The Releases JSON URL of the debug-build test feed (`SOYUZ_UPDATE_FEED`), if set.
+/// Always `None` in a build without debug assertions.
+fn test_feed() -> Option<String> {
+    if cfg!(debug_assertions) { std::env::var("SOYUZ_UPDATE_FEED").ok().filter(|u| !u.trim().is_empty()) } else { None }
+}
+
+/// Whether a release asset may be downloaded from `url`: `https://`, or (only with the
+/// debug-build test feed) plain HTTP on the loopback interface.
+fn asset_url_ok(url: &str) -> bool {
+    url.starts_with("https://")
+        || (test_feed().is_some()
+            && ["http://127.0.0.1:", "http://127.0.0.1/", "http://localhost:", "http://localhost/"]
+                .iter()
+                .any(|p| url.starts_with(p)))
+}
+
 /// The `https://` assets of a release, with GitHub's digest when it reports one.
 fn convert_assets(raw: Vec<RawAsset>) -> Vec<Asset> {
     raw.into_iter()
-        .filter(|a| a.browser_download_url.starts_with("https://"))
+        .filter(|a| asset_url_ok(&a.browser_download_url))
         .map(|a| Asset {
             sha256: a
                 .digest
@@ -600,7 +624,8 @@ async fn get_text(client: &reqwest::Client, url: &str, limit: usize) -> Result<S
 async fn fetch_latest(repo: &str, prereleases: bool) -> Result<Release, String> {
     let (owner, name) = parse_repo(repo)?;
     let client = client()?;
-    let json = get_text(&client, &api_url(&owner, &name, prereleases), MAX_JSON).await?;
+    let url = test_feed().unwrap_or_else(|| api_url(&owner, &name, prereleases));
+    let json = get_text(&client, &url, MAX_JSON).await?;
     parse_releases(&json, prereleases)
 }
 
@@ -802,7 +827,7 @@ fn install_worker(
     match &result {
         // The helper and the MSI stay until Windows Installer is done.
         Ok(Restart::Installer(_)) => {}
-        Ok(Restart::Exec(_)) => {
+        Ok(Restart::Exec(_) | Restart::Relaunch(_)) => {
             let _ = std::fs::remove_dir_all(&work);
             // The new build says so when it starts.
             msi::write_result(
@@ -839,6 +864,16 @@ pub fn install_downloaded(
         InstallKind::MacArchive => {
             swap::install_archive_to(path, sha256, exe, swap::Payload::MacTarball, arch).map(Restart::Exec)
         }
+        #[cfg(target_os = "macos")]
+        InstallKind::MacBundle => bundle::install_dmg(path, sha256, exe, work, version).map(|app| {
+            // The terminal UI starts its own new executable in the terminal it runs in;
+            // the app is started again by LaunchServices.
+            if exe.file_name().is_some_and(|n| n == "soyuz-tui") {
+                Restart::Exec(exe.to_path_buf())
+            } else {
+                Restart::Relaunch(app)
+            }
+        }),
         InstallKind::WindowsMsi { per_machine } => {
             msi::prepare(work, path.to_path_buf(), sha256.to_string(), exe, per_machine, version.to_string())
                 .map(|plan| Restart::Installer(Box::new(plan)))
@@ -1411,12 +1446,15 @@ pub enum Restart {
     Exec(PathBuf),
     /// An MSI install: start the helper that runs Windows Installer and then Soyuz.
     Installer(Box<InstallerPlan>),
+    /// macOS: the new app bundle is in place at this path; open it again once this
+    /// process has ended.
+    Relaunch(PathBuf),
 }
 
 impl Restart {
     /// The update is already installed (a restart only switches to it).
     pub fn installed(&self) -> bool {
-        matches!(self, Restart::Exec(_))
+        matches!(self, Restart::Exec(_) | Restart::Relaunch(_))
     }
 }
 
@@ -1463,12 +1501,26 @@ pub fn restart_now() {
 /// Carry out `restart` and end this process. [`Restart::Exec`] starts the executable
 /// with this process's arguments: on unix the process image is replaced (`execv`, same
 /// PID), elsewhere a new process is spawned. [`Restart::Installer`] starts the update
-/// helper. Returns only on failure.
+/// helper; [`Restart::Relaunch`] a detached helper that opens the app bundle once this
+/// process is gone. Returns only on failure.
 pub fn exec_restart(restart: &Restart) -> std::io::Error {
     let exe = match restart {
         Restart::Exec(exe) => exe,
         Restart::Installer(plan) => {
             return match msi::spawn_helper(plan) {
+                Ok(()) => std::process::exit(0),
+                Err(e) => e,
+            };
+        }
+        Restart::Relaunch(app) => {
+            #[cfg(target_os = "macos")]
+            let started = bundle::spawn_relaunch(app);
+            #[cfg(not(target_os = "macos"))]
+            let started = Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                format!("cannot open {} here", app.display()),
+            ));
+            return match started {
                 Ok(()) => std::process::exit(0),
                 Err(e) => e,
             };
@@ -1560,6 +1612,13 @@ fn background(first: bool, auto: Option<(String, bool)>, wake: Wake) {
             && let Some(dir) = exe.parent()
         {
             swap::remove_leftovers(dir);
+        }
+        #[cfg(target_os = "macos")]
+        if kind == InstallKind::MacBundle
+            && let Ok(exe) = running_exe()
+            && let Some(app) = bundle_of(&exe)
+        {
+            bundle::remove_leftovers(app);
         }
         swap::remove_old_work_dirs();
         if let Some((version, outcome)) = msi::take_result(&soyuz_core::config::config_dir()) {

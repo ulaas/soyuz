@@ -3,15 +3,17 @@
 //!
 //! * copies Soyuz may replace itself: the Linux release tarball, the Windows portable zip
 //!   (a `portable` marker next to the exe), an MSI install (the next MSI is run into the
-//!   same folder and scope) and the macOS tarball in a folder the user can write to;
+//!   same folder and scope), the macOS tarball in a folder the user can write to, and a
+//!   Developer ID signed `Soyuz.app` in a folder the user can write to (the whole bundle
+//!   is swapped for the one in the release's disk image);
 //! * copies something else owns (Scoop, Homebrew, a distribution package, Flatpak,
 //!   AppImage, MSIX) or that sit in a folder Soyuz cannot write to: never touched. The
 //!   user is told how to update them ([`how_to_update`]);
-//! * anything else (a plain zip without the marker, a macOS app bundle, a build folder):
-//!   the download is verified and the user installs it.
+//! * anything else (a plain zip without the marker, an app bundle Soyuz may not replace,
+//!   [`BundleBlock`], a build folder): the download is verified and the user installs it.
 //!
 //! The decision is a pure function of the executable's path, a few environment variables
-//! and three facts read off the UI thread ([`InstallFacts`]), so every case is tested on
+//! and the facts read off the UI thread ([`InstallFacts`]), so every case is tested on
 //! any host.
 
 use std::ffi::OsString;
@@ -41,6 +43,13 @@ pub enum InstallKind {
     /// macOS, unpacked from the release tarball into a folder the user can write to:
     /// swapped in place like the portable zip.
     MacArchive,
+    /// macOS, a `Soyuz.app` signed with a Developer ID, in a folder the user can write
+    /// to: the release's disk image is checked and the whole bundle is swapped for the
+    /// one in it (`super::bundle`).
+    MacBundle,
+    /// macOS, a `Soyuz.app` that is not replaced in place (why: [`BundleBlock`]): the
+    /// disk image is offered to install by hand.
+    MacBundleManual(BundleBlock),
     /// Windows, installed by Scoop (`scoop update soyuz`).
     Scoop,
     /// macOS, installed by Homebrew (`brew upgrade --cask soyuz`).
@@ -64,12 +73,13 @@ impl InstallKind {
                 | InstallKind::WindowsPortable
                 | InstallKind::WindowsMsi { .. }
                 | InstallKind::MacArchive
+                | InstallKind::MacBundle
         )
     }
 
     /// Something else updates this copy; Soyuz never downloads or installs for it.
     pub fn managed(self) -> bool {
-        !self.self_installs() && self != InstallKind::Manual
+        !self.self_installs() && !matches!(self, InstallKind::Manual | InstallKind::MacBundleManual(_))
     }
 
     /// `$kind` selector of `services-update-package-managed`.
@@ -87,6 +97,33 @@ impl InstallKind {
     }
 }
 
+/// Why a macOS app bundle is not replaced in place ([`InstallKind::MacBundleManual`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BundleBlock {
+    /// Ad-hoc signed or unsigned: there is no Developer ID team to hold the update to.
+    Unsigned,
+    /// Started straight from a quarantined download: macOS runs it from a read-only,
+    /// randomized App Translocation path.
+    Translocated,
+    /// On a read-only volume (for example the mounted disk image itself).
+    ReadOnlyVolume,
+    /// This user cannot create files in the folder that holds the bundle (an
+    /// administrator's `/Applications`): Soyuz never asks for administrator rights.
+    FolderNotWritable,
+}
+
+impl BundleBlock {
+    /// `$why` selector of `services-update-bundle-manual`.
+    pub fn key(self) -> &'static str {
+        match self {
+            BundleBlock::Unsigned => "unsigned",
+            BundleBlock::Translocated => "translocated",
+            BundleBlock::ReadOnlyVolume => "readonly-volume",
+            BundleBlock::FolderNotWritable => "readonly-folder",
+        }
+    }
+}
+
 /// What the path alone does not say (read by [`detect_install`] on a worker thread).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InstallFacts {
@@ -94,15 +131,37 @@ pub struct InstallFacts {
     pub portable: bool,
     /// The MSI installations recorded in the registry (Windows).
     pub msi: Vec<MsiInstall>,
-    /// A file can be created in the executable's folder.
+    /// A file can be created in the executable's folder (for a macOS app bundle: in the
+    /// folder that holds the bundle).
     pub writable: bool,
+    /// macOS app bundle: the Developer ID team its signature names (`None`: ad-hoc
+    /// signed, unsigned, or not known).
+    pub team: Option<String>,
+    /// macOS app bundle: it is on a read-only volume.
+    pub read_only_volume: bool,
 }
 
 impl Default for InstallFacts {
-    /// Nothing known: no marker, no MSI, a writable folder.
+    /// Nothing known: no marker, no MSI, a writable folder, no signature.
     fn default() -> Self {
-        InstallFacts { portable: false, msi: Vec::new(), writable: true }
+        InstallFacts { portable: false, msi: Vec::new(), writable: true, team: None, read_only_volume: false }
     }
+}
+
+/// The app bundle (`…/Name.app`) whose main folder `Contents/MacOS` holds `exe`.
+pub fn bundle_of(exe: &Path) -> Option<&Path> {
+    let macos = exe.parent()?;
+    let contents = macos.parent()?;
+    let app = contents.parent()?;
+    let named = |p: &Path, n: &str| p.file_name().is_some_and(|f| f == n);
+    let is_app = app.extension().is_some_and(|e| e.eq_ignore_ascii_case("app"));
+    (named(macos, "MacOS") && named(contents, "Contents") && is_app && app.parent().is_some()).then_some(app)
+}
+
+/// macOS App Translocation: a quarantined app opened where it was downloaded runs from a
+/// read-only copy under `/private/var/folders/…/AppTranslocation/<uuid>/d/`.
+pub fn is_translocated(path: &Path) -> bool {
+    path.to_string_lossy().contains("/AppTranslocation/")
 }
 
 /// The path components of `p`, lower-case. Split by hand on both separators:
@@ -174,8 +233,23 @@ fn macos_kind(exe: &Path, facts: &InstallFacts) -> InstallKind {
     let s = exe.to_string_lossy();
     if s.contains("/Caskroom/") || s.contains("/Cellar/") || s.starts_with("/opt/homebrew/") {
         InstallKind::Homebrew
+    } else if bundle_of(exe).is_some() {
+        // Files inside a signed bundle are never replaced one by one (that would break its
+        // seal): the whole bundle is swapped, when it is safe to.
+        let block = if is_translocated(exe) {
+            Some(BundleBlock::Translocated)
+        } else if facts.read_only_volume {
+            Some(BundleBlock::ReadOnlyVolume)
+        } else if facts.team.is_none() {
+            Some(BundleBlock::Unsigned)
+        } else if !facts.writable {
+            Some(BundleBlock::FolderNotWritable)
+        } else {
+            None
+        };
+        block.map_or(InstallKind::MacBundle, InstallKind::MacBundleManual)
     } else if s.contains(".app/Contents/") {
-        // A signed, notarized bundle: replacing files inside it would break its seal.
+        // Some other program inside a bundle: never touched.
         InstallKind::Manual
     } else if exe.starts_with("/usr") && !exe.starts_with("/usr/local") {
         InstallKind::Package
@@ -246,10 +320,24 @@ pub fn detect_install() -> InstallKind {
     let mut facts = InstallFacts {
         portable: soyuz_core::config::portable_dir(&dir).is_some(),
         msi: soyuz_fs::integration::msi_installs(),
-        writable: true,
+        ..InstallFacts::default()
     };
     let classify = |facts: &InstallFacts| install_kind_with(std::env::consts::OS, &exe, |k| std::env::var_os(k), facts);
     let mut kind = classify(&facts);
+    // An app bundle that might be swapped: its signature and the folder that holds it
+    // decide (the bundle itself is never written to).
+    #[cfg(target_os = "macos")]
+    if kind == InstallKind::MacBundleManual(BundleBlock::Unsigned)
+        && let Some(app) = bundle_of(&exe)
+    {
+        match app.parent().map(probe_dir) {
+            Some(Ok(())) => {}
+            Some(Err(e)) if e.kind() == std::io::ErrorKind::ReadOnlyFilesystem => facts.read_only_volume = true,
+            _ => facts.writable = false,
+        }
+        facts.team = super::bundle::team_of(app);
+        kind = classify(&facts);
+    }
     // Only a copy that swaps its own files needs the folder; a package manager's folder
     // is not even probed.
     if matches!(kind, InstallKind::Tarball | InstallKind::WindowsPortable | InstallKind::MacArchive)
@@ -275,14 +363,15 @@ pub fn install_kind() -> InstallKind {
 
 /// Whether a file can be created in `dir` (one is created and removed).
 pub fn dir_writable(dir: &Path) -> bool {
-    match super::create_temp_in(dir) {
-        Ok((file, path)) => {
-            drop(file);
-            let _ = std::fs::remove_file(path);
-            true
-        }
-        Err(_) => false,
-    }
+    probe_dir(dir).is_ok()
+}
+
+/// Create (and remove) a file in `dir`: why that fails, if it does.
+fn probe_dir(dir: &Path) -> std::io::Result<()> {
+    let (file, path) = super::create_temp_in(dir)?;
+    drop(file);
+    let _ = std::fs::remove_file(path);
+    Ok(())
 }
 
 /// What to tell the user about a copy that does not update itself: how its package
@@ -292,6 +381,7 @@ pub fn how_to_update(kind: InstallKind) -> Option<String> {
     match kind {
         k if k.self_installs() => None,
         InstallKind::Manual if cfg!(target_os = "macos") => Some(tr!("services-update-manual", kind = "bundle")),
+        InstallKind::MacBundleManual(why) => Some(tr!("services-update-bundle-manual", why = why.key())),
         InstallKind::Manual => Some(tr!("services-update-manual", kind = "other")),
         k => Some(tr!("services-update-package-managed", kind = k.key())),
     }
@@ -311,8 +401,11 @@ pub fn pick_asset_for<'a>(release: &'a Release, os: &str, arch: &str, kind: Inst
         InstallKind::WindowsMsi { .. } => &[(".msi", None)],
         InstallKind::WindowsPortable | InstallKind::Scoop => &[(".zip", Some(true))],
         InstallKind::Tarball | InstallKind::MacArchive | InstallKind::Homebrew => &[(".tar.gz", None), (".tgz", None)],
-        // A macOS app bundle (the only `Manual` copy there): the disk image, else the
-        // zipped bundle; never the tarball of bare executables (they start in Terminal).
+        // An app bundle swapped in place: exactly the disk image.
+        InstallKind::MacBundle => &[(".dmg", None)],
+        // A macOS app bundle installed by hand: the disk image, else the zipped bundle;
+        // never the tarball of bare executables (they start in Terminal).
+        InstallKind::MacBundleManual(_) => &[(".dmg", None), (".zip", Some(false)), (".zip", None)],
         InstallKind::Manual if os == "macos" => &[(".dmg", None), (".zip", Some(false)), (".zip", None)],
         _ => return super::pick_asset(release, os, arch, false),
     };
@@ -333,7 +426,7 @@ mod tests {
     }
 
     fn facts(portable: bool, writable: bool) -> InstallFacts {
-        InstallFacts { portable, msi: Vec::new(), writable }
+        InstallFacts { portable, msi: Vec::new(), writable, ..InstallFacts::default() }
     }
 
     #[test]
@@ -434,14 +527,73 @@ mod tests {
         assert_eq!(k("/opt/soyuz/soyuz", false), InstallKind::ReadOnly);
         assert_eq!(k("/opt/homebrew/Caskroom/soyuz/0.7.5/soyuz-0.7.5-macos-arm64/soyuz", true), InstallKind::Homebrew);
         assert_eq!(k("/usr/local/Caskroom/soyuz/0.7.5/soyuz-0.7.5-macos-arm64/soyuz", true), InstallKind::Homebrew);
-        assert_eq!(k("/Applications/Soyuz.app/Contents/MacOS/soyuz", true), InstallKind::Manual);
+        assert_eq!(k("/Applications/Soyuz.app/Contents/Frameworks/helper", true), InstallKind::Manual);
+    }
+
+    #[test]
+    fn macos_app_bundles() {
+        use BundleBlock::*;
+        let signed =
+            |writable: bool| InstallFacts { writable, team: Some("N6FA79GV97".into()), ..InstallFacts::default() };
+        let k = |exe: &str, f: &InstallFacts| install_kind_with("macos", Path::new(exe), none, f);
+        let app = "/Applications/Soyuz.app/Contents/MacOS/soyuz";
+        // A Developer ID signed bundle in a folder this user can write to: swapped in place,
+        // from the app and from the terminal UI inside it.
+        assert_eq!(k(app, &signed(true)), InstallKind::MacBundle);
+        assert_eq!(
+            k("/Users/me/Applications/Soyuz.app/Contents/MacOS/soyuz-tui", &signed(true)),
+            InstallKind::MacBundle
+        );
+        // Every reason not to, each with its own message.
+        assert_eq!(k(app, &signed(false)), InstallKind::MacBundleManual(FolderNotWritable));
+        assert_eq!(k(app, &InstallFacts::default()), InstallKind::MacBundleManual(Unsigned), "ad-hoc or unsigned");
+        let ro = InstallFacts { read_only_volume: true, ..signed(true) };
+        assert_eq!(
+            k("/Volumes/Soyuz 0.8.3/Soyuz.app/Contents/MacOS/soyuz", &ro),
+            InstallKind::MacBundleManual(ReadOnlyVolume)
+        );
+        let translocated = "/private/var/folders/xy/abc/T/AppTranslocation/0F1E2D3C-AAAA-BBBB-CCCC-DDDDEEEEFFFF/d/Soyuz.app/Contents/MacOS/soyuz";
+        assert_eq!(k(translocated, &signed(true)), InstallKind::MacBundleManual(Translocated));
+        // Homebrew's cask (or a link into it, resolved before this) stays Homebrew's.
+        assert_eq!(
+            k("/opt/homebrew/Caskroom/soyuz/0.8.3/Soyuz.app/Contents/MacOS/soyuz", &signed(true)),
+            InstallKind::Homebrew
+        );
+        assert_eq!(
+            k("/usr/local/Caskroom/soyuz/0.8.3/Soyuz.app/Contents/MacOS/soyuz", &signed(true)),
+            InstallKind::Homebrew
+        );
+
+        assert_eq!(bundle_of(Path::new(app)), Some(Path::new("/Applications/Soyuz.app")));
+        assert_eq!(bundle_of(Path::new("/x/Soyuz.APP/Contents/MacOS/soyuz")), Some(Path::new("/x/Soyuz.APP")));
+        for not in
+            ["/Applications/Soyuz.app/Contents/soyuz", "/x/Soyuz/Contents/MacOS/soyuz", "soyuz", "/Contents/MacOS/x"]
+        {
+            assert_eq!(bundle_of(Path::new(not)), None, "{not}");
+        }
+        // Where the app may not be swapped it is still not "managed": the disk image is
+        // offered, with the reason.
+        for why in [Unsigned, Translocated, ReadOnlyVolume, FolderNotWritable] {
+            let kind = InstallKind::MacBundleManual(why);
+            assert!(!kind.self_installs() && !kind.managed(), "{why:?}");
+            let note = how_to_update(kind).unwrap();
+            assert!(!note.is_empty() && note != how_to_update(InstallKind::Manual).unwrap(), "{why:?}: {note}");
+        }
+        assert!(how_to_update(InstallKind::MacBundleManual(Translocated)).unwrap().contains("Applications"));
+        assert!(InstallKind::MacBundle.self_installs() && how_to_update(InstallKind::MacBundle).is_none());
     }
 
     #[test]
     fn only_some_kinds_install_themselves() {
         use InstallKind::*;
-        let own =
-            [Tarball, WindowsPortable, WindowsMsi { per_machine: false }, WindowsMsi { per_machine: true }, MacArchive];
+        let own = [
+            Tarball,
+            WindowsPortable,
+            WindowsMsi { per_machine: false },
+            WindowsMsi { per_machine: true },
+            MacArchive,
+            MacBundle,
+        ];
         let managed = [Scoop, Homebrew, Package, Flatpak, AppImage, Msix, ReadOnly];
         for k in own {
             assert!(k.self_installs() && !k.managed(), "{k:?}");
@@ -521,6 +673,22 @@ mod tests {
             "the disk image first"
         );
         assert_eq!(bundle(&["soyuz-0.8.0-macos-arm64.tar.gz"]), None, "never the bare executables");
+        // A bundle that swaps itself takes the disk image and nothing else; one installed
+        // by hand is offered the same image.
+        let dmg = release(&[
+            "soyuz-0.8.0-macos-arm64.tar.gz",
+            "soyuz-0.8.0-macos-universal.zip",
+            "soyuz-0.8.0-macos-arm64.dmg",
+            "SHA256SUMS-macos.txt",
+        ]);
+        let mac = |kind| pick_asset_for(&dmg, "macos", "aarch64", kind).map(|a| a.name.as_str());
+        assert_eq!(mac(MacBundle), Some("soyuz-0.8.0-macos-arm64.dmg"));
+        assert_eq!(mac(MacBundleManual(BundleBlock::Unsigned)), Some("soyuz-0.8.0-macos-arm64.dmg"));
+        assert_eq!(name("macos", "aarch64", MacBundle), None, "no disk image: no in-place update");
+        assert_eq!(
+            name("macos", "aarch64", MacBundleManual(BundleBlock::Translocated)),
+            Some("soyuz-0.8.0-macos-universal.zip")
+        );
         assert_eq!(name("macos", "x86_64", MacArchive), None, "no Intel tarball: nothing to swap in");
 
         // A copy that installs itself never falls back to another format: an MSI install

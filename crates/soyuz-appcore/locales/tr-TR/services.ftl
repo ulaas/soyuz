@@ -306,6 +306,24 @@ services-update-manual = { $kind ->
     [bundle] Bu kopya imzalı bir uygulama paketinden çalışıyor; Soyuz bu paketi değiştirmez. Yeni sürümü indirin ve uygulamayı onunla değiştirin.
    *[other] Soyuz bu kopyanın nasıl kurulduğunu belirleyemediği için onu değiştirmez. Yeni sürümü indirin ve bunu kurduğunuz yolla kurun.
 }
+# $why: "unsigned" | "translocated" | "readonly-volume" | "readonly-folder".
+services-update-bundle-manual = { $why ->
+    [unsigned] Soyuz'un bu kopyası bir Developer ID ile imzalı değil; Soyuz bir güncellemenin aynı geliştiriciden geldiğini doğrulayamadığı için onu değiştirmez. Disk görüntüsünü indirin ve uygulamayı içindekiyle değiştirin.
+    [translocated] Bu kopya doğrudan İndirilenler klasöründen açıldığı için macOS onu geçici, salt okunur bir yerden çalıştırıyor. Soyuz'u Uygulamalar klasörüne taşıyın, oradan başlatın ve sonra güncelleyin.
+    [readonly-volume] Bu kopya salt okunur bir birimden (örneğin disk görüntüsünün kendisinden) çalışıyor, bu yüzden yerinde güncellenemez. Soyuz'u Uygulamalar klasörüne sürükleyin ve oradan başlatın.
+   *[readonly-folder] Kullanıcı hesabınız bu uygulamanın bulunduğu klasöre yazamıyor ve Soyuz yönetici yetkisi istemez. Disk görüntüsünü indirin ve uygulamayı içindekiyle değiştirin (veya bir yöneticiden isteyin).
+}
+services-update-bundle-mount = disk görüntüsü açılamadı: { $error }; hiçbir şey değiştirilmedi
+services-update-bundle-no-app = disk görüntüsünde tam olarak bir uygulama yok; hiçbir şey değiştirilmedi
+services-update-bundle-other-app = disk görüntüsündeki uygulama “{ $id }”, bu uygulama (“{ $want }”) değil; hiçbir şey değiştirilmedi
+services-update-bundle-version = disk görüntüsündeki uygulamanın sürümü { $found }, { $want } değil; hiçbir şey değiştirilmedi
+services-update-bundle-signature = disk görüntüsündeki uygulama bozuk: kod imzası doğrulanmıyor ({ $error }); hiçbir şey değiştirilmedi
+services-update-bundle-team = disk görüntüsündeki uygulama, bu kopyayı imzalayan ekibin ({ $team }) bir Developer ID'si ile imzalanmamış; hiçbir şey değiştirilmedi
+services-update-bundle-gatekeeper = macOS disk görüntüsündeki uygulamayı noter onaylı olarak kabul etmiyor ({ $error }); hiçbir şey değiştirilmedi
+services-update-bundle-unsigned = bu kopyanın, bir güncellemenin karşılaştırılacağı bir Developer ID imzası yok; hiçbir şey değiştirilmedi
+services-update-bundle-copy = yeni uygulama bunun yanına kopyalanamadı ({ $error }); hiçbir şey değiştirilmedi
+services-update-bundle-rolled-back = yeni uygulama yerine konamadı ({ $error }); bu sürüm olduğu gibi geri geldi
+services-update-bundle-broken = yeni uygulama yerine konamadı ({ $error }) ve bu sürüm geri konamadı. Eksiksiz hâli { $backup } konumunda: onu { $name } konumuna geri taşıyın.
 services-update-install-no-permission-here = { $path } konumuna yazılamıyor ({ $error }); hiçbir şey değiştirilmedi
 services-update-swap-rolled-back = yeni dosyalar yerine konamadı ({ $error }); bütün değişiklikler geri alındı, bu sürüm olduğu gibi duruyor
 services-update-swap-broken = yeni dosyalar yerine konamadı ({ $error }) ve şunlar geri konamadı: { $files }. Önceki dosyalar { $backup } klasöründe; onları Soyuz klasörüne geri taşıyın.

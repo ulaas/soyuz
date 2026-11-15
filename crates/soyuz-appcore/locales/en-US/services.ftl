@@ -336,6 +336,24 @@ services-update-manual = { $kind ->
     [bundle] This copy runs from a signed app bundle, which Soyuz does not change. Download the new version and replace the app with it.
    *[other] Soyuz cannot tell how this copy was installed, so it does not replace it. Download the new version and install it the way you installed this one.
 }
+# $why: "unsigned" | "translocated" | "readonly-volume" | "readonly-folder".
+services-update-bundle-manual = { $why ->
+    [unsigned] This copy of Soyuz is not signed with a Developer ID, so Soyuz cannot check that an update comes from the same developer and does not replace it. Download the disk image and replace the app with the one in it.
+    [translocated] macOS runs this copy from a temporary, read-only place because it was opened straight from the Downloads folder. Move Soyuz to the Applications folder, start it from there, and update it then.
+    [readonly-volume] This copy runs from a read-only volume (for example the disk image itself), so it cannot be updated in place. Drag Soyuz to the Applications folder and start it from there.
+   *[readonly-folder] Your user account cannot write to the folder this app is in, and Soyuz does not ask for administrator rights. Download the disk image and replace the app with the one in it (or ask an administrator to).
+}
+services-update-bundle-mount = the disk image could not be opened: { $error }; nothing was changed
+services-update-bundle-no-app = the disk image does not hold exactly one app; nothing was changed
+services-update-bundle-other-app = the app in the disk image is “{ $id }”, not this app (“{ $want }”); nothing was changed
+services-update-bundle-version = the app in the disk image is version { $found }, not { $want }; nothing was changed
+services-update-bundle-signature = the app in the disk image is not intact: its code signature does not verify ({ $error }); nothing was changed
+services-update-bundle-team = the app in the disk image is not signed with a Developer ID of the team that signed this copy ({ $team }); nothing was changed
+services-update-bundle-gatekeeper = macOS does not accept the app in the disk image as notarized ({ $error }); nothing was changed
+services-update-bundle-unsigned = this copy has no Developer ID signature to check an update against; nothing was changed
+services-update-bundle-copy = the new app could not be copied next to this one ({ $error }); nothing was changed
+services-update-bundle-rolled-back = the new app could not be put in place ({ $error }); this version is back as it was
+services-update-bundle-broken = the new app could not be put in place ({ $error }) and this version could not be put back. It is complete at { $backup }: move it back to { $name }.
 services-update-install-no-permission-here = cannot write to { $path } ({ $error }); nothing was changed
 services-update-swap-rolled-back = the new files could not be put in place ({ $error }); every change was undone and this version is as it was
 services-update-swap-broken = the new files could not be put in place ({ $error }) and these could not be put back: { $files }. The previous files are in { $backup }; move them back into the Soyuz folder.
