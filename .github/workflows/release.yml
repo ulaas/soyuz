@@ -4,8 +4,9 @@
 # have never run against a real certificate:
 #   Windows Authenticode: WINDOWS_CERT_PFX_BASE64, WINDOWS_CERT_PASSWORD
 #                         (optional WINDOWS_TIMESTAMP_URL, default DigiCert's RFC 3161 TSA)
-#   macOS notarization:   MACOS_CERT_P12_BASE64, MACOS_CERT_PASSWORD, MACOS_SIGN_IDENTITY,
-#                         APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD
+#   macOS Developer ID:   MACOS_CERTIFICATE_P12 (base64), MACOS_CERTIFICATE_PASSWORD,
+#                         MACOS_CODESIGN_IDENTITY, and an App Store Connect API key for
+#                         notarization: MACOS_NOTARY_KEY_P8, MACOS_NOTARY_KEY_ID, MACOS_NOTARY_ISSUER
 # Every package carries two executables: soyuz (the app) and soyuz-tui (the terminal UI as a
 # console program). Both are built in one cargo run and both are signed.
 # Windows artifacts: soyuz-<v>-windows-x64.zip, ...-portable.zip, ...-windows-x64.msi (WiX v5),
@@ -164,16 +165,16 @@ jobs:
         env:
           WIN_PFX: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
           WIN_PW: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-          MAC_P12: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-          MAC_PW: ${{ secrets.MACOS_CERT_PASSWORD }}
-          MAC_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          MAC_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MAC_PW: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MAC_ID: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
         run: |
           win=false; mac=false
           [[ -n "$WIN_PFX" && -n "$WIN_PW" ]] && win=true
-          [[ -n "$MAC_P12" && -n "$MAC_PW" && -n "$MAC_ID" && -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_PASSWORD" ]] && mac=true
+          [[ -n "$MAC_P12" && -n "$MAC_PW" && -n "$MAC_ID" && -n "$NOTARY_KEY" && -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER" ]] && mac=true
           echo "windows=$win" >> "$GITHUB_OUTPUT"
           echo "macos=$mac" >> "$GITHUB_OUTPUT"
           echo "Windows signing configured: $win; macOS notarization configured: $mac"
@@ -324,13 +325,13 @@ jobs:
             dist/SHA256SUMS-linux.txt
           if-no-files-found: error
 
-  # Without Apple credentials: a plain, unsigned macOS arm64 tarball (Gatekeeper asks the
-  # user to confirm on first launch). Replaced by the signed universal job below once the
-  # secrets exist.
-  macos-unsigned:
-    name: macOS arm64 (UNSIGNED)
+  # macOS arm64: the tarball (Homebrew cask) and Soyuz.app in a drag-to-install disk image.
+  # With the Developer ID secrets (docs/RELEASING.md) the app and the image are signed with
+  # the hardened runtime, notarized and stapled; without them the app is signed ad hoc and
+  # Gatekeeper asks the user to confirm on first launch.
+  macos:
+    name: macOS arm64 (${{ needs.signing-config.outputs.macos == 'true' && 'signed + notarized' || 'UNSIGNED' }})
     needs: [signing-config, ffmpeg]
-    if: needs.signing-config.outputs.macos != 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -345,126 +346,54 @@ jobs:
       - name: Build and package
         shell: pwsh
         run: ./scripts/package.ps1 -FfmpegDir ffmpeg-rt
-      # Soyuz.app (arm64, ad-hoc signed) in a drag-to-install disk image, next to the
-      # tarball; SHA256SUMS-macos.txt lists both.
+      - name: Import the Developer ID certificate and the notary key into a temporary keychain
+        if: needs.signing-config.outputs.macos == 'true'
+        env:
+          P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kc_pw="$(uuidgen)"
+          security create-keychain -p "$kc_pw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kc_pw" "$kc"
+          printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$P12_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kc_pw" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$kc" | grep -qF "$IDENTITY"
+          printf '%s\n' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
+          xcrun notarytool store-credentials ci-notary --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --keychain "$kc"
+          rm -f "$RUNNER_TEMP/notary.p8"
+          {
+            echo "MACOS_SIGN_IDENTITY=$IDENTITY"
+            echo "MACOS_NOTARY_PROFILE=ci-notary"
+            echo "MACOS_NOTARIZE=1"
+          } >> "$GITHUB_ENV"
+      # Soyuz.app (arm64) in a drag-to-install disk image, next to the tarball;
+      # SHA256SUMS-macos.txt lists both. Signs and notarizes when the step above ran.
       - name: App bundle and disk image
         run: ./scripts/package-macos.sh --ffmpeg-dir ffmpeg-rt
+      - name: Gatekeeper accepts the disk image
+        if: needs.signing-config.outputs.macos == 'true'
+        run: spctl --assess --type open --context context:primary-signature --verbose=2 dist/*.dmg
+      - name: Remove the temporary keychain
+        if: always() && needs.signing-config.outputs.macos == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: soyuz-macos-arm64-unsigned
+          name: soyuz-macos-arm64
           path: |
             dist/*.tar.gz
             dist/*.dmg
             dist/*.sha256
-            dist/SHA256SUMS-macos.txt
-          if-no-files-found: error
-
-  macos:
-    name: macOS universal (signed + notarized)
-    needs: [signing-config, ffmpeg]
-    # Runs only once Apple Developer ID credentials exist; see docs/RELEASING.md.
-    if: needs.signing-config.outputs.macos == 'true'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - name: Install cargo-bundle
-        run: cargo install cargo-bundle --locked
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ffmpeg-macos-universal
-          path: ffmpeg-rt
-      - name: Build .app bundle (skeleton)
-        run: |
-          set -euo pipefail
-          cargo build --release --locked -p soyuz-app -p soyuz-tui --target aarch64-apple-darwin
-          cargo build --release --locked -p soyuz-app -p soyuz-tui --target x86_64-apple-darwin
-          cargo bundle --release -p soyuz-app --target aarch64-apple-darwin
-          APP="target/aarch64-apple-darwin/release/bundle/osx/Soyuz.app"
-          lipo -create -output "$APP/Contents/MacOS/soyuz" \
-            target/aarch64-apple-darwin/release/soyuz target/x86_64-apple-darwin/release/soyuz
-          # The terminal UI: a command-line tool next to the app binary (signed with the
-          # bundle below); run it as Soyuz.app/Contents/MacOS/soyuz-tui.
-          lipo -create -output "$APP/Contents/MacOS/soyuz-tui" \
-            target/aarch64-apple-darwin/release/soyuz-tui target/x86_64-apple-darwin/release/soyuz-tui
-          # The FFmpeg runtime (universal dylibs, install names @rpath/…, LC_RPATH
-          # @loader_path): Contents/Frameworks is where the app looks (<exe>/../Frameworks).
-          # Its licence texts go to Contents/Resources/ffmpeg.
-          mkdir -p "$APP/Contents/Frameworks" "$APP/Contents/Resources/ffmpeg"
-          cp ffmpeg-rt/*.dylib "$APP/Contents/Frameworks/"
-          cp ffmpeg-rt/LICENSE.md ffmpeg-rt/BUILD.txt ffmpeg-rt/SOURCES.txt "$APP/Contents/Resources/ffmpeg/"
-          lipo -info "$APP/Contents/Frameworks/"*.dylib
-          echo "APP=$APP" >> "$GITHUB_ENV"
-
-      - name: Import Developer ID certificate into a temporary keychain
-        env:
-          CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-        run: |
-          set -euo pipefail
-          KC="$RUNNER_TEMP/signing.keychain-db"
-          KC_PW="$(uuidgen)"
-          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security create-keychain -p "$KC_PW" "$KC"
-          security set-keychain-settings -lut 21600 "$KC"
-          security unlock-keychain -p "$KC_PW" "$KC"
-          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KC_PW" "$KC"
-          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          rm -f "$RUNNER_TEMP/cert.p12"
-
-      - name: codesign (hardened runtime)
-        env:
-          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
-        run: |
-          set -euo pipefail
-          # Inside out, every nested code object explicitly (Apple discourages --deep): the
-          # FFmpeg dylibs (replacing the build's ad-hoc signatures), the helper tool, then
-          # the bundle. The app gets installer/macos/entitlements.plist: with the hardened
-          # runtime, com.apple.security.cs.disable-library-validation lets it load a
-          # runtime the user supplied (config dir / [media] ffmpeg_dir) or pdfium; the
-          # bundled dylibs carry the same Team ID and would load without it.
-          for lib in "$APP"/Contents/Frameworks/*.dylib; do
-            codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$lib"
-          done
-          codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP/Contents/MacOS/soyuz-tui"
-          codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
-            --entitlements installer/macos/entitlements.plist "$APP"
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          codesign --display --entitlements - "$APP" | grep -q disable-library-validation
-
-      - name: Notarize and staple
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: |
-          set -euo pipefail
-          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          mkdir -p dist
-          ZIP="dist/soyuz-$VERSION-macos-universal.zip"
-          ditto -c -k --keepParent "$APP" "$ZIP"
-          xcrun notarytool submit "$ZIP" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_PASSWORD" --wait
-          xcrun stapler staple "$APP"
-          rm "$ZIP"
-          ditto -c -k --keepParent "$APP" "$ZIP"
-          spctl --assess --type execute --verbose "$APP"
-          shasum -a 256 dist/*.zip > dist/SHA256SUMS-macos.txt
-
-      - name: Remove temporary keychain
-        if: always()
-        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: soyuz-macos-universal
-          path: |
-            dist/*.zip
             dist/SHA256SUMS-macos.txt
           if-no-files-found: error
 
@@ -473,7 +402,7 @@ jobs:
   # become pre-releases. Package manifests follow from package-manifests.yml.
   publish:
     name: Publish GitHub Release
-    needs: [ffmpeg, windows, linux, macos-unsigned, macos]
+    needs: [ffmpeg, windows, linux, macos]
     if: >-
       always() && startsWith(github.ref, 'refs/tags/v') &&
       needs.ffmpeg.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success'

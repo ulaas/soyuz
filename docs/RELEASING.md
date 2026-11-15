@@ -128,8 +128,9 @@ changing the installer or the packaging scripts.
   `soyuz-<v>-macos-arm64.tar.gz` (plus `.sha256` files) with `scripts/package.ps1`; download
   them from the run's *Artifacts*.
 - **Tags `v*`** (*Release*): Windows zip / portable zip / MSI (Authenticode-signed when the
-  secrets exist), a Linux x86_64 PREFIX tarball and `.rpm` (see "Linux" below), and either the signed + notarized macOS universal
-  app (Apple secrets) or an unsigned macOS arm64 tarball. The first job, `ci-gate`, waits
+  secrets exist), a Linux x86_64 PREFIX tarball and `.rpm` (see "Linux" below), and the macOS arm64 tarball plus `Soyuz.app` in a
+  disk image (signed with the Developer ID, notarized and stapled when the Apple secrets exist;
+  ad hoc otherwise). The first job, `ci-gate`, waits
   until *CI* has passed on the tagged commit (polling once a minute), so the commit and the tag
   can be pushed together. It fails when that CI run fails or is cancelled (re-run CI, then the
   release), or when no CI run appears within 10 minutes (a tag on a commit that never reached
@@ -283,7 +284,16 @@ hardened runtime and `installer/macos/entitlements.plist`, then `codesign --veri
 app runs, but Gatekeeper asks once on first open. With a Developer ID identity the image is
 signed too, and `MACOS_NOTARIZE=1` submits it to `notarytool` (`MACOS_NOTARY_PROFILE`, or
 `APPLE_ID` + `APPLE_TEAM_ID` + `APPLE_APP_PASSWORD`) and staples it. The *Release*
-workflow's unsigned macOS job runs it after `package.ps1`.
+workflow's macOS job runs it after `package.ps1`.
+
+In the *Release* workflow, signing switches on when the repository has these secrets:
+`MACOS_CERTIFICATE_P12` (the Developer ID Application certificate and its key, base64 of a
+`.p12`), `MACOS_CERTIFICATE_PASSWORD`, `MACOS_CODESIGN_IDENTITY` (such as
+`Developer ID Application: Name (TEAMID)`), and an App Store Connect API key for notarization:
+`MACOS_NOTARY_KEY_P8` (the `.p8` file's text), `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER`.
+The job imports the certificate into a temporary keychain, saves the API key there as the
+`notarytool` profile `ci-notary`, runs the script with `MACOS_NOTARIZE=1`, checks the image with
+`spctl` and deletes the keychain.
 
 No `CFBundleDocumentTypes`: LaunchServices passes documents and folders to an app as an
 "open documents" event, which winit does not deliver, so Soyuz is not offered as a folder
