@@ -15,10 +15,12 @@
 //!    the team that signed the running copy ([`requirement`]), and Gatekeeper must accept
 //!    it (`spctl --assess`: notarized).
 //! 3. It is copied (`ditto`) to a hidden staging folder next to the installed bundle (same
-//!    volume), checked again there, and swapped in by two renames ([`swap_bundle`]):
-//!    installed → backup, staged → installed. Any failure puts the old bundle back and
-//!    removes the copy, so the installed path never holds a half-copied bundle. The backup
-//!    is then deleted.
+//!    volume), checked again there, and exchanged with the installed bundle in one atomic
+//!    step (`renameatx_np(RENAME_SWAP)` through `soyuz_fs::mv::rename(…, Exchange)`), so
+//!    the installed path always holds a complete bundle ([`swap_bundle`]). Where the volume
+//!    cannot swap, two renames do it (installed → backup, staged → installed) with roll
+//!    back. Any failure leaves the old bundle in place and removes the copy; the old
+//!    bundle is then deleted.
 //! 4. After the app has quit the normal way, a small detached shell waits for this process
 //!    to end and starts the new bundle with `open -n` ([`spawn_relaunch`]); the terminal UI
 //!    starts its own new executable instead.
@@ -119,19 +121,32 @@ fn sibling_paths(app: &Path, pid: u32) -> Option<(PathBuf, PathBuf)> {
     Some((parent.join(format!(".{name}{STAGE_TAG}{pid}")), parent.join(format!(".{name}{BACKUP_TAG}{pid}"))))
 }
 
-/// Replace the bundle `installed` with `source` (blocking). `copy` copies `source` to a
-/// hidden staging path next to `installed` (same volume), `check` verifies that copy, and
-/// `rename` does the two moves: installed → backup, staged → installed. On any failure the
-/// old bundle is back at `installed` and the staging copy is gone; the installed path never
-/// holds a partial copy. The backup is deleted at the end (what cannot be deleted now is
-/// left for [`remove_leftovers`]).
-pub fn swap_bundle(
-    installed: &Path,
-    source: &Path,
-    copy: &mut dyn FnMut(&Path, &Path) -> Result<(), String>,
-    check: &mut dyn FnMut(&Path) -> Result<(), String>,
-    rename: &mut dyn FnMut(&Path, &Path) -> std::io::Result<()>,
-) -> Result<(), String> {
+/// The file operations of [`swap_bundle`] (tests inject failures).
+pub struct SwapOps<'a> {
+    /// Copy the new bundle to the staging path.
+    pub copy: &'a mut dyn FnMut(&Path, &Path) -> Result<(), String>,
+    /// Verify the staged copy.
+    pub check: &'a mut dyn FnMut(&Path) -> Result<(), String>,
+    /// Exchange two paths atomically (`Err`, e.g. `ENOTSUP`: the volume cannot).
+    pub exchange: &'a mut dyn FnMut(&Path, &Path) -> std::io::Result<()>,
+    /// A plain rename, for the fallback.
+    pub rename: &'a mut dyn FnMut(&Path, &Path) -> std::io::Result<()>,
+}
+
+/// The atomic exchange of [`SwapOps`]: `renameatx_np(RENAME_SWAP)` through `soyuz_fs`.
+fn real_exchange(a: &Path, b: &Path) -> std::io::Result<()> {
+    soyuz_fs::mv::rename(a, b, soyuz_fs::mv::RenameMode::Exchange).map_err(|e| std::io::Error::other(e.to_string()))
+}
+
+/// Replace the bundle `installed` with `source` (blocking). `ops.copy` copies `source` to
+/// a hidden staging path next to `installed` (same volume) and `ops.check` verifies that
+/// copy. Then `ops.exchange` swaps staged and installed in one step, so the installed path
+/// always holds a complete bundle; if it cannot, `ops.rename` moves installed → backup and
+/// staged → installed, putting the old bundle back when the second move fails. On any
+/// failure the old bundle is at `installed` and the staging copy is gone. The old bundle
+/// is deleted at the end (what cannot be deleted now is left for [`remove_leftovers`]).
+pub fn swap_bundle(installed: &Path, source: &Path, ops: SwapOps<'_>) -> Result<(), String> {
+    let SwapOps { copy, check, exchange, rename } = ops;
     let (staged, backup) = sibling_paths(installed, std::process::id()).ok_or_else(|| failed(&"no parent folder"))?;
     for left in [&staged, &backup] {
         if std::fs::symlink_metadata(left).is_ok() {
@@ -144,6 +159,16 @@ pub fn swap_bundle(
     };
     copy(source, &staged).map_err(|e| drop_staged(tr!("services-update-bundle-copy", error = e)))?;
     check(&staged).map_err(drop_staged)?;
+    match exchange(&staged, installed) {
+        Ok(()) => {
+            // The staging path now holds the old bundle.
+            if let Err(e) = std::fs::remove_dir_all(&staged) {
+                log::warn!("update: the previous app stays at {} until the next start: {e}", staged.display());
+            }
+            return Ok(());
+        }
+        Err(e) => log::info!("update: no atomic swap here ({e}); renaming"),
+    }
     rename(installed, &backup)
         .map_err(|e| drop_staged(tr!("services-update-bundle-rolled-back", error = e.to_string())))?;
     if let Err(e) = rename(&staged, installed) {
@@ -340,26 +365,57 @@ pub fn install_dmg(dmg: &Path, sha256: &str, exe: &Path, work: &Path, version: &
     swap_bundle(
         &app,
         &new_app,
-        &mut |from, to| run_ok(Command::new(DITTO).arg("--noqtn").arg(from).arg(to)).map(drop),
-        &mut |staged| verify_signature(staged),
-        &mut |from, to| std::fs::rename(from, to),
+        SwapOps {
+            copy: &mut |from, to| run_ok(Command::new(DITTO).arg("--noqtn").arg(from).arg(to)).map(drop),
+            check: &mut |staged| verify_signature(staged),
+            exchange: &mut real_exchange,
+            rename: &mut |from, to| std::fs::rename(from, to),
+        },
     )?;
     drop(mounted);
     log::info!("update: {} replaced by the {version} bundle ({team})", app.display());
     Ok(app)
 }
 
+/// Environment the new app is opened with (`open --env`), from this process's `env`:
+/// `HOME`, so the new version reads the settings of the copy that was updated (Soyuz's
+/// folders hang off it), and in debug builds the update test feed.
+fn relaunch_env(env: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
+    let mut keys = vec!["HOME"];
+    if cfg!(debug_assertions) {
+        keys.push("SOYUZ_UPDATE_FEED");
+    }
+    let mut out = Vec::new();
+    for key in keys {
+        if let Some(value) = env(key).filter(|v| !v.is_empty()) {
+            let mut pair = std::ffi::OsString::from(format!("{key}="));
+            pair.push(value);
+            out.push("--env".into());
+            out.push(pair);
+        }
+    }
+    out
+}
+
+/// The command the relaunch helper runs: `open -n [--env K=V …] <app>`.
+fn relaunch_command(app: &Path, env: &dyn Fn(&str) -> Option<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
+    let mut cmd: Vec<std::ffi::OsString> = vec![OPEN.into(), "-n".into()];
+    cmd.extend(relaunch_env(env));
+    cmd.push(app.into());
+    cmd
+}
+
 /// Start a detached shell that waits for this process to end and then opens `app` as a
-/// new instance. No terminal, no inherited input or output, its own process group.
+/// new instance ([`relaunch_command`]). No terminal, no inherited input or output, its
+/// own process group.
 pub fn spawn_relaunch(app: &Path) -> std::io::Result<()> {
     use std::os::unix::process::CommandExt;
     Command::new(SH)
         .arg("-c")
-        .arg(r#"while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$2" -n "$3""#)
+        .arg(r#"pid="$1"; shift; while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done; exec "$@""#)
         .arg("soyuz-relaunch")
         .arg(std::process::id().to_string())
-        .arg(OPEN)
-        .arg(app)
+        .args(relaunch_command(app, &|k| std::env::var_os(k)))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -387,6 +443,24 @@ mod tests {
         );
         assert_eq!(requirement("n6fa79gv97"), None);
         assert_eq!(requirement("ABC\" or 1"), None);
+    }
+
+    #[test]
+    fn the_relaunch_keeps_the_settings_folder() {
+        let env = |k: &str| match k {
+            "HOME" => Some("/Users/me test".into()),
+            "SOYUZ_UPDATE_FEED" => Some("http://127.0.0.1:1/r.json".into()),
+            _ => None,
+        };
+        let cmd = relaunch_command(Path::new("/Applications/Soyuz.app"), &env);
+        let mut want: Vec<std::ffi::OsString> =
+            vec!["/usr/bin/open".into(), "-n".into(), "--env".into(), "HOME=/Users/me test".into()];
+        if cfg!(debug_assertions) {
+            want.extend(["--env".into(), "SOYUZ_UPDATE_FEED=http://127.0.0.1:1/r.json".into()]);
+        }
+        want.push("/Applications/Soyuz.app".into());
+        assert_eq!(cmd, want);
+        assert_eq!(relaunch_command(Path::new("/A.app"), &|_| None), ["/usr/bin/open", "-n", "/A.app"]);
     }
 
     #[test]
@@ -437,8 +511,16 @@ mod tests {
         if ok { Ok(()) } else { Err("ditto failed".into()) }
     }
 
-    #[test]
-    fn the_whole_bundle_is_swapped() {
+    fn no_exchange(_: &Path, _: &Path) -> std::io::Result<()> {
+        Err(std::io::Error::from_raw_os_error(45)) // ENOTSUP
+    }
+
+    fn plain_rename(a: &Path, b: &Path) -> std::io::Result<()> {
+        std::fs::rename(a, b)
+    }
+
+    /// The bundle at `installed` and `source`, the old and the new, in a temp folder.
+    fn setup() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
         let d = tempfile::tempdir().unwrap();
         let apps = d.path().join("Applications");
         let installed = apps.join("Soyuz.app");
@@ -446,18 +528,69 @@ mod tests {
         fake_bundle(&installed, "old");
         std::fs::write(installed.join("Contents/Frameworks/libavcodec.62.dylib"), "old major").unwrap();
         fake_bundle(&source, "new");
-        let mut renames = Vec::new();
-        swap_bundle(&installed, &source, &mut copy_tree, &mut |_| Ok(()), &mut |a, b| {
-            renames.push((a.to_path_buf(), b.to_path_buf()));
-            std::fs::rename(a, b)
-        })
-        .unwrap();
-        assert_eq!(read(&installed), "new");
+        std::fs::write(apps.join("notes.txt"), "the user's").unwrap();
+        (d, apps, installed, source)
+    }
+
+    fn assert_new(apps: &Path, installed: &Path, source: &Path) {
+        assert_eq!(read(installed), "new");
         assert_eq!(std::fs::read_to_string(installed.join("Contents/MacOS/soyuz-tui")).unwrap(), "new");
         // The bundle is replaced as a whole: nothing of the old one is mixed in.
         assert!(!installed.join("Contents/Frameworks/libavcodec.62.dylib").exists());
-        assert_eq!(names(&apps), ["Soyuz.app"], "no staging copy, no backup");
-        assert_eq!(read(&source), "new", "the image is only read");
+        assert_eq!(names(apps), ["Soyuz.app", "notes.txt"], "no staging copy, no backup");
+        assert_eq!(read(source), "new", "the image is only read");
+    }
+
+    fn assert_old(apps: &Path, installed: &Path, what: &str) {
+        assert_eq!(read(installed), "old", "{what}");
+        assert!(installed.join("Contents/Frameworks/libavcodec.62.dylib").exists(), "{what}");
+        assert_eq!(names(apps), ["Soyuz.app", "notes.txt"], "{what}");
+    }
+
+    /// On this volume (APFS) the real swap exchanges the bundles in one step: the
+    /// installed path is never empty, and no plain rename is needed.
+    #[test]
+    fn the_whole_bundle_is_swapped_atomically() {
+        let (_d, apps, installed, source) = setup();
+        let mut renames = 0;
+        swap_bundle(
+            &installed,
+            &source,
+            SwapOps {
+                copy: &mut copy_tree,
+                check: &mut |_| Ok(()),
+                exchange: &mut real_exchange,
+                rename: &mut |a, b| {
+                    renames += 1;
+                    std::fs::rename(a, b)
+                },
+            },
+        )
+        .unwrap();
+        assert_new(&apps, &installed, &source);
+        assert_eq!(renames, 0, "the atomic swap did it");
+    }
+
+    /// A volume without the swap call: two renames, the installed bundle first.
+    #[test]
+    fn without_the_swap_call_two_renames_do_it() {
+        let (_d, apps, installed, source) = setup();
+        let mut renames = Vec::new();
+        swap_bundle(
+            &installed,
+            &source,
+            SwapOps {
+                copy: &mut copy_tree,
+                check: &mut |_| Ok(()),
+                exchange: &mut no_exchange,
+                rename: &mut |a, b| {
+                    renames.push((a.to_path_buf(), b.to_path_buf()));
+                    std::fs::rename(a, b)
+                },
+            },
+        )
+        .unwrap();
+        assert_new(&apps, &installed, &source);
         assert_eq!(renames.len(), 2);
         assert_eq!(renames[0].0, installed);
         assert_eq!(renames[1].1, installed);
@@ -465,63 +598,84 @@ mod tests {
 
     #[test]
     fn a_failed_swap_keeps_the_old_bundle() {
-        let d = tempfile::tempdir().unwrap();
-        let apps = d.path().join("Applications");
-        let installed = apps.join("Soyuz.app");
-        let source = d.path().join("image/Soyuz.app");
-        fake_bundle(&installed, "old");
-        fake_bundle(&source, "new");
-        std::fs::write(apps.join("notes.txt"), "the user's").unwrap();
+        let (_d, apps, installed, source) = setup();
 
         // The copy fails half way: nothing at the installed path changes.
         let e = swap_bundle(
             &installed,
             &source,
-            &mut |_, to| {
-                std::fs::create_dir_all(to.join("Contents")).unwrap();
-                Err("disk full".into())
+            SwapOps {
+                copy: &mut |_, to| {
+                    std::fs::create_dir_all(to.join("Contents")).unwrap();
+                    Err("disk full".into())
+                },
+                check: &mut |_| Ok(()),
+                exchange: &mut real_exchange,
+                rename: &mut plain_rename,
             },
-            &mut |_| Ok(()),
-            &mut |a, b| std::fs::rename(a, b),
         )
         .unwrap_err();
         assert!(e.contains("disk full"), "{e}");
-        assert_eq!((read(&installed), names(&apps)), ("old".into(), vec!["Soyuz.app".into(), "notes.txt".into()]));
+        assert_old(&apps, &installed, "copy");
 
         // The copy does not verify.
-        let e = swap_bundle(&installed, &source, &mut copy_tree, &mut |_| Err("bad seal".into()), &mut |a, b| {
-            std::fs::rename(a, b)
-        })
+        let e = swap_bundle(
+            &installed,
+            &source,
+            SwapOps {
+                copy: &mut copy_tree,
+                check: &mut |_| Err("bad seal".into()),
+                exchange: &mut real_exchange,
+                rename: &mut plain_rename,
+            },
+        )
         .unwrap_err();
         assert_eq!(e, "bad seal");
-        assert_eq!((read(&installed), names(&apps)), ("old".into(), vec!["Soyuz.app".into(), "notes.txt".into()]));
+        assert_old(&apps, &installed, "check");
 
-        // Either rename fails: the old bundle is back, the copy gone.
+        // No swap call, and either rename fails: the old bundle is back, the copy gone.
         for fail_at in 0..2 {
             let mut n = 0;
-            let e = swap_bundle(&installed, &source, &mut copy_tree, &mut |_| Ok(()), &mut |a, b| {
-                n += 1;
-                if n == fail_at + 1 {
-                    return Err(std::io::Error::other("busy"));
-                }
-                std::fs::rename(a, b)
-            })
+            let e = swap_bundle(
+                &installed,
+                &source,
+                SwapOps {
+                    copy: &mut copy_tree,
+                    check: &mut |_| Ok(()),
+                    exchange: &mut no_exchange,
+                    rename: &mut |a, b| {
+                        n += 1;
+                        if n == fail_at + 1 {
+                            return Err(std::io::Error::other("busy"));
+                        }
+                        std::fs::rename(a, b)
+                    },
+                },
+            )
             .unwrap_err();
             assert!(e.contains("busy"), "{e}");
-            assert_eq!(read(&installed), "old", "rename {fail_at}");
-            assert_eq!(names(&apps), ["Soyuz.app", "notes.txt"], "rename {fail_at}");
+            assert_old(&apps, &installed, &format!("rename {fail_at}"));
         }
 
         // The second rename fails and so does putting the old bundle back: the message
         // says where it is, and it is still complete there.
         let mut n = 0;
-        let e = swap_bundle(&installed, &source, &mut copy_tree, &mut |_| Ok(()), &mut |a, b| {
-            n += 1;
-            if n >= 2 {
-                return Err(std::io::Error::other("busy"));
-            }
-            std::fs::rename(a, b)
-        })
+        let e = swap_bundle(
+            &installed,
+            &source,
+            SwapOps {
+                copy: &mut copy_tree,
+                check: &mut |_| Ok(()),
+                exchange: &mut no_exchange,
+                rename: &mut |a, b| {
+                    n += 1;
+                    if n >= 2 {
+                        return Err(std::io::Error::other("busy"));
+                    }
+                    std::fs::rename(a, b)
+                },
+            },
+        )
         .unwrap_err();
         let (_, backup) = sibling_paths(&installed, std::process::id()).unwrap();
         assert!(e.contains(&backup.display().to_string()), "{e}");

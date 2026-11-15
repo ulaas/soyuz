@@ -117,7 +117,7 @@ by `soyuz-<version>-<os>-<arch>` plus the extension, checksums by `SHA256SUMS-<o
 | Windows portable (a `portable` file next to the exe) | `…-windows-<arch>-portable.zip` | swapped in place with roll back (`updates/swap.rs`) |
 | Windows MSI (`HKCU` / `HKLM` `Software\Soyuz\Installer`) | `…-windows-<arch>.msi` | `msiexec /i … /passive /norestart INSTALLFOLDER=…` (plus `ALLUSERS=1` per machine) by a helper copy of the exe (`updates/msi.rs`) |
 | macOS tarball in a writable folder | `…-macos-<arch>.tar.gz` | swapped in place like the portable zip |
-| macOS `Soyuz.app`, Developer ID signed, in a folder the user can write to | `…-macos-<arch>.dmg` | image attached hidden and read-only; the one `.app` in it must have the same `CFBundleIdentifier`, the release's version as `CFBundleShortVersionString`, pass `codesign --verify --deep --strict`, a requirement pinned to the running copy's Developer ID team, and `spctl --assess`; then `ditto` to `.Soyuz.app.update-<pid>` next to it and two renames (old → `.Soyuz.app.old-<pid>`, new → `Soyuz.app`), old bundle deleted; any failure puts the old bundle back (`updates/bundle.rs`). After a normal quit a detached `/bin/sh` waits for the process and runs `open -n` |
+| macOS `Soyuz.app`, Developer ID signed, in a folder the user can write to | `…-macos-<arch>.dmg` | image attached hidden and read-only; the one `.app` in it must have the same `CFBundleIdentifier`, the release's version as `CFBundleShortVersionString`, pass `codesign --verify --deep --strict`, a requirement pinned to the running copy's Developer ID team, and `spctl --assess`; then `ditto` to `.Soyuz.app.update-<pid>` next to it, verified again, and exchanged with the installed bundle in one step (`renameatx_np(RENAME_SWAP)`; two renames with roll back where the volume cannot swap), old bundle deleted; any failure leaves the old bundle in place (`updates/bundle.rs`). After a normal quit a detached `/bin/sh` waits for the process and runs `open -n --env HOME=…` (so the new version uses the same settings folder) |
 | macOS `Soyuz.app` that is ad-hoc signed or unsigned, translocated, on a read-only volume or in a folder the user cannot write to | `…-macos-<arch>.dmg` | not replaced; the app says why and offers the verified disk image |
 | Scoop, Homebrew, rpm / AUR, Flatpak, AppImage, MSIX, read-only folders | none | never; the app says how to update |
 
@@ -284,7 +284,8 @@ Hand edits to entries are overwritten on the next run; re-apply them afterwards.
   To test the update against a local feed, build with debug assertions
   (`CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`) and start the old app with
   `SOYUZ_UPDATE_FEED=http://127.0.0.1:<port>/release.json` (a Releases-API style JSON whose
-  assets point at the same loopback server); release builds never read that variable.
+  assets point at the same loopback server) and a separate `HOME` so its settings stay out of
+  your own; the relaunch passes both on. Release builds never read the feed variable.
 
 Signing is inside out (dylibs, `soyuz-tui`, then the bundle with `--deep`), with the
 hardened runtime and `installer/macos/entitlements.plist`, then `codesign --verify --deep
