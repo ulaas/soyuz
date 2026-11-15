@@ -342,7 +342,12 @@ fn main() -> ExitCode {
         return ExitCode::from(code.clamp(0, 255) as u8);
     }
     soyuz_app::devscript::mark_process_start();
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // Older macOS versions pass a `-psn_<n>_<n>` process serial number to apps that Finder
+    // or the Dock starts; it is not an option of ours.
+    if cfg!(target_os = "macos") {
+        args.retain(|a| !a.starts_with("-psn_"));
+    }
     if tui_requested(&args) {
         // The screen belongs to the terminal UI: log to a capped file instead of stderr
         // (`soyuz-tui.log`, shared with the `soyuz-tui` binary).
