@@ -16,6 +16,7 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsE
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The per-user socket directory (not created here).
 pub fn socket_dir() -> PathBuf {
@@ -124,6 +125,8 @@ impl io::Write for PipeStream {
 pub struct PipeListener {
     listener: Arc<UnixListener>,
     path: PathBuf,
+    /// Set by [`Waker::wake`]: every later [`accept`](Self::accept) fails.
+    woken: Arc<AtomicBool>,
     _lock: File,
 }
 
@@ -156,13 +159,20 @@ impl PipeListener {
         let listener = UnixListener::bind(&path)?;
         // The directory is already private; tighten the socket itself too.
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-        Ok(PipeListener { listener: Arc::new(listener), path, _lock: lock })
+        Ok(PipeListener { listener: Arc::new(listener), path, woken: Arc::new(AtomicBool::new(false)), _lock: lock })
     }
 
     /// Wait for the next client (connections from other uids are dropped and skipped).
     pub fn accept(&self) -> io::Result<PipeStream> {
+        let woken = || io::Error::new(io::ErrorKind::Interrupted, "the listener was woken to stop");
         loop {
+            if self.woken.load(Ordering::SeqCst) {
+                return Err(woken());
+            }
             let (stream, _) = self.listener.accept()?;
+            if self.woken.load(Ordering::SeqCst) {
+                return Err(woken());
+            }
             match check_peer(&stream) {
                 Ok(()) => return Ok(PipeStream(Arc::new(stream))),
                 Err(e) => log::warn!("{}: rejected a connection: {e}", self.path.display()),
@@ -172,7 +182,7 @@ impl PipeListener {
 
     /// A handle that can unblock [`accept`](Self::accept) from another thread.
     pub fn waker(&self) -> Waker {
-        Waker(self.listener.clone())
+        Waker { listener: self.listener.clone(), path: self.path.clone(), woken: self.woken.clone() }
     }
 }
 
@@ -184,13 +194,23 @@ impl Drop for PipeListener {
 }
 
 /// Unblocks a thread waiting in [`PipeListener::accept`].
-pub struct Waker(Arc<UnixListener>);
+pub struct Waker {
+    listener: Arc<UnixListener>,
+    path: PathBuf,
+    woken: Arc<AtomicBool>,
+}
 
 impl Waker {
     /// `shutdown` on a listening socket makes a blocked `accept` return an error (Linux);
-    /// later accepts fail at once, so the loop sees its stop flag.
+    /// later accepts fail at once, so the loop sees its stop flag. macOS and the BSDs
+    /// ignore `shutdown` on a listener: a connection of our own unblocks `accept` there,
+    /// which then fails because the listener was woken.
     pub fn wake(&self) {
-        let _ = rustix::net::shutdown(&*self.0, rustix::net::Shutdown::Both);
+        self.woken.store(true, Ordering::SeqCst);
+        let _ = rustix::net::shutdown(&*self.listener, rustix::net::Shutdown::Both);
+        if cfg!(not(target_os = "linux")) {
+            let _ = UnixStream::connect(&self.path);
+        }
     }
 }
 
