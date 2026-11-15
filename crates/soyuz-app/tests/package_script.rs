@@ -151,6 +151,69 @@ fn package_sh_dry_run() {
 }
 
 #[test]
+fn package_macos_dry_run() {
+    let Some(bash) = bash() else {
+        eprintln!("skipping: bash not available");
+        return;
+    };
+    let root = repo_root();
+    let out_dir = tempfile::tempdir().unwrap();
+    let ffmpeg_dir = tempfile::tempdir().unwrap();
+    let libs = [
+        "libavutil.61.dylib",
+        "libswresample.7.dylib",
+        "libswscale.10.dylib",
+        "libavcodec.63.dylib",
+        "libavformat.63.dylib",
+    ];
+    fake_ffmpeg_dir(ffmpeg_dir.path(), &libs);
+    let out = Command::new(&bash)
+        .arg(root.join("scripts").join("package-macos.sh"))
+        .args(["--dry-run", "--out-dir"])
+        .arg(out_dir.path())
+        .arg("--ffmpeg-dir")
+        .arg(ffmpeg_dir.path())
+        .env_remove("MACOS_SIGN_IDENTITY")
+        .current_dir(&root)
+        .output()
+        .expect("run bash");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "package-macos.sh failed:\n{stdout}\n{}", String::from_utf8_lossy(&out.stderr));
+    for want in [
+        "--target aarch64-apple-darwin -p soyuz-app -p soyuz-tui",
+        "Contents/MacOS/soyuz <-",
+        "Contents/MacOS/soyuz-tui <-",
+        "Contents/Resources/Soyuz.icns",
+        "Contents/Resources/ffmpeg/LICENSE.md",
+        "sign:      ad-hoc",
+        "-macos-arm64.dmg",
+        "dry run: nothing built or written",
+    ] {
+        assert!(stdout.contains(want), "missing {want:?} in:\n{stdout}");
+    }
+    for lib in libs {
+        assert!(stdout.contains(&format!("Contents/Frameworks/{lib}")), "{lib} is not staged in:\n{stdout}");
+    }
+    assert_eq!(std::fs::read_dir(out_dir.path()).unwrap().count(), 0, "a dry run must not write anything");
+    // The bundle's Info.plist: arm64 only, the executable the script installs, the
+    // privacy prompts of a file manager.
+    let plist = std::fs::read_to_string(root.join("installer/macos/Info.plist")).unwrap();
+    for want in [
+        "<key>CFBundleExecutable</key>\n  <string>soyuz</string>",
+        "<key>CFBundleIconFile</key>\n  <string>Soyuz</string>",
+        "<key>LSArchitecturePriority</key>\n  <array>\n    <string>arm64</string>",
+        "<key>LSMinimumSystemVersion</key>",
+        "<key>NSHighResolutionCapable</key>",
+        "@VERSION@",
+        "NSDesktopFolderUsageDescription",
+        "NSDocumentsFolderUsageDescription",
+        "NSDownloadsFolderUsageDescription",
+    ] {
+        assert!(plist.contains(want), "Info.plist lacks {want:?}");
+    }
+}
+
+#[test]
 fn ffmpeg_build_script_dry_run() {
     let Some(bash) = bash() else {
         eprintln!("skipping: bash not available");

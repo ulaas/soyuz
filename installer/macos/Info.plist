@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist of Soyuz.app, filled in by scripts/package-macos.sh (@VERSION@, @BUILD@).
+
+  - Apple silicon only (LSArchitecturePriority arm64); macOS 11 is the oldest arm64 macOS
+    and the FFmpeg runtime's deployment target (scripts/ffmpeg-build.sh).
+  - No CFBundleDocumentTypes: LaunchServices hands documents / folders to a running app as
+    an "open documents" event, which the window toolkit does not deliver, so Soyuz cannot
+    be offered as a folder handler in Finder's "Open With" (the folder would be dropped).
+    Paths reach it as program arguments: `open -n -a Soyuz` with its args option, or
+    Contents/MacOS/soyuz <folder> (which hands them to the running window).
+  - LSEnvironment PATH: apps started from Finder / the Dock get /usr/bin:/bin:/usr/sbin:/sbin
+    only. Homebrew's prefixes come first so that git (the git column), custom commands and
+    MCP servers (npx, uvx …) are found as they are in a terminal.
+  - The usage descriptions are shown by macOS the first time Soyuz opens a protected folder.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleName</key>
+  <string>Soyuz</string>
+  <key>CFBundleDisplayName</key>
+  <string>Soyuz</string>
+  <key>CFBundleExecutable</key>
+  <string>soyuz</string>
+  <key>CFBundleIdentifier</key>
+  <string>dev.soyuz.explorer</string>
+  <key>CFBundleIconFile</key>
+  <string>Soyuz</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@BUILD@</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>Aydemir Şahin and the Soyuz contributors, MIT</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.utilities</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>LSArchitecturePriority</key>
+  <array>
+    <string>arm64</string>
+  </array>
+  <key>LSRequiresNativeExecution</key>
+  <true/>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+  <key>NSPrincipalClass</key>
+  <string>NSApplication</string>
+  <key>LSEnvironment</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Soyuz is a file manager: it lists, previews and manages the files on your Desktop when you open it.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Soyuz is a file manager: it lists, previews and manages the files in Documents when you open it.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Soyuz is a file manager: it lists, previews and manages the files in Downloads when you open it.</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>Soyuz is a file manager: it lists and manages the files on removable drives when you open them.</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>Soyuz is a file manager: it lists and manages the files on network shares when you open them.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Soyuz finds file servers on your network (Connect to server) and serves files you share with Quick share.</string>
+</dict>
+</plist>
