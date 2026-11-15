@@ -1462,11 +1462,24 @@ not available in the terminal UI; they show a short notice instead.
     them instead: `scoop update soyuz`, `brew upgrade --cask soyuz`, your package manager
     (rpm, AUR), `flatpak update`, a new AppImage or MSIX package. The same goes for a copy
     in a folder you cannot write to.
-  - A zip unpacked without the `portable` file, and the macOS app bundle, get **Download**:
-    the verified file goes to your Downloads folder for you to install (an MSI can be
-    started from there with **Run installer…**).
-  - In the terminal UI the notification's button updates portable and tarball copies the
-    same way; an MSI install is updated from the app.
+  - On macOS, **Soyuz.app** (from the disk image) replaces itself as a whole: the new disk
+    image is opened hidden and read-only, and its app is used only if it is Soyuz, has the
+    new version, its signature is intact, it is signed by the same developer as your copy
+    and macOS accepts it as notarized. It is copied next to your app, then the two are
+    swapped; if anything fails your app stays as it was. Soyuz then quits the normal way
+    (running jobs and unsaved documents are asked about) and opens again in the new
+    version. Not replaced, with the reason shown and the disk image offered instead: an app
+    that is not signed with a Developer ID (a build of your own), an app started straight
+    from Downloads (macOS runs it from a temporary place: move it to Applications first),
+    an app on a read-only volume (the disk image itself), and an app in a folder your
+    account cannot write to (Soyuz never asks for administrator rights). A Homebrew cask is
+    updated with `brew upgrade --cask soyuz`.
+  - A zip unpacked without the `portable` file, and a macOS app that is not replaced in
+    place, get **Download**: the verified file goes to your Downloads folder for you to
+    install (an MSI can be started from there with **Run installer…**).
+  - In the terminal UI the notification's button updates portable, tarball and macOS app
+    copies the same way (`soyuz-tui` inside `Soyuz.app` starts again in the same terminal);
+    an MSI install is updated from the app.
 - **Default file manager** — Settings → *General* (top) → **Make Soyuz the default** opens folders
   and drives from other apps, the desktop and Win+R in Soyuz. Soyuz writes an "Open in Soyuz"
   verb for `Directory` and `Drive` under `HKEY_CURRENT_USER\Software\Classes` (your account

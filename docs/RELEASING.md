@@ -104,7 +104,8 @@ by its PATH option), the MSIX gives each an execution alias (`soyuz-tui.exe` is 
 a console app, `desktop4:Subsystem="console"`), the rpm and the Flatpak put both in `bin/`,
 and the signed macOS app carries `soyuz-tui` as a helper tool in `Contents/MacOS/`. The
 in-app update (`services/updates.rs`) replaces both: from the tarball on Linux and macOS,
-from the portable zip on Windows, and through the MSI for an MSI install.
+from the portable zip on Windows, through the MSI for an MSI install, and by swapping the
+whole `Soyuz.app` for the one in the disk image on macOS.
 
 What "Update and restart" needs from a release, per kind of copy (asset names are matched
 by `soyuz-<version>-<os>-<arch>` plus the extension, checksums by `SHA256SUMS-<os>.txt` /
@@ -116,6 +117,8 @@ by `soyuz-<version>-<os>-<arch>` plus the extension, checksums by `SHA256SUMS-<o
 | Windows portable (a `portable` file next to the exe) | `…-windows-<arch>-portable.zip` | swapped in place with roll back (`updates/swap.rs`) |
 | Windows MSI (`HKCU` / `HKLM` `Software\Soyuz\Installer`) | `…-windows-<arch>.msi` | `msiexec /i … /passive /norestart INSTALLFOLDER=…` (plus `ALLUSERS=1` per machine) by a helper copy of the exe (`updates/msi.rs`) |
 | macOS tarball in a writable folder | `…-macos-<arch>.tar.gz` | swapped in place like the portable zip |
+| macOS `Soyuz.app`, Developer ID signed, in a folder the user can write to | `…-macos-<arch>.dmg` | image attached hidden and read-only; the one `.app` in it must have the same `CFBundleIdentifier`, the release's version as `CFBundleShortVersionString`, pass `codesign --verify --deep --strict`, a requirement pinned to the running copy's Developer ID team, and `spctl --assess`; then `ditto` to `.Soyuz.app.update-<pid>` next to it and two renames (old → `.Soyuz.app.old-<pid>`, new → `Soyuz.app`), old bundle deleted; any failure puts the old bundle back (`updates/bundle.rs`). After a normal quit a detached `/bin/sh` waits for the process and runs `open -n` |
+| macOS `Soyuz.app` that is ad-hoc signed or unsigned, translocated, on a read-only volume or in a folder the user cannot write to | `…-macos-<arch>.dmg` | not replaced; the app says why and offers the verified disk image |
 | Scoop, Homebrew, rpm / AUR, Flatpak, AppImage, MSIX, read-only folders | none | never; the app says how to update |
 
 The MSI records its folder in `Software\Soyuz\Installer` → `InstallDir` (since the release
@@ -275,8 +278,13 @@ Hand edits to entries are overwritten on the next run; re-apply them afterwards.
   links anything outside the system and the bundle.
 - `soyuz-<v>-macos-arm64.dmg`: the app and an `/Applications` link, UDZO-compressed, built
   with `hdiutil`; `.sha256` and `SHA256SUMS-macos.txt` (merged with `package.ps1`'s tarball
-  entry). The in-app update check offers the disk image to a copy that runs from an app
-  bundle (it never swaps files inside a bundle).
+  entry). "Update and restart" installs the disk image over a Developer ID signed app
+  bundle by swapping the whole bundle (never single files inside it); keep the image's
+  layout (exactly one `.app` at its root) and the bundle identifier `dev.soyuz.explorer`.
+  To test the update against a local feed, build with debug assertions
+  (`CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`) and start the old app with
+  `SOYUZ_UPDATE_FEED=http://127.0.0.1:<port>/release.json` (a Releases-API style JSON whose
+  assets point at the same loopback server); release builds never read that variable.
 
 Signing is inside out (dylibs, `soyuz-tui`, then the bundle with `--deep`), with the
 hardened runtime and `installer/macos/entitlements.plist`, then `codesign --verify --deep
