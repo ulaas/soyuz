@@ -127,7 +127,7 @@ has a `.sha256`, and `SHA256SUMS-<os>.txt` lists them all.
 | `soyuz-<version>-windows-x64.zip` | Unzip anywhere and run `soyuz.exe`. Settings go to `%APPDATA%\soyuz`. |
 | `soyuz-<version>-windows-x64-portable.zip` | Same, plus an empty `portable` file next to the exe: settings stay in `portable-data\` beside it. |
 | `soyuz-<version>-linux-x64.tar.gz` | Unpack anywhere and run `soyuz`. |
-| `soyuz-<version>-macos-arm64.dmg` | Apple silicon, macOS 11 or later. Open it and drag Soyuz to Applications. Ad-hoc signed, not notarized: the first time, Control-click Soyuz → Open (or System Settings → Privacy & Security → Open Anyway). |
+| `soyuz-<version>-macos-arm64.dmg` | Apple silicon, macOS 11 or later. Open it and drag Soyuz to Applications. Signed with an Apple Developer ID and notarized, so it opens without a warning. |
 | `soyuz-<version>-macos-arm64.tar.gz` | Apple silicon. Unpack and run `soyuz` from a terminal; unsigned (right-click → Open the first time). |
 
 Every package also contains `soyuz-tui` (`soyuz-tui.exe` on Windows), the terminal UI as a
