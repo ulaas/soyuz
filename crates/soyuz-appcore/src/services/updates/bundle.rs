@@ -412,7 +412,7 @@ pub fn spawn_relaunch(app: &Path) -> std::io::Result<()> {
     use std::os::unix::process::CommandExt;
     Command::new(SH)
         .arg("-c")
-        .arg(r#"pid="$1"; shift; while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done; exec "$@""#)
+        .arg(r#"pid="$1"; shift; n=0; while kill -0 "$pid" 2>/dev/null; do [ $n -ge 3000 ] && exit 0; n=$((n+1)); /bin/sleep 0.2; done; exec "$@""#)
         .arg("soyuz-relaunch")
         .arg(std::process::id().to_string())
         .args(relaunch_command(app, &|k| std::env::var_os(k)))
