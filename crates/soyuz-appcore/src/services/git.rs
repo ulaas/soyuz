@@ -512,6 +512,8 @@ enum Reply {
     Discovered { dir: PathBuf, repo: Option<RepoLocation>, branch: Option<String> },
     Status { root: PathBuf, result: Result<Porcelain, String>, branch: Option<String> },
     GitDirChanged { root: PathBuf },
+    // The watched git directory is gone (the repository was renamed, moved or deleted).
+    GitDirLost { root: PathBuf },
 }
 
 /// Size and mtime of [`GIT_DIR_FILES`].
@@ -551,6 +553,20 @@ fn spawn_git_dir_watcher(tx: Sender<Reply>, wake: Option<crate::host::Wake>) -> 
                 }
                 recv(ev_rx) -> event => {
                     let Ok(event) = event else { return };
+                    if matches!(event.kind, soyuz_fs::WatchKind::Lost) {
+                        // Renamed, moved or deleted: forget it, so that a repository found
+                        // at this path later is watched again.
+                        watcher.unwatch(event.id);
+                        if let Some((root, ..)) = repos.remove(&event.id) {
+                            if tx.send(Reply::GitDirLost { root }).is_err() {
+                                return;
+                            }
+                            if let Some(w) = &wake {
+                                w();
+                            }
+                        }
+                        continue;
+                    }
                     let Some((root, dir, signature)) = repos.get_mut(&event.id) else { continue };
                     let now = git_dir_signature(dir);
                     if now != *signature {
@@ -704,6 +720,10 @@ pub fn pump(refresh_secs: u64) -> bool {
                         repo.stale = true;
                         repo.nudge = true;
                     }
+                }
+                Reply::GitDirLost { root } => {
+                    r.repos.remove(&root);
+                    r.dir_root.retain(|_, v| v.as_ref() != Some(&root));
                 }
             }
         }

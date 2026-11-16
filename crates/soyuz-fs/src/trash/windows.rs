@@ -250,7 +250,7 @@ mod imp {
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(err::io("trash", &i_path, e)),
             }
-            if let Err(e) = wfs::move_file(abs, &r_path, 0) {
+            if let Err(e) = crate::watch::with_released(abs, || wfs::move_file(abs, &r_path, 0)) {
                 let _ = std::fs::remove_file(&i_path);
                 let code = e.raw_os_error();
                 let mut fe = err::io("trash", abs, e);

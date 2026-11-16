@@ -68,11 +68,19 @@ struct Watched {
     /// Raw notifications seen for this watch (any path inside it, or the directory
     /// itself); the liveness check compares it across directory changes.
     activity: u64,
+    /// The native watch was dropped by [`release_under`] at this time; the liveness
+    /// thread re-arms it when the directory is still there afterwards.
+    suspended: Option<Instant>,
 }
 
 impl Watched {
     fn new(dir: PathBuf, canon: Option<PathBuf>, recursive: bool) -> Self {
-        Watched { dir, canon, recursive, polled: false, lost: false, activity: 0 }
+        Watched { dir, canon, recursive, polled: false, lost: false, activity: 0, suspended: None }
+    }
+
+    /// Is the watched directory strictly inside `root`?
+    fn inside(&self, root: &Path) -> bool {
+        strictly_under(&self.dir, root) || self.canon.as_ref().is_some_and(|c| strictly_under(c, root))
     }
 
     /// `p` expressed under `dir` (mapping a canonical prefix back), if it is inside.
@@ -90,6 +98,109 @@ impl Watched {
 type Registry = Arc<Mutex<HashMap<WatchId, Watched>>>;
 type Backend = Debouncer<notify::RecommendedWatcher, NoCache>;
 type PollBackend = Debouncer<notify::PollWatcher, NoCache>;
+
+/// Registry and native backend of every live [`Watcher`] in the process, for
+/// [`release_under`].
+type Live = (Weak<Mutex<HashMap<WatchId, Watched>>>, Weak<Mutex<Backend>>);
+static LIVE: Mutex<Vec<Live>> = Mutex::new(Vec::new());
+
+/// A released watch is re-armed this long after its last release when its directory
+/// still exists (the operation that needed it gone failed, or left it in place).
+const RESUME_AFTER: Duration = Duration::from_secs(2);
+/// How long an operation waits for released watch handles to close (notify closes them
+/// on its own thread).
+#[cfg(windows)]
+const RELEASE_WAIT: Duration = Duration::from_millis(1500);
+
+/// Is `p` strictly inside `root`? Lexical; ignores a verbatim prefix and, on Windows, case.
+fn strictly_under(p: &Path, root: &Path) -> bool {
+    let same = |a: &std::ffi::OsStr, b: &std::ffi::OsStr| {
+        if cfg!(windows) { a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase() } else { a == b }
+    };
+    let p = crate::path::strip_verbatim_cow(p);
+    let root = crate::path::strip_verbatim_cow(root);
+    let mut pc = p.components();
+    for rc in root.components() {
+        match pc.next() {
+            Some(c) if same(c.as_os_str(), rc.as_os_str()) => {}
+            _ => return false,
+        }
+    }
+    pc.next().is_some()
+}
+
+/// Drop this process's native watches on directories strictly inside `dir`, in every
+/// [`Watcher`]. On Windows a watch is an open directory handle, and a directory cannot be
+/// renamed or moved (to the recycle bin, too) while anything inside it is open; on
+/// volumes without POSIX delete it cannot be removed either.
+///
+/// The watches stay registered: one whose directory is gone afterwards reports
+/// [`WatchKind::Lost`], the others are re-armed after [`RESUME_AFTER`] and report
+/// [`WatchKind::Rescan`]. Returns how many directories were (or were just) released; the
+/// handles close shortly after, on notify's thread.
+pub fn release_under(dir: &Path) -> usize {
+    let live: Vec<_> = {
+        let mut live = LIVE.lock();
+        live.retain(|(reg, _)| reg.strong_count() > 0);
+        live.iter().filter_map(|(reg, backend)| Some((reg.upgrade()?, backend.upgrade()?))).collect()
+    };
+    let now = Instant::now();
+    let mut released = 0;
+    for (reg, backend) in live {
+        let mut fresh: Vec<PathBuf> = Vec::new();
+        {
+            let mut reg = reg.lock();
+            for w in reg.values_mut() {
+                if w.polled || !w.inside(dir) {
+                    continue;
+                }
+                match w.suspended.replace(now) {
+                    None => {
+                        if !fresh.contains(&w.dir) {
+                            fresh.push(w.dir.clone());
+                        }
+                    }
+                    // Released a moment ago: its handle may still be closing.
+                    Some(at) if now.duration_since(at) < RESUME_AFTER / 2 => released += 1,
+                    Some(_) => {}
+                }
+            }
+        }
+        // Outside the registry lock: notify's event callback takes it.
+        let mut backend = backend.lock();
+        for d in &fresh {
+            let _ = backend.unwatch(d);
+        }
+        released += fresh.len();
+    }
+    released
+}
+
+/// Run `op` on the directory `dir`; when it is refused because something inside `dir` is
+/// in use and that something is one of our own watches, release them and try again until
+/// their handles are closed.
+#[cfg(windows)]
+pub(crate) fn with_released<T>(dir: &Path, mut op: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    // ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION, ERROR_DIR_NOT_EMPTY (a removed
+    // directory stays "delete pending" while its watch handle is open).
+    let in_use = |e: &std::io::Error| matches!(e.raw_os_error(), Some(5 | 32 | 145));
+    let first = match op() {
+        Ok(v) => return Ok(v),
+        Err(e) => e,
+    };
+    if !in_use(&first) || release_under(dir) == 0 {
+        return Err(first);
+    }
+    let deadline = Instant::now() + RELEASE_WAIT;
+    loop {
+        std::thread::sleep(Duration::from_millis(10));
+        match op() {
+            Ok(v) => return Ok(v),
+            Err(e) if !in_use(&e) || Instant::now() >= deadline => return Err(e),
+            Err(_) => {}
+        }
+    }
+}
 
 /// Default scan interval of polled watches (after the kernel watch limit was reached).
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -143,6 +254,11 @@ impl Watcher {
             }
             Err(e) => return Err(notify_err("watch", None, e)),
         };
+        if let Some(d) = &debouncer {
+            let mut live = LIVE.lock();
+            live.retain(|(reg, _)| reg.strong_count() > 0);
+            live.push((Arc::downgrade(&registry), Arc::downgrade(d)));
+        }
         spawn_liveness(Liveness {
             reg: Arc::downgrade(&registry),
             backend: debouncer.as_ref().map(Arc::downgrade).unwrap_or_default(),
@@ -399,18 +515,20 @@ fn spawn_liveness(l: Liveness) {
         let mut health: HashMap<WatchId, Health> = HashMap::new();
         loop {
             std::thread::sleep(LIVENESS_INTERVAL);
-            let snapshot: Vec<(WatchId, PathBuf, bool, u64, bool)> = {
+            let snapshot: Vec<(WatchId, PathBuf, bool, u64, bool, Option<Instant>)> = {
                 let Some(reg) = l.reg.upgrade() else { return };
                 let reg = reg.lock();
                 health.retain(|id, _| reg.contains_key(id));
                 reg.iter()
                     .filter(|(_, w)| !w.lost)
-                    .map(|(id, w)| (*id, w.dir.clone(), w.recursive, w.activity, w.polled))
+                    .map(|(id, w)| (*id, w.dir.clone(), w.recursive, w.activity, w.polled, w.suspended))
                     .collect()
             };
             let mut gone = Vec::new();
             let mut silent: Vec<(PathBuf, bool)> = Vec::new();
-            for (id, dir, recursive, activity, polled) in snapshot {
+            // Released watches ([`release_under`]) whose directory is still there.
+            let mut resume: Vec<(PathBuf, bool)> = Vec::new();
+            for (id, dir, recursive, activity, polled, suspended) in snapshot {
                 let now = Instant::now();
                 let h = health.entry(id).or_insert_with(|| {
                     Health::new(now, if is_network_path(&dir) { LIVENESS_REMOTE_INTERVAL } else { LIVENESS_INTERVAL })
@@ -429,6 +547,15 @@ fn spawn_liveness(l: Liveness) {
                     // A polled watch reports changes only once per poll interval: never
                     // "silent" by the native backend's grace period.
                     Some(_) if polled => {}
+                    Some(_) if suspended.is_some() => {
+                        // Not watched right now: nothing to compare the directory against.
+                        *h = Health::new(h.due, h.interval);
+                        if suspended.is_some_and(|at| at.elapsed() >= RESUME_AFTER)
+                            && !resume.iter().any(|(d, _)| *d == dir)
+                        {
+                            resume.push((dir, recursive));
+                        }
+                    }
                     Some(mtime) => {
                         if h.observe(mtime, activity, Instant::now(), l.grace) == Verdict::Silent
                             && !silent.iter().any(|(d, _)| *d == dir)
@@ -438,8 +565,18 @@ fn spawn_liveness(l: Liveness) {
                     }
                 }
             }
-            if gone.is_empty() && silent.is_empty() {
+            if gone.is_empty() && silent.is_empty() && resume.is_empty() {
                 continue;
+            }
+            // Released again meanwhile: leave those alone.
+            if !resume.is_empty() {
+                let Some(reg) = l.reg.upgrade() else { return };
+                let reg = reg.lock();
+                resume.retain(|(dir, _)| {
+                    reg.values()
+                        .filter(|w| w.dir == *dir)
+                        .all(|w| w.suspended.is_none_or(|at| at.elapsed() >= RESUME_AFTER))
+                });
             }
             // Re-arm silent watches, outside the registry lock (unwatch / watch wait for
             // notify's thread, whose event callback takes the registry lock).
@@ -451,6 +588,15 @@ fn spawn_liveness(l: Liveness) {
                     let _ = b.unwatch(dir);
                     if let Err(e) = b.watch(dir, mode) {
                         log::warn!("cannot re-arm the watch on {}: {e}", dir.display());
+                    }
+                }
+                for (dir, recursive) in &resume {
+                    let mode = if *recursive { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
+                    let mut b = backend.lock();
+                    // Another watch of the same directory may have armed it meanwhile.
+                    let _ = b.unwatch(dir);
+                    if let Err(e) = b.watch(dir, mode) {
+                        log::debug!("cannot resume the watch on {}: {e}", dir.display());
                     }
                 }
             }
@@ -467,8 +613,12 @@ fn spawn_liveness(l: Liveness) {
                         out.push(WatchEvent { id, kind: WatchKind::Lost });
                     }
                 }
-                for (id, w) in reg.iter() {
-                    if !w.lost && silent.iter().any(|(d, _)| *d == w.dir) {
+                for (id, w) in reg.iter_mut() {
+                    let resumed = resume.iter().any(|(d, _)| *d == w.dir);
+                    if resumed {
+                        w.suspended = None;
+                    }
+                    if !w.lost && (resumed || silent.iter().any(|(d, _)| *d == w.dir)) {
                         out.push(WatchEvent { id: *id, kind: WatchKind::Rescan });
                     }
                 }
@@ -700,6 +850,83 @@ mod tests {
             evs.iter().any(|x| matches!(x.kind, WatchKind::Lost | WatchKind::Rescan)),
             "removal of the watched dir not reported: {evs:?}"
         );
+        w.unwatch(id);
+    }
+
+    #[test]
+    fn strictly_under_is_lexical() {
+        assert!(strictly_under(Path::new("/a/b/c"), Path::new("/a/b")));
+        assert!(!strictly_under(Path::new("/a/b"), Path::new("/a/b")));
+        assert!(!strictly_under(Path::new("/a/bc"), Path::new("/a/b")));
+        assert!(!strictly_under(Path::new("/a"), Path::new("/a/b")));
+        #[cfg(windows)]
+        assert!(strictly_under(Path::new(r"\\?\C:\Repo\.git"), Path::new(r"c:\repo")));
+    }
+
+    /// A watch inside a folder (a repository's git directory, an open tree node) is an
+    /// open handle on Windows, which refuses the folder's rename, its move to the recycle
+    /// bin and, without POSIX delete, its removal.
+    #[test]
+    fn a_folder_with_watched_subfolders_can_be_renamed_and_removed() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        let git = repo.join(".git");
+        let deep = repo.join("src").join("deep");
+        std::fs::create_dir_all(&git).unwrap();
+        std::fs::create_dir_all(&deep).unwrap();
+        let (mut w, rx) = watcher();
+        let (mut w2, _rx2) = watcher();
+        let git_id = w.watch(&git, false).unwrap();
+        w2.watch(&deep, true).unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+
+        let renamed = d.path().join("renamed");
+        crate::mv::rename(&repo, &renamed, crate::mv::RenameMode::NoReplace).unwrap();
+        assert!(renamed.join(".git").is_dir() && !repo.exists());
+        let evs = collect(&rx, |e| e.iter().any(|x| matches!(x.kind, WatchKind::Lost)));
+        assert!(evs.iter().any(|x| x.id == git_id && matches!(x.kind, WatchKind::Lost)), "{evs:?}");
+
+        // Watched again at the new place, then removed for good.
+        w.watch(&renamed.join(".git"), false).unwrap();
+        w2.watch(&renamed.join("src").join("deep"), false).unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        let o = crate::delete::DeleteOptions { clear_readonly: true, posix_semantics: false };
+        let mut errors = Vec::new();
+        crate::delete::remove_tree(&renamed, &o, &soyuz_core::OpControl::new(), &mut |p, r| {
+            if let Err(e) = r {
+                errors.push((p.to_path_buf(), e));
+            }
+            soyuz_core::Control::Continue
+        })
+        .unwrap();
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!renamed.exists());
+    }
+
+    #[test]
+    fn released_watches_resume_when_the_folder_stays() {
+        let d = tempfile::tempdir().unwrap();
+        let sub = d.path().join("parent").join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let (mut w, rx) = watcher();
+        let id = w.watch(&sub, false).unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        assert_eq!(release_under(&sub), 0, "the folder itself is not inside it");
+        assert_eq!(release_under(&d.path().join("parent")), 1);
+        // The rename that needed it never came: the watch comes back and says so.
+        let deadline = Instant::now() + RESUME_AFTER + Duration::from_secs(5);
+        let mut resumed = false;
+        while !resumed && Instant::now() < deadline {
+            resumed = rx
+                .recv_timeout(Duration::from_millis(100))
+                .is_ok_and(|e| e.id == id && matches!(e.kind, WatchKind::Rescan));
+        }
+        assert!(resumed, "the released watch was not re-armed");
+        std::thread::sleep(Duration::from_millis(150));
+        let f = sub.join("new.txt");
+        std::fs::write(&f, b"1").unwrap();
+        let evs = collect(&rx, |e| mentions(e, &f));
+        assert!(mentions(&evs, &f), "a change after the resume was not reported: {evs:?}");
         w.unwatch(id);
     }
 

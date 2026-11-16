@@ -160,7 +160,9 @@ mod imp {
                 return Err(err::unsupported("rename", src, "atomic exchange is not supported on Windows"));
             }
         };
-        wfs::move_file(src, dst, flags).map_err(|e| {
+        // Our own watches inside a folder (git directory, folder tree, other panes) are
+        // open handles that would refuse its rename.
+        crate::watch::with_released(src, || wfs::move_file(src, dst, flags)).map_err(|e| {
             let code = e.raw_os_error();
             let mut fe = err::io("rename", src, e);
             if matches!(code, Some(80 | 183)) {

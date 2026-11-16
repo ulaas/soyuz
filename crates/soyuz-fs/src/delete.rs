@@ -189,7 +189,9 @@ mod imp {
 
     pub(super) fn remove_dir(path: &Path, clear_readonly: bool) -> FsResult<()> {
         crate::fault::hit(crate::fault::FaultOp::Delete, path).map_err(err::map("delete", path))?;
-        match wfs::remove_dir(path) {
+        // A subfolder removed while one of our watches held it stays "delete pending" on
+        // volumes without POSIX delete, which keeps this folder non-empty.
+        match crate::watch::with_released(path, || wfs::remove_dir(path)) {
             Ok(()) => Ok(()),
             Err(e) if e.raw_os_error() == Some(ACCESS_DENIED) && clear_readonly => {
                 let attrs = wfs::get_attributes(path).map_err(err::map("delete", path))?;
