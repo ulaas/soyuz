@@ -38,10 +38,46 @@ pub enum TrashSupport {
     Unsupported(String),
 }
 
+/// Test builds (cargo feature `sandbox-trash`, enabled by the workspace crates'
+/// dev-dependencies): every trash operation uses a private bin under the temp directory
+/// instead of the user's trash, so `cargo test` never moves files into `~/.Trash`, never
+/// writes the real restore index and never lists or purges the user's trashed items.
+/// `SOYUZ_TRASH_TESTS=1` turns the sandbox off for the opt-in real-trash tests.
+#[cfg(feature = "sandbox-trash")]
+fn sandbox() -> Option<&'static macos::MacBin> {
+    static BIN: std::sync::OnceLock<Option<macos::MacBin>> = std::sync::OnceLock::new();
+    BIN.get_or_init(|| {
+        if std::env::var("SOYUZ_TRASH_TESTS").is_ok_and(|v| v == "1") {
+            return None;
+        }
+        let dir = std::env::temp_dir().join(format!("soyuz-test-trash-{}", std::process::id()));
+        Some(macos::MacBin { root: dir.join("bin"), index: dir.join("trash-index.json") })
+    })
+    .as_ref()
+}
+
+#[cfg(not(feature = "sandbox-trash"))]
+#[inline(always)]
+fn sandbox() -> Option<&'static macos::MacBin> {
+    None
+}
+
+/// The sandbox bin holding `item`, if the sandbox is active.
+fn sandbox_for(item: &TrashItem) -> FsResult<Option<&'static macos::MacBin>> {
+    match sandbox() {
+        Some(b) if b.root == item.trash_root => Ok(Some(b)),
+        Some(_) => Err(not_in_bin(item)),
+        None => Ok(None),
+    }
+}
+
 /// Whether `path` can be trashed (e.g. FAT volume on Windows → `Unsupported`).
 pub fn trash_support(path: &Path) -> TrashSupport {
     if !crate::list::exists_nofollow(path) {
         return TrashSupport::Unsupported("the item does not exist".into());
+    }
+    if sandbox().is_some() {
+        return TrashSupport::Native;
     }
     imp::support(path)
 }
@@ -60,12 +96,18 @@ pub fn trash(path: &Path) -> FsResult<TrashItem> {
             "cannot trash a root directory",
         ));
     }
-    imp::trash(&abs)
+    match sandbox() {
+        Some(b) => b.trash(&abs),
+        None => imp::trash(&abs),
+    }
 }
 
 /// Items of all bins (home + per-volume).
 pub fn list() -> FsResult<Vec<TrashItem>> {
-    let mut items = imp::list()?;
+    let mut items = match sandbox() {
+        Some(b) => b.list(),
+        None => imp::list()?,
+    };
     items.sort_by_key(|i| std::cmp::Reverse(i.deleted_at));
     Ok(items)
 }
@@ -73,18 +115,27 @@ pub fn list() -> FsResult<Vec<TrashItem>> {
 /// Restore to the original location (or `to`); returns the restored path. An existing
 /// destination is `AlreadyExists` (the caller asks the user).
 pub fn restore(item: &TrashItem, to: Option<&Path>) -> FsResult<PathBuf> {
-    imp::restore(item, to)
+    match sandbox_for(item)? {
+        Some(b) => b.restore(item, to),
+        None => imp::restore(item, to),
+    }
 }
 
 /// Permanently delete one trashed item.
 pub fn purge(item: &TrashItem) -> FsResult<()> {
-    imp::purge(item)
+    match sandbox_for(item)? {
+        Some(b) => b.purge(item),
+        None => imp::purge(item),
+    }
 }
 
 /// Permanently delete everything in all bins.
 pub fn empty(ctl: &OpControl, on_item: &mut dyn FnMut(&TrashItem, FsResult<()>) -> Control) -> FsResult<()> {
     ctl.checkpoint()?;
-    imp::empty(ctl, on_item)
+    match sandbox() {
+        Some(b) => macos::empty_all(std::slice::from_ref(b), ctl, on_item),
+        None => imp::empty(ctl, on_item),
+    }
 }
 
 /// Item ids are single path components: never `..`, separators or empty.
@@ -131,7 +182,6 @@ pub(crate) fn percent_decode_pub(s: &str) -> Vec<u8> {
     freedesktop::percent_decode(s)
 }
 
-#[cfg_attr(windows, allow(dead_code))]
 fn not_in_bin(item: &TrashItem) -> FsError {
     FsError::with_message(FsErrorKind::NotFound, "trash", Some(&item.trash_root), "unknown trash directory")
 }
@@ -247,6 +297,25 @@ mod tests {
         for bad in ["", ".", "..", "../x", "a/b", "a\\b", "a\0b"] {
             assert!(!safe_id(bad), "{bad:?}");
         }
+    }
+
+    /// Test builds never reach the user's trash: items go to the per-process sandbox bin
+    /// and come back out of it.
+    #[cfg(feature = "sandbox-trash")]
+    #[test]
+    fn test_builds_use_the_sandbox_bin() {
+        if sandbox().is_none() {
+            return; // SOYUZ_TRASH_TESTS=1: the real-trash tests are opted in
+        }
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().join("sandboxed.txt");
+        std::fs::write(&f, b"x").unwrap();
+        let item = trash(&f).unwrap();
+        assert!(item.trash_root.starts_with(std::env::temp_dir()), "{}", item.trash_root.display());
+        assert!(!item.trash_root.starts_with(crate::path::home().join(".Trash")));
+        assert!(list().unwrap().iter().any(|i| i.id == item.id && i.original == f));
+        assert_eq!(restore(&item, None).unwrap(), f);
+        assert_eq!(std::fs::read(&f).unwrap(), b"x");
     }
 
     #[test]

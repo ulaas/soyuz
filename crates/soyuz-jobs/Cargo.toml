@@ -23,7 +23,7 @@ log.workspace = true
 tempfile.workspace = true
 proptest.workspace = true
 # Chaos tests inject faults into the copy / move internals.
-soyuz-fs = { workspace = true, features = ["fault-inject"] }
+soyuz-fs = { workspace = true, features = ["fault-inject", "sandbox-trash"] }
 
 [lints]
 workspace = true

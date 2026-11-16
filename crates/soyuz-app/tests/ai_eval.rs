@@ -10,7 +10,7 @@
 //!
 //! Without `SOYUZ_AI_EVAL_PROFILE` every task replays a reference transcript (a known
 //! good solution), which checks the fixtures, the checkers and the harness itself. The
-//! dedupe task moves files to the real trash, so it only runs with `SOYUZ_TRASH_TESTS=1`.
+//! dedupe task's trash is the test sandbox bin (soyuz-fs `sandbox-trash`), not the user's.
 
 mod ai_common;
 
@@ -34,7 +34,6 @@ struct EvalTask {
     setup: fn(&Path),
     reference: fn(&Path) -> Vec<FakeTurn>,
     check: fn(&Path) -> Result<(), String>,
-    needs_trash: bool,
 }
 
 fn setup_downloads(root: &Path) {
@@ -166,7 +165,6 @@ fn tasks() -> Vec<EvalTask> {
             setup: setup_downloads,
             reference: reference_downloads,
             check: check_downloads,
-            needs_trash: false,
         },
         EvalTask {
             name: "rename photos by date",
@@ -174,7 +172,6 @@ fn tasks() -> Vec<EvalTask> {
             setup: setup_photos,
             reference: reference_photos,
             check: check_photos,
-            needs_trash: false,
         },
         EvalTask {
             name: "dedupe photos",
@@ -182,7 +179,6 @@ fn tasks() -> Vec<EvalTask> {
             setup: setup_dupes,
             reference: reference_dupes,
             check: check_dupes,
-            needs_trash: true,
         },
     ]
 }
@@ -223,13 +219,8 @@ fn task_eval_suite() {
     let real = real_model();
     let label =
         real.as_ref().map(|(p, m, _)| format!("{p} / {}", m.model())).unwrap_or_else(|| "reference transcripts".into());
-    let trash_ok = std::env::var("SOYUZ_TRASH_TESTS").is_ok_and(|v| v == "1");
     let mut report: BTreeMap<&str, (bool, String, usize, u64, Option<f64>)> = BTreeMap::new();
     for t in tasks() {
-        if t.needs_trash && !trash_ok {
-            println!("skip  {:<24} (uses the real trash; set SOYUZ_TRASH_TESTS=1)", t.name);
-            continue;
-        }
         let dir = tempfile::tempdir().unwrap();
         let root: PathBuf = dir.path().join("fixture");
         (t.setup)(&root);

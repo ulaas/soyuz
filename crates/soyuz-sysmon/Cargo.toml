@@ -19,6 +19,7 @@ chrono.workspace = true
 log.workspace = true
 
 [dev-dependencies]
+soyuz-fs = { workspace = true, features = ["sandbox-trash"] }
 tempfile.workspace = true
 
 [lints]

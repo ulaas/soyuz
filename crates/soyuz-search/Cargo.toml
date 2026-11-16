@@ -23,6 +23,7 @@ rayon.workspace = true
 parking_lot.workspace = true
 
 [dev-dependencies]
+soyuz-fs = { workspace = true, features = ["sandbox-trash"] }
 tempfile.workspace = true
 criterion.workspace = true
 walkdir.workspace = true

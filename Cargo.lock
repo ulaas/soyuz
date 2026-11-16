@@ -6972,6 +6972,7 @@ dependencies = [
  "sha2",
  "skrifa",
  "soyuz-core",
+ "soyuz-fs",
  "tempfile",
  "wayland-backend",
  "wayland-client",

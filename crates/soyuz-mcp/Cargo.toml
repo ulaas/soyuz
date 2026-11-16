@@ -45,6 +45,7 @@ windows-sys = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+soyuz-fs = { workspace = true, features = ["sandbox-trash"] }
 tempfile.workspace = true
 soyuz-media.workspace = true
 
