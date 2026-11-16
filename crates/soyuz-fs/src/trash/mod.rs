@@ -62,13 +62,10 @@ fn sandbox() -> Option<&'static macos::MacBin> {
     None
 }
 
-/// The sandbox bin holding `item`, if the sandbox is active.
-fn sandbox_for(item: &TrashItem) -> FsResult<Option<&'static macos::MacBin>> {
-    match sandbox() {
-        Some(b) if b.root == item.trash_root => Ok(Some(b)),
-        Some(_) => Err(not_in_bin(item)),
-        None => Ok(None),
-    }
+/// The sandbox bin when it holds `item`. Other items (e.g. a test's own fake bin) go to
+/// the platform backend, which accepts only bins it recognises.
+fn sandbox_for(item: &TrashItem) -> Option<&'static macos::MacBin> {
+    sandbox().filter(|b| b.root == item.trash_root)
 }
 
 /// Whether `path` can be trashed (e.g. FAT volume on Windows → `Unsupported`).
@@ -115,7 +112,7 @@ pub fn list() -> FsResult<Vec<TrashItem>> {
 /// Restore to the original location (or `to`); returns the restored path. An existing
 /// destination is `AlreadyExists` (the caller asks the user).
 pub fn restore(item: &TrashItem, to: Option<&Path>) -> FsResult<PathBuf> {
-    match sandbox_for(item)? {
+    match sandbox_for(item) {
         Some(b) => b.restore(item, to),
         None => imp::restore(item, to),
     }
@@ -123,7 +120,7 @@ pub fn restore(item: &TrashItem, to: Option<&Path>) -> FsResult<PathBuf> {
 
 /// Permanently delete one trashed item.
 pub fn purge(item: &TrashItem) -> FsResult<()> {
-    match sandbox_for(item)? {
+    match sandbox_for(item) {
         Some(b) => b.purge(item),
         None => imp::purge(item),
     }
@@ -182,6 +179,7 @@ pub(crate) fn percent_decode_pub(s: &str) -> Vec<u8> {
     freedesktop::percent_decode(s)
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn not_in_bin(item: &TrashItem) -> FsError {
     FsError::with_message(FsErrorKind::NotFound, "trash", Some(&item.trash_root), "unknown trash directory")
 }
