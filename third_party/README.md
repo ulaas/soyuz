@@ -28,4 +28,15 @@ Dropped from `epaint`: the benchmarks. Soyuz only uses `HintingTarget::SmoothLcd
 `DUAL_SOURCE_BLENDING` (`theme::fonts::set_lcd_supported`), since other renderers would draw
 those texels wrong.
 
+## eframe 0.37.0 (MIT OR Apache-2.0, https://github.com/emilk/egui)
+
+The crates.io source with one fix, marked `Soyuz:`, in `src/native/run.rs`: `new_events` runs
+`check_redraw_requests` inside the event-loop context. eframe runs the UI of an invisible or
+minimized window directly from there, and without the context that pass cannot create a window:
+an immediate viewport first shown in it never ran its callback, and egui panicked with "egui
+backend is implemented incorrectly - the user callback was never called". Soyuz hit this when
+a second launch opened a new window while the main window was minimized and another window was
+still shown (crash reports of 0.8.2 and 0.8.4). Delete this directory and the patch entry once
+an eframe release has the fix.
+
 Updating egui means reapplying these changes to the new sources: `grep -rn "Soyuz:"` finds them.

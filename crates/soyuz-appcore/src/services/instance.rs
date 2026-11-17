@@ -473,8 +473,9 @@ pub fn take_launch_front() -> Option<isize> {
 static NONE_SHOWN: AtomicBool = AtomicBool::new(false);
 
 /// The frontend shows no window right now (all minimized). A launch then opens as a tab
-/// of an existing window, which is restored: eframe can run a UI pass for a hidden
-/// window but cannot create a new one from it.
+/// of an existing window, which is restored, so the launch shows up next to what the
+/// user left. (A hidden window's UI pass can create a window: the vendored eframe runs
+/// it inside the event-loop context, `third_party/README.md`.)
 pub fn set_none_shown(none: bool) {
     NONE_SHOWN.store(none, Ordering::Relaxed);
 }

@@ -322,8 +322,8 @@ impl eframe::App for SoyuzApp {
         // While the main window is minimized (and no other window is shown) eframe runs
         // only `logic`, but launches are applied in `ui`: without this, a folder opened
         // from Explorer waited until the launch expired and then started a process of
-        // its own. That pass cannot create a window, so the launch becomes a tab of a
-        // restored window then (`instance::set_none_shown`).
+        // its own. With no window shown the launch becomes a tab of a restored window
+        // (`instance::set_none_shown`).
         let none_shown = ctx.input(|i| i.raw.viewports.values().all(|v| v.visible() == Some(false)));
         crate::services::instance::set_none_shown(none_shown);
         if self.core.needs_ui_pass() {
