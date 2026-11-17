@@ -87,6 +87,12 @@
   </requires>
 
   <releases>
+    <release version="0.8.5" date="2026-11-17" type="development">
+      <description>
+        <p>Opening a new window while the main window is minimized no longer crashes
+          (seen on Windows; the fix applies on every system).</p>
+      </description>
+    </release>
     <release version="0.8.4" date="2026-11-16" type="development">
       <description>
         <p>Soyuz for the Mac: Soyuz.app for Apple silicon in a disk image, signed with a
