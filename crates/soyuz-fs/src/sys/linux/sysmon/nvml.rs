@@ -4,7 +4,9 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
 
-use crate::sysmon::{GpuEngine, GpuRaw};
+use std::sync::Arc;
+
+use crate::sysmon::{GpuEngine, GpuRaw, ProcGpuUse};
 
 type Device = *mut c_void;
 type Ret = c_int;
@@ -61,11 +63,12 @@ struct FanSpeedInfo {
     speed: c_uint,
 }
 
-/// GPU use of one process, summed over devices.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// GPU use of one process, summed over devices, and per device.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct ProcUse {
     pub percent: f32,
     pub memory: u64,
+    pub per_device: Vec<ProcGpuUse>,
 }
 
 struct Api {
@@ -86,7 +89,7 @@ struct Api {
 
 struct Dev {
     handle: Device,
-    id: String,
+    id: Arc<str>,
     name: String,
     last_seen: u64,
 }
@@ -178,7 +181,7 @@ impl Nvml {
                 } else {
                     format!("nvidia{i}")
                 };
-                devices.push(Dev { handle, id, name, last_seen: 0 });
+                devices.push(Dev { handle, id: Arc::from(id), name, last_seen: 0 });
             }
             Some(Nvml { api, devices })
         }
@@ -190,7 +193,8 @@ impl Nvml {
 
     fn gpu(&self, d: &Dev) -> GpuRaw {
         let a = &self.api;
-        let mut g = GpuRaw { id: d.id.clone(), name: d.name.clone(), vendor: "NVIDIA".to_owned(), ..GpuRaw::default() };
+        let mut g =
+            GpuRaw { id: d.id.to_string(), name: d.name.clone(), vendor: "NVIDIA".to_owned(), ..GpuRaw::default() };
         // SAFETY: each call receives a live handle and valid out-pointers of the declared types.
         unsafe {
             let mut u = Utilization::default();
@@ -250,8 +254,11 @@ impl Nvml {
                 let rc = unsafe { f(d.handle, samples.as_mut_ptr(), &raw mut n, d.last_seen) };
                 if rc == NVML_SUCCESS {
                     for s in &samples[..(n as usize).min(samples.len())] {
+                        let pct = s.sm_util.min(100) as f32;
                         let e = out.entry(s.pid).or_default();
-                        e.percent = e.percent.max(s.sm_util.min(100) as f32);
+                        e.percent = e.percent.max(pct);
+                        let u = device_use(e, &d.id);
+                        u.percent = Some(u.percent.unwrap_or(0.0).max(pct));
                         d.last_seen = d.last_seen.max(s.time_stamp);
                     }
                 }
@@ -275,8 +282,21 @@ impl Nvml {
             for (pid, memory) in on_device {
                 let e = out.entry(pid).or_default();
                 e.memory = e.memory.saturating_add(memory);
+                device_use(e, &d.id).mem = Some(memory);
             }
         }
         out
     }
+}
+
+/// The entry of device `id` in a process's split, added on first use.
+fn device_use<'a>(u: &'a mut ProcUse, id: &Arc<str>) -> &'a mut ProcGpuUse {
+    let i = match u.per_device.iter().position(|d| d.gpu == *id) {
+        Some(i) => i,
+        None => {
+            u.per_device.push(ProcGpuUse { gpu: id.clone(), ..ProcGpuUse::default() });
+            u.per_device.len() - 1
+        }
+    };
+    &mut u.per_device[i]
 }

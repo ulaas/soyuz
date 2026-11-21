@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use soyuz_fs::sysmon::{GpuEngine, SensorKind, SensorRaw};
+use soyuz_fs::sysmon::{GpuEngine, ProcGpuUse, SensorKind, SensorRaw};
 use soyuz_sysmon::{
     CoreFrame, Counts, CpuFrame, DiskFrame, Frame, GpuRaw, MemFrame, MemoryRaw, NetFrame, ProcKey, ProcRaw, ProcRow,
     ProcState, SystemInfo,
@@ -58,7 +58,7 @@ fn wave(t: f32, speed: f32, phase: f32) -> f32 {
     (0.5 + 0.28 * a + 0.15 * b + 0.07 * c).clamp(0.0, 1.0)
 }
 
-fn procs(t: f32, now_ms: i64) -> Arc<[ProcRow]> {
+fn procs(t: f32, now_ms: i64, gpus: usize) -> Arc<[ProcRow]> {
     let pid = |i: usize| 1_200 + i as u32 * 37;
     ROWS.iter()
         .enumerate()
@@ -66,6 +66,13 @@ fn procs(t: f32, now_ms: i64) -> Arc<[ProcRow]> {
             let (parent, name, user, cpu, mem, read, write, gpu) = *r;
             let swing = 0.6 + 0.8 * wave(t, 0.09, i as f32);
             let cpu = cpu * swing;
+            // With a second adapter, every third process runs there and the rest on the first.
+            let gpu_adapters = if gpus > 1 && gpu > 0.0 {
+                let on = if i % 3 == 0 { "gpu1" } else { "gpu0" };
+                vec![ProcGpuUse { gpu: on.into(), percent: Some(gpu * swing), mem: Some(mem * MIB / 4) }]
+            } else {
+                Vec::new()
+            };
             ProcRow {
                 raw: ProcRaw {
                     key: ProcKey {
@@ -85,6 +92,7 @@ fn procs(t: f32, now_ms: i64) -> Arc<[ProcRow]> {
                     threads: 2 + (mem / 90) as u32,
                     gpu_percent: Some(gpu * swing),
                     gpu_mem: Some(mem * MIB / 4),
+                    gpu_adapters,
                     ..ProcRaw::default()
                 },
                 cpu_percent: cpu,
@@ -97,7 +105,7 @@ fn procs(t: f32, now_ms: i64) -> Arc<[ProcRow]> {
         .into()
 }
 
-fn frame(i: i64, now_ms: i64) -> Frame {
+fn frame(i: i64, now_ms: i64, gpus: usize) -> Frame {
     let t = i as f32;
     let cpu = 22.0 + 46.0 * wave(t, 0.07, 0.4);
     let cores = (0..CORES)
@@ -226,14 +234,34 @@ fn frame(i: i64, now_ms: i64) -> Frame {
             clock_mhz: Some(2_450),
             mem_clock_mhz: Some(9_500),
             ..GpuRaw::default()
-        }],
+        }]
+        .into_iter()
+        .chain((gpus > 1).then(|| {
+            let load = 8.0 + 30.0 * wave(t, 0.05, 6.0);
+            GpuRaw {
+                id: "gpu1".into(),
+                name: "Integrated graphics".into(),
+                vendor: "GPU".into(),
+                percent: Some(load),
+                engines: vec![
+                    GpuEngine { name: "3D".into(), percent: load },
+                    GpuEngine { name: "Video encode".into(), percent: load / 2.0 },
+                ],
+                mem_used: Some(GIB),
+                shared_used: Some(2 * GIB),
+                temperature_c: Some(temp - 10.0),
+                clock_mhz: Some(1_550),
+                ..GpuRaw::default()
+            }
+        }))
+        .collect(),
         sensors: vec![
             sensor("cpu", "CPU", "Package", SensorKind::Temperature, temp, Some(100.0)),
             sensor("ssd", "NVMe SSD", "Composite", SensorKind::Temperature, 41.0, Some(84.0)),
             sensor("fan", "Board", "CPU fan", SensorKind::Fan, 980.0, None),
             sensor("pwr", "CPU", "Package power", SensorKind::Power, 40.0 + cpu, None),
         ],
-        procs: procs(t, now_ms),
+        procs: procs(t, now_ms, gpus),
         counts: Counts { processes: ROWS.len() as u32, threads: 412, handles: None, running: 6 },
         ..Frame::default()
     }
@@ -241,6 +269,11 @@ fn frame(i: i64, now_ms: i64) -> Frame {
 
 /// Three minutes of the made-up machine ending now, and its description.
 pub fn frames() -> (Vec<Frame>, SystemInfo) {
+    frames_with_gpus(1)
+}
+
+/// [`frames`] with `gpus` adapters (1 or 2).
+pub fn frames_with_gpus(gpus: usize) -> (Vec<Frame>, SystemInfo) {
     let now_ms = chrono::Utc::now().timestamp_millis();
     let info = SystemInfo {
         hostname: "orbit".into(),
@@ -256,7 +289,7 @@ pub fn frames() -> (Vec<Frame>, SystemInfo) {
         memory_total: 64 * GIB,
         ..SystemInfo::default()
     };
-    ((0..SECONDS).map(|i| frame(i, now_ms)).collect(), info)
+    ((0..SECONDS).map(|i| frame(i, now_ms, gpus)).collect(), info)
 }
 
 #[cfg(test)]

@@ -8,13 +8,14 @@ use std::sync::Arc;
 use egui::{Align2, CursorIcon, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 use soyuz_core::config::monitor::{CpuScale, ProcColumn, ProcView};
 use soyuz_sysmon::{
-    CellValue, Frame, ProcKey, ProcPriority, ProcSignal, ProcState, RowId, RowKind, TableRow, cell, cell_total,
+    CellValue, Frame, ProcKey, ProcPriority, ProcSignal, ProcState, RowId, RowKind, TableRow, cell, cell_gpu,
+    cell_total, cell_total_gpu,
 };
 
 use super::table::{Col, HeaderEvent, Sort, Table, row_bg};
 use super::{PageCtx, details, filter_box, segmented_text, segmented_width};
 use crate::models::monitor::cmd::CopyWhat;
-use crate::models::monitor::{MonitorCmd, SignalScope, labels};
+use crate::models::monitor::{MonitorCmd, SignalScope, labels, split_gpus};
 use crate::services::thumbs::{self, ThumbKey};
 use crate::theme::font::semibold;
 use crate::theme::tokens::radius;
@@ -126,26 +127,34 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
     let icon_px = thumbs::icon_px(ROW_ICON, ppp);
     let flashes = update_flashes(ui, pane, &frame, generation);
     let now = ui.input(|i| i.time);
-    let cols: Vec<Col> = cfg
-        .columns
+    let shown = shown_columns(&cfg, &frame);
+    let cols: Vec<Col> = shown
         .iter()
-        .map(|cc| {
+        .map(|sc| {
+            let cc = &cfg.columns[sc.ci];
             let w = match local.live_width {
                 Some((col, w)) if col == cc.id => w,
                 _ if cc.width > 0.0 => cc.width,
                 _ => cc.id.default_width(),
             };
-            let mut col = Col::new(labels::column_title(cc.id), font::grow(w)).tip(labels::column_desc(cc.id));
+            let mut col = match sc.gpu.and_then(|g| Some((g, frame.gpus.get(usize::from(g))?))) {
+                Some((g, gpu)) => Col::new(format!("{} {g}", labels::column_title(cc.id)), font::grow(w)).tip(tr!(
+                    "monitor-gui-gpu-column-tip",
+                    desc = labels::column_desc(cc.id),
+                    gpu = super::gpu::gpu_title(usize::from(g), gpu).as_str()
+                )),
+                None => Col::new(labels::column_title(cc.id), font::grow(w)).tip(labels::column_desc(cc.id)),
+            };
             if cc.id.numeric() {
                 col = col.numeric();
             }
             col
         })
         .collect();
-    let sort_i = cfg
-        .columns
+    let sort_gpu = c.view().sort_gpu.filter(|_| split_gpus(&cfg, &frame));
+    let sort_i = shown
         .iter()
-        .position(|cc| cc.id == cfg.sort_by)
+        .position(|sc| sc.id == cfg.sort_by && (sc.gpu.is_none() || sc.gpu == sort_gpu))
         .map(|i| Sort { col: i, descending: cfg.sort_descending });
     let _ = collapsed_n;
 
@@ -160,7 +169,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
             _ => None,
         };
         let focused = *focused && *list_focus;
-        let name_col = cfg.columns.iter().position(|cc| cc.id == ProcColumn::Name);
+        let name_col = shown.iter().position(|sc| sc.id == ProcColumn::Name);
         let table = Table {
             sort: sort_i,
             menu_col: local.menu_col,
@@ -212,15 +221,18 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
                         );
                     }
                     if let Some(t) = &row.totals {
-                        for (ci, cc) in cfg.columns.iter().enumerate() {
-                            if cc.id == ProcColumn::Name {
+                        for (ci, sc) in shown.iter().enumerate() {
+                            if sc.id == ProcColumn::Name {
                                 continue;
                             }
-                            let v = cell_total(cc.id, t, ncpu, scale);
+                            let v = match sc.gpu_id(&frame) {
+                                Some(gpu) => cell_total_gpu(sc.id, t, gpu),
+                                None => cell_total(sc.id, t, ncpu, scale),
+                            };
                             if matches!(v, CellValue::Missing) {
                                 continue;
                             }
-                            paint_value(rc, ci, cc.id, &v, &p, config, heat_on, total_mem, 0.85);
+                            paint_value(rc, ci, sc.id, &v, &p, config, heat_on, total_mem, 0.85);
                         }
                     }
                 }
@@ -247,19 +259,27 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
                         );
                         rc.painter.rect_filled(mr, crate::theme::tokens::radius::same(2), p.accent);
                     }
-                    for (ci, cc) in cfg.columns.iter().enumerate() {
-                        if cc.id == ProcColumn::Name {
+                    for (ci, sc) in shown.iter().enumerate() {
+                        if sc.id == ProcColumn::Name {
                             paint_name(rc, ci, row, pr, &p, view_kind, dim, icons_on, icon_px, thumbs, &frame);
                             continue;
                         }
+                        let gpu = sc.gpu_id(&frame);
+                        let own = || match gpu {
+                            Some(gpu) => cell_gpu(sc.id, pr, gpu),
+                            None => cell(sc.id, pr, now_ms, ncpu, scale),
+                        };
                         let v = match (&row.totals, row.collapsed) {
                             (Some(t), true) => {
-                                let tv = cell_total(cc.id, t, ncpu, scale);
-                                if matches!(tv, CellValue::Missing) { cell(cc.id, pr, now_ms, ncpu, scale) } else { tv }
+                                let tv = match gpu {
+                                    Some(gpu) => cell_total_gpu(sc.id, t, gpu),
+                                    None => cell_total(sc.id, t, ncpu, scale),
+                                };
+                                if matches!(tv, CellValue::Missing) { own() } else { tv }
                             }
-                            _ => cell(cc.id, pr, now_ms, ncpu, scale),
+                            _ => own(),
                         };
-                        paint_value(rc, ci, cc.id, &v, &p, config, heat_on, total_mem, dim);
+                        paint_value(rc, ci, sc.id, &v, &p, config, heat_on, total_mem, dim);
                     }
                     if raw.state == ProcState::Suspended {
                         let cr = rc.cell(name_col.unwrap_or(0));
@@ -285,32 +305,37 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
     // ---- header events ----
     for e in &out.events {
         match *e {
-            HeaderEvent::Sort(i) => {
-                if let Some(cc) = cfg.columns.get(i) {
-                    pending.push(MonitorCmd::SortBy(cc.id));
-                }
-            }
+            HeaderEvent::Sort(i) => match shown.get(i) {
+                Some(Shown { id, gpu: Some(g), .. }) => pending.push(MonitorCmd::SortByGpu(*id, *g)),
+                Some(sc) => pending.push(MonitorCmd::SortBy(sc.id)),
+                None => {}
+            },
+            // The columns of one setting split by adapter share its width.
             HeaderEvent::Resize { col, width } => {
-                if let Some(cc) = cfg.columns.get(col) {
-                    local.live_width = Some((cc.id, width / font::growth()));
+                if let Some(sc) = shown.get(col) {
+                    local.live_width = Some((sc.id, width / font::growth()));
                 }
             }
             HeaderEvent::ResizeDone { col, width } => {
-                if let Some(cc) = cfg.columns.get(col) {
-                    pending.push(MonitorCmd::SetColumnWidth(cc.id, (width / font::growth()).round()));
+                if let Some(sc) = shown.get(col) {
+                    pending.push(MonitorCmd::SetColumnWidth(sc.id, (width / font::growth()).round()));
                 }
                 local.live_width = None;
             }
             HeaderEvent::Move { from, to } => {
-                if let Some(cc) = cfg.columns.get(from) {
-                    pending.push(MonitorCmd::MoveColumn(cc.id, to));
+                // Positions on screen to positions among the settings' columns.
+                let to = shown.get(to).map_or(cfg.columns.len(), |sc| sc.ci);
+                if let Some(sc) = shown.get(from)
+                    && sc.ci != to
+                {
+                    pending.push(MonitorCmd::MoveColumn(sc.id, to));
                 }
             }
             HeaderEvent::Menu(ci) => local.menu_col = Some(ci),
         }
     }
     if let Some(hresp) = &out.menu {
-        let shown: Vec<ProcColumn> = cfg.columns.iter().map(|x| x.id).collect();
+        let on: Vec<ProcColumn> = cfg.columns.iter().map(|x| x.id).collect();
         let sort_by = cfg.sort_by;
         let cmds_out = &mut pending;
         let opened = super::context_menu(hresp, |ui| {
@@ -318,7 +343,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
             crate::ui::widgets::menu_caption(ui, tr!("monitor-gui-columns"));
             egui::ScrollArea::vertical().max_height(font::grow(380.0)).show(ui, |ui| {
                 for col in ProcColumn::ALL {
-                    let on = shown.contains(&col);
+                    let on = on.contains(&col);
                     let r = crate::ui::widgets::menu_check(ui, on, labels::column_title(col), None);
                     let r = r.on_hover_text(labels::column_desc(col));
                     if r.clicked() && col != ProcColumn::Name {
@@ -363,12 +388,13 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
         c.cmds.push(crate::cmd::Cmd::FocusPane(c.pane));
         if let Some((id, has_children, depth)) = row_at(c, &frame, generation, i) {
             let px = out.bg.interact_pointer_pos().map_or(f32::MAX, |q| q.x);
-            let name_x = cfg.columns.iter().position(|cc| cc.id == ProcColumn::Name).map_or(f32::MAX, |nc| {
+            let name_x = shown.iter().position(|sc| sc.id == ProcColumn::Name).map_or(f32::MAX, |nc| {
                 // The chevron sits at the start of the name cell, after the indent.
                 let x0 = out.bg.rect.left()
                     + 4.0
-                    + cfg.columns[..nc]
+                    + shown[..nc]
                         .iter()
+                        .map(|sc| &cfg.columns[sc.ci])
                         .map(|cc| if cc.width > 0.0 { cc.width } else { cc.id.default_width() })
                         .sum::<f32>();
                 x0 + 8.0 + f32::from(depth) * 14.0
@@ -498,6 +524,39 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
 
     ui.ctx().data_mut(|d| d.insert_temp(local_id(pane), local));
     flush(c, pending);
+}
+
+/// A column on screen: setting `ci` of `[monitor] columns`, for one adapter when the GPU
+/// columns are split by adapter.
+#[derive(Clone, Copy)]
+struct Shown {
+    ci: usize,
+    id: ProcColumn,
+    /// An index into `frame.gpus`.
+    gpu: Option<u16>,
+}
+
+impl Shown {
+    /// The adapter id of a split GPU column.
+    fn gpu_id<'a>(&self, frame: &'a Frame) -> Option<&'a str> {
+        frame.gpus.get(usize::from(self.gpu?)).map(|g| g.id.as_str())
+    }
+}
+
+/// The settings' columns as shown for `frame`: with two or more adapters (and the setting
+/// on), GPU and GPU memory once per adapter.
+fn shown_columns(cfg: &soyuz_core::config::monitor::Monitor, frame: &Frame) -> Vec<Shown> {
+    let split = split_gpus(cfg, frame);
+    let adapters = frame.gpus.len().min(usize::from(u16::MAX)) as u16;
+    let mut out = Vec::with_capacity(cfg.columns.len() + if split { 2 * usize::from(adapters) } else { 0 });
+    for (ci, cc) in cfg.columns.iter().enumerate() {
+        if split && matches!(cc.id, ProcColumn::Gpu | ProcColumn::GpuMemory) {
+            out.extend((0..adapters).map(|g| Shown { ci, id: cc.id, gpu: Some(g) }));
+        } else {
+            out.push(Shown { ci, id: cc.id, gpu: None });
+        }
+    }
+    out
 }
 
 /// Identity, children flag and depth of row `i` of the table as built for `frame`.

@@ -37,13 +37,14 @@ pub use rates::Rater;
 pub use sanitize::sanitize_text;
 pub use snapshot::{Snapshot, SnapshotMeta};
 pub use table::{
-    CellValue, RowId, RowKind, TableCache, TableOpts, TableRow, Totals, build, cell, cell_total, position_of,
+    CellValue, RowId, RowKind, TableCache, TableOpts, TableRow, Totals, build, cell, cell_gpu, cell_total,
+    cell_total_gpu, position_of,
 };
 
 // The raw records the frontends handle, so that they need only one import path.
 pub use soyuz_core::config::monitor::{CpuScale, Monitor, ProcColumn, ProcView, SnapshotCommands};
 pub use soyuz_fs::sysmon::{
-    BatteryRaw, Connection, ControlError, DetailsWant, GpuEngine, GpuRaw, MemoryRaw, ProcDetails, ProcKey,
+    BatteryRaw, Connection, ControlError, DetailsWant, GpuEngine, GpuRaw, MemoryRaw, ProcDetails, ProcGpuUse, ProcKey,
     ProcPriority, ProcRaw, ProcSignal, ProcState, Proto, RawSample, SensorKind, SensorRaw, ServiceInfo, ServiceOp,
     ServiceState, StartupItem, SystemInfo, Want,
 };

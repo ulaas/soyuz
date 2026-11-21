@@ -366,6 +366,8 @@ pub struct Monitor {
     pub process_icons: bool,
     /// Read per-process GPU use (the most expensive reading; refreshed every few seconds).
     pub process_gpu: bool,
+    /// With two or more GPUs, show the process table's GPU and GPU memory columns once per adapter.
+    pub split_gpu_columns: bool,
     /// Scroll to keep the selected process in view while rows reorder. Off: the selection stays on its process and the list stays put.
     pub follow_selected: bool,
     /// What of a process's command line goes into snapshots and exports.
@@ -446,6 +448,7 @@ impl Default for Monitor {
             details_height: 260.0,
             process_icons: true,
             process_gpu: true,
+            split_gpu_columns: true,
             follow_selected: false,
             snapshot_commands: SnapshotCommands::Redacted,
             heat_cells: true,

@@ -41,6 +41,8 @@ pub enum MonitorCmd {
     SetView(ProcView),
     /// Sort by a column (again: other direction).
     SortBy(ProcColumn),
+    /// Sort by the GPU or GPU memory column of one adapter (an index into `frame.gpus`).
+    SortByGpu(ProcColumn, u16),
     /// Show or hide a column.
     ToggleColumn(ProcColumn),
     /// Move a column to position `to` among the shown ones.
@@ -256,14 +258,32 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
             update_config(app, host, |c| c.monitor.page = page);
         }
         C::SetView(view) => update_config(app, host, |c| c.monitor.view = view),
-        C::SortBy(col) => update_config(app, host, |c| {
-            if c.monitor.sort_by == col {
-                c.monitor.sort_descending = !c.monitor.sort_descending;
-            } else {
-                c.monitor.sort_by = col;
-                c.monitor.sort_descending = col.descending_first();
-            }
-        }),
+        C::SortByGpu(col, gpu) => {
+            let view = app.ui.monitor.view(pane, &cfg);
+            let again = cfg.sort_by == col && view.sort_gpu == Some(gpu);
+            view.sort_gpu = Some(gpu);
+            update_config(app, host, |c| {
+                if again {
+                    c.monitor.sort_descending = !c.monitor.sort_descending;
+                } else {
+                    c.monitor.sort_by = col;
+                    c.monitor.sort_descending = col.descending_first();
+                }
+            });
+        }
+        C::SortBy(col) => {
+            let view = app.ui.monitor.view(pane, &cfg);
+            // From one adapter's column to the summed one is a new sort, not a turn.
+            let from_adapter = view.sort_gpu.take().is_some() && cfg.sort_by == col;
+            update_config(app, host, |c| {
+                if c.monitor.sort_by == col && !from_adapter {
+                    c.monitor.sort_descending = !c.monitor.sort_descending;
+                } else {
+                    c.monitor.sort_by = col;
+                    c.monitor.sort_descending = col.descending_first();
+                }
+            });
+        }
         C::ToggleColumn(col) if col != ProcColumn::Name => update_config(app, host, |c| {
             if let Some(i) = c.monitor.columns.iter().position(|x| x.id == col) {
                 c.monitor.columns.remove(i);

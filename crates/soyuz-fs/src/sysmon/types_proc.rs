@@ -47,6 +47,17 @@ pub enum ProcPriority {
     Realtime,
 }
 
+/// A process's use of one GPU adapter.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ProcGpuUse {
+    /// The adapter's `GpuRaw::id`.
+    pub gpu: Arc<str>,
+    /// Its busiest engine on this adapter, percent.
+    pub percent: Option<f32>,
+    /// Dedicated memory it holds on this adapter.
+    pub mem: Option<u64>,
+}
+
 /// One process. Counters are since process start. `None`: the OS does not offer the value,
 /// or Soyuz may not read it for this process (another user's, a protected one).
 /// Text that rarely changes is shared (`Arc`) with the probe's per-process cache, so a
@@ -92,6 +103,10 @@ pub struct ProcRaw {
     pub gpu_percent: Option<f32>,
     /// GPU memory used.
     pub gpu_mem: Option<u64>,
+    /// The same use split by adapter, for the adapters the process uses. Empty where the OS
+    /// gives only the sum. An adapter missing here while `gpu_percent` is known: unused.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gpu_adapters: Vec<ProcGpuUse>,
     /// `x64`, `x86`, `arm64`.
     pub arch: Option<Arc<str>>,
     /// Running elevated / as root.

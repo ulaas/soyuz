@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use soyuz_core::config::monitor::{CpuScale, Monitor, ProcColumn, ProcView};
-use soyuz_fs::sysmon::{ProcKey, ProcPriority, ProcState};
+use soyuz_fs::sysmon::{ProcGpuUse, ProcKey, ProcPriority, ProcState};
 
 use crate::filter::Filter;
 use crate::frame::{Frame, ProcRow};
@@ -119,8 +119,41 @@ pub fn cell(col: ProcColumn, row: &ProcRow, now_ms: i64, ncpu: u32, scale: CpuSc
     }
 }
 
+/// One adapter's share of a process's (or a sum's) GPU use: `(load, memory)`. Looked up by
+/// `GpuRaw::id`. An adapter missing from a split that has entries is unused (0); with no
+/// split at all, only a known idle total says 0, anything else is not known per adapter.
+fn gpu_share(split: &[ProcGpuUse], gpu: &str, percent: Option<f32>, mem: Option<u64>) -> (Option<f32>, Option<u64>) {
+    if let Some(u) = split.iter().find(|u| &*u.gpu == gpu) {
+        return (u.percent, u.mem);
+    }
+    let idle = !split.is_empty() || (percent == Some(0.0) && mem.unwrap_or(0) == 0);
+    if idle { (percent.map(|_| 0.0), mem.map(|_| 0)) } else { (None, None) }
+}
+
+/// The value of the GPU or GPU memory column of one process on adapter `gpu` (a
+/// `GpuRaw::id`); other columns as [`cell`].
+pub fn cell_gpu(col: ProcColumn, row: &ProcRow, gpu: &str) -> CellValue {
+    let r = &row.raw;
+    let (percent, mem) = gpu_share(&r.gpu_adapters, gpu, r.gpu_percent, r.gpu_mem);
+    match col {
+        ProcColumn::Gpu => percent.map_or(CellValue::Missing, CellValue::Percent),
+        ProcColumn::GpuMemory => opt_bytes(mem),
+        _ => CellValue::Missing,
+    }
+}
+
+/// [`cell_total`] of the GPU or GPU memory column on adapter `gpu`.
+pub fn cell_total_gpu(col: ProcColumn, t: &Totals, gpu: &str) -> CellValue {
+    let (percent, mem) = gpu_share(&t.gpus, gpu, t.gpu_percent, t.gpu_mem);
+    match col {
+        ProcColumn::Gpu => percent.map_or(CellValue::Missing, CellValue::Percent),
+        ProcColumn::GpuMemory => opt_bytes(mem),
+        _ => CellValue::Missing,
+    }
+}
+
 /// Sums over a group or a collapsed subtree. `None` where no member has the value.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Totals {
     /// Processes summed.
     pub count: u32,
@@ -140,6 +173,8 @@ pub struct Totals {
     pub write_total: Option<u64>,
     pub gpu_percent: Option<f32>,
     pub gpu_mem: Option<u64>,
+    /// GPU use summed per adapter.
+    pub gpus: Vec<ProcGpuUse>,
     pub page_faults: Option<u64>,
 }
 
@@ -171,6 +206,15 @@ impl Totals {
         self.write_total = add_opt(self.write_total, r.write_bytes);
         self.gpu_percent = add_opt(self.gpu_percent, r.gpu_percent);
         self.gpu_mem = add_opt(self.gpu_mem, r.gpu_mem);
+        for u in &r.gpu_adapters {
+            match self.gpus.iter_mut().find(|t| t.gpu == u.gpu) {
+                Some(t) => {
+                    t.percent = add_opt(t.percent, u.percent);
+                    t.mem = add_opt(t.mem, u.mem);
+                }
+                None => self.gpus.push(u.clone()),
+            }
+        }
         self.page_faults = add_opt(self.page_faults, r.page_faults);
     }
 }
@@ -204,6 +248,9 @@ pub fn cell_total(col: ProcColumn, t: &Totals, ncpu: u32, scale: CpuScale) -> Ce
 pub struct TableOpts {
     pub view: ProcView,
     pub sort_by: ProcColumn,
+    /// With `sort_by` GPU or GPU memory: sort by the use of this adapter (an index into
+    /// `frame.gpus`) instead of the sum over adapters.
+    pub sort_gpu: Option<u16>,
     pub descending: bool,
     /// Tree view: keep the parents of matches on screen (dimmed, `matched` false). Otherwise
     /// matches flatten to roots.
@@ -222,6 +269,7 @@ impl Default for TableOpts {
         TableOpts {
             view: ProcView::List,
             sort_by: ProcColumn::Cpu,
+            sort_gpu: None,
             descending: true,
             keep_parents: true,
             show_kernel: false,
@@ -240,6 +288,7 @@ impl TableOpts {
         TableOpts {
             view: cfg.view,
             sort_by: cfg.sort_by,
+            sort_gpu: None,
             descending: cfg.sort_descending,
             keep_parents: cfg.filter_keeps_parents,
             show_kernel: cfg.show_kernel,
@@ -322,6 +371,8 @@ pub fn position_of(rows: &[TableRow], frame: &Frame, id: &RowId) -> Option<usize
 /// Sorts processes in the table's order; missing values always last, ties by pid.
 struct Order<'a> {
     col: ProcColumn,
+    /// The adapter (`GpuRaw::id`) of a per-adapter GPU sort.
+    gpu: Option<&'a str>,
     descending: bool,
     procs: &'a [ProcRow],
     now_ms: i64,
@@ -399,6 +450,12 @@ impl Order<'_> {
             ProcColumn::DiskWrite => cmp_opt(ra.write_rate, rb.write_rate, d),
             ProcColumn::DiskReadTotal => cmp_opt(a.read_bytes, b.read_bytes, d),
             ProcColumn::DiskWriteTotal => cmp_opt(a.write_bytes, b.write_bytes, d),
+            ProcColumn::Gpu | ProcColumn::GpuMemory if self.gpu.is_some() => {
+                let gpu = self.gpu.unwrap_or_default();
+                let (pa, ma) = gpu_share(&a.gpu_adapters, gpu, a.gpu_percent, a.gpu_mem);
+                let (pb, mb) = gpu_share(&b.gpu_adapters, gpu, b.gpu_percent, b.gpu_mem);
+                if self.col == ProcColumn::Gpu { cmp_opt(pa, pb, d) } else { cmp_opt(ma, mb, d) }
+            }
             ProcColumn::Gpu => cmp_opt(a.gpu_percent, b.gpu_percent, d),
             ProcColumn::GpuMemory => cmp_opt(a.gpu_mem, b.gpu_mem, d),
             ProcColumn::PageFaults => cmp_opt(a.page_faults, b.page_faults, d),
@@ -439,7 +496,8 @@ pub fn build(frame: &Frame, filter: &Filter, opts: &TableOpts, collapsed: &HashS
                     (Some(_), None) => false,
                 })
     };
-    let order = Order { col: opts.sort_by, descending: opts.descending, procs, now_ms: opts.now_ms };
+    let gpu = sort_gpu(frame, opts);
+    let order = Order { col: opts.sort_by, gpu, descending: opts.descending, procs, now_ms: opts.now_ms };
     let matches = |r: &ProcRow| filter.matches_in(r, ncpu, opts.scale);
 
     match opts.view {
@@ -459,6 +517,14 @@ pub fn build(frame: &Frame, filter: &Filter, opts: &TableOpts, collapsed: &HashS
             groups(frame, opts, collapsed, &idx)
         }
     }
+}
+
+/// The adapter id of a per-adapter GPU sort, when it applies to this frame.
+fn sort_gpu<'a>(frame: &'a Frame, opts: &TableOpts) -> Option<&'a str> {
+    if !matches!(opts.sort_by, ProcColumn::Gpu | ProcColumn::GpuMemory) {
+        return None;
+    }
+    frame.gpus.get(usize::from(opts.sort_gpu?)).map(|g| g.id.as_str())
 }
 
 fn flat_rows(idx: &[u32]) -> Vec<TableRow> {
@@ -679,7 +745,7 @@ fn groups(frame: &Frame, opts: &TableOpts, collapsed: &HashSet<RowId>, idx: &[u3
     let d = opts.descending;
     group_order.sort_unstable_by(|&a, &b| {
         let (ga, gb) = (&list[a as usize], &list[b as usize]);
-        total_cmp(opts.sort_by, &ga.totals, &gb.totals, d)
+        total_cmp(opts.sort_by, sort_gpu(frame, opts), &ga.totals, &gb.totals, d)
             // The group of processes whose user cannot be read stays at the end.
             .then_with(|| ga.label.is_empty().cmp(&gb.label.is_empty()))
             .then_with(|| {
@@ -703,7 +769,7 @@ fn groups(frame: &Frame, opts: &TableOpts, collapsed: &HashSet<RowId>, idx: &[u3
             matched: true,
             last_sibling: last,
             ancestors_last: 0,
-            totals: Some(group.totals),
+            totals: Some(group.totals.clone()),
         });
         if is_collapsed {
             continue;
@@ -725,7 +791,12 @@ fn groups(frame: &Frame, opts: &TableOpts, collapsed: &HashSet<RowId>, idx: &[u3
     rows
 }
 
-fn total_cmp(col: ProcColumn, a: &Totals, b: &Totals, d: bool) -> Ordering {
+fn total_cmp(col: ProcColumn, gpu: Option<&str>, a: &Totals, b: &Totals, d: bool) -> Ordering {
+    if let (Some(gpu), ProcColumn::Gpu | ProcColumn::GpuMemory) = (gpu, col) {
+        let (pa, ma) = gpu_share(&a.gpus, gpu, a.gpu_percent, a.gpu_mem);
+        let (pb, mb) = gpu_share(&b.gpus, gpu, b.gpu_percent, b.gpu_mem);
+        return if col == ProcColumn::Gpu { cmp_opt(pa, pb, d) } else { cmp_opt(ma, mb, d) };
+    }
     match col {
         ProcColumn::Cpu => cmp_opt(Some(a.cpu_percent), Some(b.cpu_percent), d),
         ProcColumn::CpuTime => cmp_opt(Some(a.cpu_ms), Some(b.cpu_ms), d),
@@ -815,6 +886,7 @@ impl TableCache {
 fn same_opts(a: &TableOpts, b: &TableOpts) -> bool {
     a.view == b.view
         && a.sort_by == b.sort_by
+        && a.sort_gpu == b.sort_gpu
         && a.descending == b.descending
         && a.keep_parents == b.keep_parents
         && a.show_kernel == b.show_kernel
@@ -1019,12 +1091,12 @@ mod tests {
         let shell = &rows[1];
         assert!(shell.collapsed);
         assert!(shell.has_children);
-        let t = shell.totals.unwrap();
+        let t = shell.totals.as_ref().unwrap();
         assert_eq!(t.count, 3);
         assert_eq!(t.cpu_percent, 14.0);
         assert_eq!(t.rss, 90);
-        assert_eq!(cell_total(ProcColumn::Memory, &t, 1, CpuScale::PerCore), CellValue::Bytes(90));
-        assert_eq!(cell_total(ProcColumn::Name, &t, 1, CpuScale::PerCore), CellValue::Missing);
+        assert_eq!(cell_total(ProcColumn::Memory, t, 1, CpuScale::PerCore), CellValue::Bytes(90));
+        assert_eq!(cell_total(ProcColumn::Name, t, 1, CpuScale::PerCore), CellValue::Missing);
         assert_eq!(rows[0].totals, None);
     }
 
@@ -1065,7 +1137,7 @@ mod tests {
         let f = grouped();
         let rows = build(&f, &nofilter(), &opts(ProcView::ByName), &none());
         assert_eq!(names(&f, &rows), ["[code 1]", " code", "[chrome 2]", " chrome", " chrome"]);
-        let chrome = rows[2].totals.unwrap();
+        let chrome = rows[2].totals.as_ref().unwrap();
         assert_eq!(chrome.count, 2, "the idle process is left out of group totals");
         assert_eq!(chrome.cpu_percent, 12.0);
         assert_eq!(chrome.rss, 300);
@@ -1098,7 +1170,52 @@ mod tests {
         let q = Filter::parse("pid=2", false).unwrap();
         let rows = build(&f, &q, &opts(ProcView::ByName), &none());
         assert_eq!(names(&f, &rows), ["[chrome 1]", " chrome"]);
-        assert_eq!(rows[0].totals.unwrap().rss, 200);
+        assert_eq!(rows[0].totals.as_ref().unwrap().rss, 200);
+    }
+
+    #[test]
+    fn gpu_columns_split_by_adapter() {
+        use soyuz_fs::sysmon::{GpuRaw, ProcGpuUse};
+        let share = |gpu: &str, percent: f32, mem: u64| ProcGpuUse {
+            gpu: Arc::from(gpu),
+            percent: Some(percent),
+            mem: Some(mem),
+        };
+        let mut a = row(1, None, "a", 0.0, 10);
+        a.raw.gpu_percent = Some(50.0);
+        a.raw.gpu_mem = Some(300);
+        a.raw.gpu_adapters = vec![share("x", 50.0, 100), share("y", 5.0, 200)];
+        let mut b = row(2, None, "b", 0.0, 10);
+        b.raw.gpu_percent = Some(30.0);
+        b.raw.gpu_mem = Some(40);
+        b.raw.gpu_adapters = vec![share("y", 30.0, 40)];
+        // No split: unknown per adapter unless idle.
+        let mut c = row(3, None, "c", 0.0, 10);
+        c.raw.gpu_percent = Some(20.0);
+        let mut f = frame_of(vec![a, b, c]);
+        f.gpus = vec![GpuRaw { id: "x".into(), ..Default::default() }, GpuRaw { id: "y".into(), ..Default::default() }];
+        assert_eq!(cell_gpu(ProcColumn::Gpu, &f.procs[0], "y"), CellValue::Percent(5.0));
+        assert_eq!(cell_gpu(ProcColumn::GpuMemory, &f.procs[0], "x"), CellValue::Bytes(100));
+        assert_eq!(cell_gpu(ProcColumn::Gpu, &f.procs[1], "x"), CellValue::Percent(0.0));
+        assert_eq!(cell_gpu(ProcColumn::Gpu, &f.procs[2], "x"), CellValue::Missing);
+
+        let mut o = opts(ProcView::List);
+        o.sort_by = ProcColumn::Gpu;
+        assert_eq!(names(&f, &build(&f, &nofilter(), &o, &none())), ["a", "b", "c"]);
+        o.sort_gpu = Some(1);
+        assert_eq!(names(&f, &build(&f, &nofilter(), &o, &none())), ["b", "a", "c"]);
+        o.sort_by = ProcColumn::GpuMemory;
+        assert_eq!(names(&f, &build(&f, &nofilter(), &o, &none())), ["a", "b", "c"]);
+        // An index past the adapters sorts by the sum.
+        o.sort_by = ProcColumn::Gpu;
+        o.sort_gpu = Some(9);
+        assert_eq!(names(&f, &build(&f, &nofilter(), &o, &none())), ["a", "b", "c"]);
+
+        let mut t = Totals::default();
+        t.add(&f.procs[0]);
+        t.add(&f.procs[1]);
+        assert_eq!(cell_total_gpu(ProcColumn::Gpu, &t, "y"), CellValue::Percent(35.0));
+        assert_eq!(cell_total_gpu(ProcColumn::GpuMemory, &t, "y"), CellValue::Bytes(240));
     }
 
     #[test]

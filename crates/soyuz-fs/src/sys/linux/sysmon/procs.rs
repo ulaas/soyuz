@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use super::{clk_tck, nvml, page_size, read_into, start_ms_of};
 use crate::sysmon::parse::nice_to_priority;
 use crate::sysmon::parse::pid::{self as ppid, DrmClient, EngineUse, PF_KTHREAD};
-use crate::sysmon::{ProcKey, ProcRaw, Want};
+use crate::sysmon::{ProcGpuUse, ProcKey, ProcRaw, Want};
 
 /// Programs change their title (`setproctitle`) and cgroup after start.
 const TEXT_REFRESH: Duration = Duration::from_secs(30);
@@ -45,6 +45,7 @@ struct Cached {
     /// The last GPU pass's result, carried forward between passes.
     gpu_percent: Option<f32>,
     gpu_mem: Option<u64>,
+    gpu_adapters: Vec<ProcGpuUse>,
 }
 
 struct GpuCounter {
@@ -182,16 +183,19 @@ impl ProcTable {
             if let Some(pass) = pass {
                 c.gpu_percent = None;
                 c.gpu_mem = None;
+                c.gpu_adapters.clear();
                 if self.has_drm {
                     self.gpu_from_fdinfo(pid, &mut c, &mut pass.totals);
                 }
                 if let Some(u) = pass.nvml.get(&pid) {
                     c.gpu_percent = Some(c.gpu_percent.unwrap_or(0.0).max(u.percent));
                     c.gpu_mem = Some(c.gpu_mem.unwrap_or(0).saturating_add(u.memory));
+                    c.gpu_adapters.extend(u.per_device.iter().cloned());
                 }
             }
             p.gpu_percent = c.gpu_percent;
             p.gpu_mem = c.gpu_mem;
+            p.gpu_adapters.clone_from(&c.gpu_adapters);
         }
         self.cache.insert(key, c);
         Some(p)
@@ -352,6 +356,17 @@ impl ProcTable {
         if elapsed.is_some() {
             // The busiest engine, the same measure as `GpuRaw::percent`.
             c.gpu_percent = Some(engines.iter().fold(0f32, |m, e| m.max(e.2)).min(100.0));
+        }
+        // The same per device (a card's id is its PCI slot).
+        for cl in &clients {
+            let pdev = cl.pdev.as_str();
+            let i = c.gpu_adapters.iter().position(|u| &*u.gpu == pdev).unwrap_or_else(|| {
+                let busiest = engines.iter().filter(|e| e.0 == pdev).fold(0f32, |m, e| m.max(e.2)).min(100.0);
+                c.gpu_adapters.push(ProcGpuUse { gpu: Arc::from(pdev), percent: elapsed.map(|_| busiest), mem: None });
+                c.gpu_adapters.len() - 1
+            });
+            let u = &mut c.gpu_adapters[i];
+            u.mem = Some(u.mem.unwrap_or(0).saturating_add(cl.memory));
         }
         for (pdev, engine, pct) in &engines {
             *totals.entry(((*pdev).to_owned(), (*engine).to_owned())).or_insert(0.0) += pct;

@@ -184,8 +184,16 @@ pub struct MonitorView {
     pub startup: ListState<soyuz_sysmon::StartupItem>,
     pub history: HistoryState,
     pub snapshots: SnapshotsState,
+    /// The process table sorts by this adapter's column (an index into `frame.gpus`) when
+    /// `sort_by` is GPU or GPU memory and the columns are split by adapter.
+    pub sort_gpu: Option<u16>,
     table: TableCache,
     me: Option<String>,
+}
+
+/// The process table shows one GPU and one GPU memory column per adapter.
+pub fn split_gpus(cfg: &Monitor, frame: &Frame) -> bool {
+    cfg.split_gpu_columns && frame.gpus.len() > 1
 }
 
 impl MonitorView {
@@ -209,6 +217,7 @@ impl MonitorView {
             startup: ListState::new(0, false),
             history: HistoryState::default(),
             snapshots: SnapshotsState::default(),
+            sort_gpu: None,
             table: TableCache::new(),
             me: None,
         };
@@ -239,7 +248,8 @@ impl MonitorView {
                 .and_then(|p| p.raw.user.as_deref().map(str::to_string));
             self.me = me;
         }
-        let opts = TableOpts::from_config(cfg, self.me.clone(), frame);
+        let mut opts = TableOpts::from_config(cfg, self.me.clone(), frame);
+        opts.sort_gpu = self.sort_gpu.filter(|_| split_gpus(cfg, frame));
         self.table.rows(frame, generation, &self.filter, &opts, &self.collapsed)
     }
 

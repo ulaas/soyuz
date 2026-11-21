@@ -1,6 +1,7 @@
 //! The Overview page: hero cards (number, sub-line, live chart) that open their pages, the
 //! system identity strip, the top processes by CPU and memory, and the volume bars.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use egui::{Align2, Color32, Id, Rect, ScrollArea, Sense, Ui, UiBuilder, pos2, vec2};
@@ -20,7 +21,7 @@ struct Hero<'a> {
     page: MonitorPage,
     glyph: &'static str,
     color: Color32,
-    title: &'a str,
+    title: Cow<'a, str>,
     value: String,
     sub: String,
     series: Vec<Series<'a>>,
@@ -45,7 +46,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
     let dw = c.series(&Metric::DiskWrite);
     let rx = c.series(&Metric::NetRx);
     let tx = c.series(&Metric::NetTx);
-    let gpu = (!frame.gpus.is_empty()).then(|| c.series(&Metric::GpuLoad(0)));
+    let gpus: Vec<_> = (0..frame.gpus.len()).map(|i| c.series(&Metric::GpuLoad(i as u16))).collect();
     let temp = frame.max_temp_c().map(|_| c.series(&Metric::MaxTemp));
     let (read, write) = frame.disk_totals();
     let (rxr, txr) = frame.net_totals();
@@ -55,7 +56,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
             page: MonitorPage::Cpu,
             glyph: ph::CPU,
             color: hue(&p, Hue::Cpu),
-            title: labels::page_title(MonitorPage::Cpu),
+            title: Cow::Borrowed(labels::page_title(MonitorPage::Cpu)),
             value: labels::percent(frame.cpu.percent),
             sub: match (frame.cpu.mhz_avg, frame.load) {
                 (Some(mhz), _) => tr!(
@@ -76,7 +77,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
             page: MonitorPage::Memory,
             glyph: ph::MEMORY,
             color: hue(&p, Hue::Memory),
-            title: labels::page_title(MonitorPage::Memory),
+            title: Cow::Borrowed(labels::page_title(MonitorPage::Memory)),
             value: soyuz_core::format_size(frame.memory.used, style),
             sub: tr!(
                 "monitor-gui-mem-sub",
@@ -91,7 +92,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
             page: MonitorPage::Disks,
             glyph: ph::HARD_DRIVES,
             color: hue(&p, Hue::DiskRead),
-            title: labels::page_title(MonitorPage::Disks),
+            title: Cow::Borrowed(labels::page_title(MonitorPage::Disks)),
             value: labels::rate(read + write, style),
             sub: tr!(
                 "monitor-gui-disk-sub",
@@ -109,7 +110,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
             page: MonitorPage::Network,
             glyph: ph::NETWORK,
             color: hue(&p, Hue::NetRx),
-            title: labels::page_title(MonitorPage::Network),
+            title: Cow::Borrowed(labels::page_title(MonitorPage::Network)),
             value: labels::rate(rxr + txr, style),
             sub: tr!(
                 "monitor-gui-net-sub",
@@ -124,12 +125,18 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
             y_max: None,
         },
     ];
-    if let (Some(g), Some(pts)) = (frame.gpus.first(), gpu.as_deref()) {
+    // Every adapter gets a card; with two or more, each card goes by the adapter's name.
+    let several = frame.gpus.len() > 1;
+    for (i, (g, pts)) in frame.gpus.iter().zip(&gpus).enumerate() {
         heroes.push(Hero {
             page: MonitorPage::Gpu,
             glyph: ph::GRAPHICS_CARD,
             color: hue(&p, Hue::Gpu),
-            title: labels::page_title(MonitorPage::Gpu),
+            title: if several {
+                Cow::Owned(super::gpu::gpu_title(i, g))
+            } else {
+                Cow::Borrowed(labels::page_title(MonitorPage::Gpu))
+            },
             value: g.percent.map_or(PageCtx::dash().to_string(), labels::percent),
             sub: match (g.mem_used, g.mem_total) {
                 (Some(u), Some(t)) => tr!(
@@ -137,6 +144,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
                     used = soyuz_core::format_size(u, style).as_str(),
                     total = soyuz_core::format_size(t, style).as_str()
                 ),
+                _ if several => String::new(),
                 _ => g.name.clone(),
             },
             series: vec![Series::new(labels::page_title(MonitorPage::Gpu), hue(&p, Hue::Gpu), pts)],
@@ -157,7 +165,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
             page: MonitorPage::Sensors,
             glyph: if b.charging { ph::BATTERY_CHARGING } else { ph::BATTERY_HIGH },
             color: hue(&p, Hue::Power),
-            title: tr!("monitor-gui-battery"),
+            title: Cow::Borrowed(tr!("monitor-gui-battery")),
             value: labels::percent(b.percent),
             sub: match left {
                 Some(l) => format!("{state} · {l}"),
@@ -172,7 +180,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut PageCtx<'_>) {
             page: MonitorPage::Sensors,
             glyph: ph::THERMOMETER,
             color: hue(&p, Hue::Temp),
-            title: tr!("monitor-gui-hottest"),
+            title: Cow::Borrowed(tr!("monitor-gui-hottest")),
             value: labels::temperature(t, temp_unit),
             sub: frame
                 .sensors
@@ -265,7 +273,7 @@ fn hero_card(
     let resp = card(ui, p, r, id, true);
     crate::ui::a11y::button(&resp, &format!("{}: {}", h.title, h.value));
     let painter = ui.painter_at(r);
-    let y = card_title(&painter, p, r, h.glyph, h.color, h.title);
+    let y = card_title(&painter, p, r, h.glyph, h.color, &h.title);
     big_number(&painter, p, pos2(r.left() + 14.0, y + 2.0), &h.value, &h.sub, r.width() - 28.0);
     let plot =
         Rect::from_min_max(pos2(r.left() + 12.0, y + font::grow(50.0)), pos2(r.right() - 12.0, r.bottom() - 10.0));

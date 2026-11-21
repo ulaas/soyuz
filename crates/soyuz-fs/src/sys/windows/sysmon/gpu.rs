@@ -15,7 +15,9 @@ use windows_sys::Wdk::Graphics::Direct3D::{
 
 use super::super::from_wide_nul;
 use super::pdh::Query;
-use crate::sysmon::{GpuEngine, GpuRaw};
+use std::sync::Arc;
+
+use crate::sysmon::{GpuEngine, GpuRaw, ProcGpuUse};
 
 /// `D3DKMT_ADAPTERTYPE` bits.
 const TYPE_RENDER: u32 = 1 << 0;
@@ -34,7 +36,12 @@ type Luid = (u32, u32);
 pub(super) struct ProcGpu {
     pub percent: Option<HashMap<u32, f32>>,
     pub mem: Option<HashMap<u32, u64>>,
+    /// The same split by adapter, per process; a process on no adapter has no entry.
+    pub adapters: HashMap<u32, Vec<ProcGpuUse>>,
 }
+
+/// Per-process load (busiest engine) and dedicated memory, summed and per adapter.
+type PerProcess<T> = (HashMap<u32, T>, HashMap<(u32, Luid), T>);
 
 #[derive(Clone)]
 struct AdapterStatic {
@@ -229,6 +236,8 @@ pub(super) struct GpuReader {
     engine_at: Option<Instant>,
     process_use: Option<ProcGpu>,
     process_at: Option<Instant>,
+    /// Adapter ids as shared text, for the per-process split.
+    ids: HashMap<Luid, Arc<str>>,
 }
 
 impl GpuReader {
@@ -267,14 +276,44 @@ impl GpuReader {
                 if process_load.is_some() || self.engines.is_none() {
                     self.process_at = Some(began);
                 }
-                self.process_use = Some(ProcGpu { percent: process_load, mem: self.read_process_memory() });
+                let memory = self.read_process_memory();
+                self.process_use = Some(self.process_gpu(process_load, memory));
             }
         }
         if hardware { self.read_adapters() } else { Vec::new() }
     }
 
+    /// Joins the per-process readings into rows' figures.
+    fn process_gpu(&mut self, load: Option<PerProcess<f32>>, memory: Option<PerProcess<u64>>) -> ProcGpu {
+        let mut adapters: HashMap<u32, Vec<ProcGpuUse>> = HashMap::new();
+        // Both readings known: an adapter a process holds memory on but runs nothing on is at 0 %.
+        let (has_load, has_mem) = (load.is_some(), memory.is_some());
+        if let Some((_, per)) = &load {
+            for (&(pid, luid), &v) in per {
+                adapter_use(&mut adapters, &mut self.ids, pid, luid).percent = Some(v);
+            }
+        }
+        if let Some((_, per)) = &memory {
+            for (&(pid, luid), &v) in per {
+                adapter_use(&mut adapters, &mut self.ids, pid, luid).mem = Some(v);
+            }
+        }
+        for u in adapters.values_mut().flatten() {
+            if has_load {
+                u.percent.get_or_insert(0.0);
+            }
+            if has_mem {
+                u.mem.get_or_insert(0);
+            }
+        }
+        for list in adapters.values_mut() {
+            list.sort_by(|a, b| a.gpu.cmp(&b.gpu));
+        }
+        ProcGpu { percent: load.map(|l| l.0), mem: memory.map(|m| m.0), adapters }
+    }
+
     /// New engine loads into `self.loads`, and per-process load when asked (`None`: no data).
-    fn read_engines(&mut self, per_process: bool) -> Option<HashMap<u32, f32>> {
+    fn read_engines(&mut self, per_process: bool) -> Option<PerProcess<f32>> {
         let q = self.engines.as_mut()?;
         if !q.collect() {
             return None;
@@ -296,16 +335,21 @@ impl GpuReader {
         if per_pid.is_empty() {
             return None;
         }
-        // A process's load: its busiest engine, as Task Manager counts it.
+        // A process's load: its busiest engine, as Task Manager counts it, over all adapters
+        // and on each.
         let mut map: HashMap<u32, f32> = HashMap::new();
-        for ((pid, ..), v) in per_pid {
+        let mut per_adapter: HashMap<(u32, Luid), f32> = HashMap::new();
+        for ((pid, luid, _), v) in per_pid {
+            let v = (v as f32).clamp(0.0, 100.0);
             let e = map.entry(pid).or_insert(0.0);
-            *e = e.max((v as f32).clamp(0.0, 100.0));
+            *e = e.max(v);
+            let a = per_adapter.entry((pid, luid)).or_insert(0.0);
+            *a = a.max(v);
         }
-        Some(map)
+        Some((map, per_adapter))
     }
 
-    fn read_process_memory(&mut self) -> Option<HashMap<u32, u64>> {
+    fn read_process_memory(&mut self) -> Option<PerProcess<u64>> {
         if !self.process_memory_tried {
             self.process_memory_tried = true;
             self.process_memory = Query::with(&[r"\GPU Process Memory(*)\Dedicated Usage"]);
@@ -315,12 +359,15 @@ impl GpuReader {
             return None;
         }
         let mut map = HashMap::new();
+        let mut per_adapter = HashMap::new();
         q.values(0, |name, v| {
-            if let Some((pid, _)) = parse_process_memory(&String::from_utf16_lossy(name)) {
-                *map.entry(pid).or_insert(0u64) += v.max(0.0) as u64;
+            if let Some((pid, luid)) = parse_process_memory(&String::from_utf16_lossy(name)) {
+                let v = v.max(0.0) as u64;
+                *map.entry(pid).or_insert(0u64) += v;
+                *per_adapter.entry((pid, luid)).or_insert(0u64) += v;
             }
         });
-        Some(map)
+        Some((map, per_adapter))
     }
 
     fn read_adapters(&mut self) -> Vec<GpuRaw> {
@@ -405,6 +452,22 @@ impl GpuReader {
     }
 }
 
+/// The entry of adapter `luid` in process `pid`'s split, added on first use.
+fn adapter_use<'a>(
+    adapters: &'a mut HashMap<u32, Vec<ProcGpuUse>>,
+    ids: &mut HashMap<Luid, Arc<str>>,
+    pid: u32,
+    luid: Luid,
+) -> &'a mut ProcGpuUse {
+    let id = ids.entry(luid).or_insert_with(|| Arc::from(luid_id(luid)));
+    let list = adapters.entry(pid).or_default();
+    let i = list.iter().position(|u| u.gpu == *id).unwrap_or_else(|| {
+        list.push(ProcGpuUse { gpu: id.clone(), ..ProcGpuUse::default() });
+        list.len() - 1
+    });
+    &mut list[i]
+}
+
 /// For `sysmon_part_timings`.
 #[cfg(test)]
 pub(super) fn part_timings(time: &mut dyn FnMut(&str, &mut dyn FnMut())) {
@@ -449,6 +512,24 @@ mod tests {
         assert_eq!(parse_luid("luid_0x00000000_0x0000CBEF_phys_0").map(|x| x.0), Some((0, 0xCBEF)));
         assert_eq!(parse_process_memory("pid_77_luid_0x00000001_0x00000002_phys_0"), Some((77, (1, 2))));
         assert_eq!(parse_process_memory("luid_0x1_0x2_phys_0"), None);
+    }
+
+    #[test]
+    fn process_use_splits_by_adapter() {
+        let mut r = GpuReader::default();
+        let load = (HashMap::from([(7, 40.0)]), HashMap::from([((7, (0, 1)), 40.0), ((7, (0, 2)), 5.0)]));
+        let mem = (HashMap::from([(7, 300), (8, 50)]), HashMap::from([((7, (0, 1)), 300), ((8, (0, 2)), 50)]));
+        let g = r.process_gpu(Some(load), Some(mem));
+        assert_eq!(g.percent.as_ref().and_then(|m| m.get(&7)), Some(&40.0));
+        let seven = &g.adapters[&7];
+        assert_eq!(seven.len(), 2);
+        assert_eq!((&*seven[0].gpu, seven[0].percent, seven[0].mem), ("00000000_00000001", Some(40.0), Some(300)));
+        assert_eq!((&*seven[1].gpu, seven[1].percent, seven[1].mem), ("00000000_00000002", Some(5.0), Some(0)));
+        // Memory on an adapter and no engine work there: idle on it, not unknown.
+        assert_eq!((g.adapters[&8][0].percent, g.adapters[&8][0].mem), (Some(0.0), Some(50)));
+        // No load reading at all leaves the load unknown.
+        let g = r.process_gpu(None, Some((HashMap::new(), HashMap::from([((9, (0, 1)), 1)]))));
+        assert_eq!((g.adapters[&9][0].percent, g.percent), (None, None));
     }
 
     #[test]

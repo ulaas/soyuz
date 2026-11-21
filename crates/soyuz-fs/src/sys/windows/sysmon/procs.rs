@@ -347,6 +347,9 @@ impl ProcReader {
         if let Some(g) = pass.gpu {
             row.gpu_percent = g.percent.as_ref().map(|m| m.get(&pid).copied().unwrap_or(0.0));
             row.gpu_mem = g.mem.as_ref().map(|m| m.get(&pid).copied().unwrap_or(0));
+            if let Some(a) = g.adapters.get(&pid) {
+                row.gpu_adapters.clone_from(a);
+            }
         }
         if pass.want.process_details && !s.kernel {
             row.exe.clone_from(&s.exe);

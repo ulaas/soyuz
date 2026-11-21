@@ -146,6 +146,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut m.process_gpu);
             },
         );
+        r.row_kw(
+            tr!("settings-monitor-split-gpu"),
+            tr!("settings-monitor-split-gpu-desc"),
+            "gpu columns adapter multiple several",
+            |ui| {
+                switch(ui, &mut m.split_gpu_columns);
+            },
+        );
         r.row_kw(tr!("settings-monitor-kernel"), tr!("settings-monitor-kernel-desc"), "kernel threads system", |ui| {
             switch(ui, &mut m.show_kernel);
         });
