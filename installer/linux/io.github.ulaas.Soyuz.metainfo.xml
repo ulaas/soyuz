@@ -87,6 +87,12 @@
   </requires>
 
   <releases>
+    <release version="0.8.6" date="2026-11-21" type="development">
+      <description>
+        <p>The system monitor shows every GPU: side by side on the GPU page, one card each
+          on the overview, and one GPU and GPU memory column per adapter in the process table.</p>
+      </description>
+    </release>
     <release version="0.8.5" date="2026-11-17" type="development">
       <description>
         <p>Opening a new window while the main window is minimized no longer crashes
