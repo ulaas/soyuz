@@ -181,11 +181,14 @@ pub enum KeyContext {
     /// The video player has keyboard focus (the preview pane with a playing video, or
     /// Quick Look on a video): its transport keys shadow the global chords there.
     Player,
+    /// A PDF document in the viewer has keyboard focus: its commands
+    /// ([`Action::is_pdf`]) come first, then the editors' (find, go to, close, …).
+    Pdf,
 }
 
 impl KeyContext {
     /// Every context, in display order.
-    pub const ALL: [KeyContext; 9] = [
+    pub const ALL: [KeyContext; 10] = [
         KeyContext::Global,
         KeyContext::FileList,
         KeyContext::Sidebar,
@@ -195,6 +198,7 @@ impl KeyContext {
         KeyContext::Rename,
         KeyContext::Editor,
         KeyContext::Player,
+        KeyContext::Pdf,
     ];
 
     /// Human label ("File list").
@@ -209,6 +213,7 @@ impl KeyContext {
             KeyContext::Sidebar => "Sidebar",
             KeyContext::Editor => "Editor",
             KeyContext::Player => "Player",
+            KeyContext::Pdf => "PDF viewer",
         }
     }
 }
@@ -240,12 +245,15 @@ impl KeyPreset {
 }
 
 /// The context an action without a preset binding is bound in by `[keys.bindings]`:
-/// `Editor` for the editors' commands, `Player` for the media player's, `Global` otherwise.
+/// `Editor` for the editors' commands, `Player` for the media player's, `Pdf` for the PDF
+/// viewer's, `Global` otherwise.
 pub fn home_context(a: &Action) -> KeyContext {
     if a.is_editor() {
         KeyContext::Editor
     } else if a.is_player() {
         KeyContext::Player
+    } else if a.is_pdf() {
+        KeyContext::Pdf
     } else {
         KeyContext::Global
     }
@@ -567,6 +575,22 @@ mod tests {
         km.apply_overrides(&o, true);
         assert!(km.sequences_for(&Action::CursorHome).is_empty());
         assert!(km.chords_for(&Action::CursorHome).is_empty());
+    }
+
+    #[test]
+    fn pdf_context() {
+        assert!(KeyContext::ALL.contains(&KeyContext::Pdf));
+        assert_eq!(KeyContext::Pdf.label(), "PDF viewer");
+        assert_eq!(home_context(&Action::PdfToggleDarkPages), KeyContext::Pdf);
+        assert_eq!(home_context(&Action::PdfPassword), KeyContext::Global);
+        // An override of an unbound PDF command binds it in the viewer's context.
+        let mut km = Keymap::default();
+        let mut o = BTreeMap::new();
+        o.insert("pdf_toggle_dark_pages".to_string(), vec!["D".to_string()]);
+        assert!(km.apply_overrides(&o, true).is_empty());
+        assert_eq!(km.lookup(KeyContext::Pdf, "D".parse().unwrap()), Some(&Action::PdfToggleDarkPages));
+        let ctx: KeyContext = toml::Value::String("pdf".into()).try_into().unwrap();
+        assert_eq!(ctx, KeyContext::Pdf);
     }
 
     #[test]

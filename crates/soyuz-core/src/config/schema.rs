@@ -46,6 +46,8 @@ pub struct Config {
     /// The FFmpeg libraries: video previews, playback and the media tools.
     pub media: Media,
     pub editor: Editor,
+    /// The built-in PDF viewer (F4 on a PDF).
+    pub pdf: Pdf,
     pub git: Git,
     /// Scheduled sync profiles, two-way sync and previous versions.
     pub sync: SyncSection,
@@ -670,6 +672,9 @@ pub struct OpenSection {
     /// menu and Store apps on Windows, desktop entries on Linux, the Applications folders on macOS): type a
     /// name to start one, or `!` to list only apps; off = neither.
     pub palette_apps: bool,
+    /// Enter / double-click (Open) on a PDF opens it in Soyuz's PDF viewer instead of the
+    /// default application; off = the default application (F4 opens the viewer either way).
+    pub pdf_in_viewer: bool,
     /// Default applications by file type: the first rule naming the file's extension wins;
     /// files without a rule open with the system's default application.
     pub default_apps: Vec<DefaultApp>,
@@ -1091,6 +1096,10 @@ pub struct Preview {
     pub syntax_theme: String,
     /// Needs cargo feature `pdf`.
     pub pdf: bool,
+    /// Which engine renders PDFs in the preview pane, Quick Look, thumbnails and document
+    /// text: `hayro` (built in) or `pdfium` (used when its library loads, see `pdfium_dir`;
+    /// else hayro). The PDF viewer always uses hayro.
+    pub pdf_engine: PdfEngine,
     /// Memory budget of decoded thumbnails (MiB of graphics memory, counting each
     /// texture's alignment and per-texture overhead).
     pub thumb_cache_mib: u64,
@@ -1258,6 +1267,148 @@ pub enum EditorDock {
     #[default]
     Right,
     Bottom,
+}
+
+/// `preview.pdf_engine`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfEngine {
+    /// The built-in pure-Rust renderer.
+    #[default]
+    Hayro,
+    /// pdfium when its library is found (`[preview] pdfium_dir`), else hayro.
+    Pdfium,
+}
+
+/// `[pdf]`: the built-in PDF viewer (F4 on a PDF, or Enter with `[open] pdf_in_viewer`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Pdf {
+    /// Zoom of a newly opened document: `fit_width`, `fit_page` or `actual` (100 %).
+    pub default_zoom: PdfZoom,
+    /// Sidebar shown when a document opens: `none`, `thumbnails` or `outline`.
+    pub sidebar: PdfSidebar,
+    /// Sidebar width (points, 120–400).
+    pub sidebar_width: f32,
+    /// Gap between pages (points, 0–64).
+    pub page_gap: f32,
+    /// Dark pages when a document opens: `off`, `invert` (lightness inverted) or
+    /// `follow_theme` (inverted under a dark theme). Toggling them in a tab does not change
+    /// this setting.
+    pub dark_pages: PdfDarkPages,
+    /// Draw annotation appearances (form fields, stamps, comments).
+    pub annotations: bool,
+    /// Fonts a PDF does not embed are taken from the installed system fonts (CJK and
+    /// others); off = the built-in standard fonts only.
+    pub system_fonts: bool,
+    /// Memory budget of rendered page images (MiB, 32–4096).
+    pub cache_mib: u64,
+    /// A page render or text extraction taking longer than this is abandoned (seconds,
+    /// 2–300).
+    pub render_timeout_secs: u64,
+    /// Clicking a web link in a document (http, https and mailto only; other links never
+    /// open): `ask` first, `open` at once, or `off` (ignored).
+    pub external_links: PdfExternalLinks,
+    /// Remember the page, zoom and rotation of each document for this session.
+    pub remember_position: bool,
+}
+
+/// `pdf.default_zoom`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfZoom {
+    /// The page width fills the view.
+    #[default]
+    FitWidth,
+    /// The whole page fits in the view.
+    FitPage,
+    /// 100 %.
+    Actual,
+}
+
+/// `pdf.sidebar`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfSidebar {
+    /// No sidebar.
+    #[default]
+    None,
+    /// Page thumbnails.
+    Thumbnails,
+    /// The document outline (bookmarks).
+    Outline,
+}
+
+/// `pdf.dark_pages`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfDarkPages {
+    /// Pages as printed.
+    #[default]
+    Off,
+    /// Page lightness inverted (dark background, light text).
+    Invert,
+    /// Inverted while the app uses a dark theme.
+    FollowTheme,
+}
+
+/// `pdf.external_links`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfExternalLinks {
+    /// Ask before opening the link.
+    #[default]
+    Ask,
+    /// Open the link at once (default browser or mail program).
+    Open,
+    /// Web links do nothing.
+    Off,
+}
+
+impl Pdf {
+    /// Narrowest sidebar `sidebar_width_clamped` returns.
+    pub const SIDEBAR_WIDTH_MIN: f32 = 120.0;
+    /// Widest sidebar `sidebar_width_clamped` returns.
+    pub const SIDEBAR_WIDTH_MAX: f32 = 400.0;
+    /// Default `sidebar_width`.
+    pub const SIDEBAR_WIDTH_DEFAULT: f32 = 180.0;
+    /// Largest `page_gap_clamped`.
+    pub const PAGE_GAP_MAX: f32 = 64.0;
+    /// Default `page_gap`.
+    pub const PAGE_GAP_DEFAULT: f32 = 12.0;
+    /// Smallest `cache_mib_clamped`.
+    pub const CACHE_MIB_MIN: u64 = 32;
+    /// Largest `cache_mib_clamped`.
+    pub const CACHE_MIB_MAX: u64 = 4096;
+    /// Shortest `render_timeout_secs_clamped`.
+    pub const RENDER_TIMEOUT_MIN: u64 = 2;
+    /// Longest `render_timeout_secs_clamped`.
+    pub const RENDER_TIMEOUT_MAX: u64 = 300;
+
+    /// `sidebar_width` clamped to `SIDEBAR_WIDTH_MIN..=SIDEBAR_WIDTH_MAX` (the default when
+    /// it is not a number).
+    pub fn sidebar_width_clamped(&self) -> f32 {
+        if self.sidebar_width.is_finite() {
+            self.sidebar_width.clamp(Self::SIDEBAR_WIDTH_MIN, Self::SIDEBAR_WIDTH_MAX)
+        } else {
+            Self::SIDEBAR_WIDTH_DEFAULT
+        }
+    }
+
+    /// `page_gap` clamped to `0..=PAGE_GAP_MAX` (the default when it is not a number).
+    pub fn page_gap_clamped(&self) -> f32 {
+        if self.page_gap.is_finite() { self.page_gap.clamp(0.0, Self::PAGE_GAP_MAX) } else { Self::PAGE_GAP_DEFAULT }
+    }
+
+    /// `cache_mib` clamped to `CACHE_MIB_MIN..=CACHE_MIB_MAX`.
+    pub fn cache_mib_clamped(&self) -> u64 {
+        self.cache_mib.clamp(Self::CACHE_MIB_MIN, Self::CACHE_MIB_MAX)
+    }
+
+    /// `render_timeout_secs` clamped to `RENDER_TIMEOUT_MIN..=RENDER_TIMEOUT_MAX`.
+    pub fn render_timeout_secs_clamped(&self) -> u64 {
+        self.render_timeout_secs.clamp(Self::RENDER_TIMEOUT_MIN, Self::RENDER_TIMEOUT_MAX)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -198,6 +198,7 @@ run_binaries = true              # Enter on an executable binary / AppImage runs
 store_apps_via_explorer = true   # Windows: a Store-app default (Photos, ...) opens through Explorer; off = first registered program
 elevate_when_required = true     # Windows: a program that needs admin rights (installers, ...) opens with the UAC prompt; off = an error
 palette_apps = true              # the command palette lists installed apps (type a name, or ! for apps only)
+pdf_in_viewer = false            # Enter on a PDF opens Soyuz's PDF viewer instead of the default app (F4 always does)
 # [[open.programs]]              # written by Soyuz: programs picked in Open with… (newest first), listed for every file
 # last_used = { png = "..." }    # written by Soyuz: last Open with… choice per extension ("." = no extension)
 
@@ -284,6 +285,7 @@ max_text_kib = 512
 max_image_mp = 40
 syntax_theme = "auto"
 pdf = true                       # needs cargo feature `pdf`; greyed out otherwise
+pdf_engine = "hayro"             # hayro (built in) | pdfium (when pdfium.dll loads, else hayro); the viewer always uses hayro
 thumb_cache_mib = 64             # graphics memory budget for decoded thumbnails
 thumb_idle_trim_secs = 60        # free thumbnails not drawn for this long; 0 = keep until the budget is full
 preview_cache_mib = 96           # memory budget for decoded previews
@@ -335,6 +337,19 @@ max_text_mib = 20                # larger text files open read-only in the hex e
 backup_to_trash = true           # put the previous version (<name>.bak) in the trash before overwriting
 jpeg_quality = 92                # edited JPEGs are re-encoded (lossy) at this quality
 max_image_mp = 200               # largest image the image editor decodes
+
+[pdf]                            # the PDF viewer (F4 on a PDF)
+default_zoom = "fit_width"       # fit_width | fit_page | actual
+sidebar = "none"                 # none | thumbnails | outline (shown when a document opens)
+sidebar_width = 180.0            # 120-400
+page_gap = 12.0                  # gap between pages, 0-64
+dark_pages = "off"               # off | invert | follow_theme (the tab's toggle does not change this)
+annotations = true               # draw annotation appearances (form fields, stamps, comments)
+system_fonts = true              # fonts a PDF does not embed come from the installed fonts (CJK, ...)
+cache_mib = 256                  # memory budget of rendered pages, 32-4096
+render_timeout_secs = 20         # a page render taking longer is abandoned, 2-300
+external_links = "ask"           # ask | open | off (http / https / mailto only)
+remember_position = true         # page, zoom and rotation per document for this session
 
 [git]
 status_column = true

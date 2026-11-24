@@ -34,6 +34,7 @@ impl Default for Config {
             preview: Preview::default(),
             media: Media::default(),
             editor: Editor::default(),
+            pdf: Pdf::default(),
             git: Git::default(),
             sync: SyncSection::default(),
             updates: Updates::default(),
@@ -255,6 +256,7 @@ impl Default for OpenSection {
             store_apps_via_explorer: true,
             elevate_when_required: true,
             palette_apps: true,
+            pdf_in_viewer: false,
             default_apps: Vec::new(),
             programs: Vec::new(),
             last_used: BTreeMap::new(),
@@ -418,6 +420,7 @@ impl Default for Preview {
             max_image_mp: 40,
             syntax_theme: "auto".into(),
             pdf: true,
+            pdf_engine: PdfEngine::Hayro,
             thumb_cache_mib: 64,
             thumb_idle_trim_secs: 60,
             preview_cache_mib: 96,
@@ -481,6 +484,24 @@ impl Default for Editor {
             backup_to_trash: true,
             jpeg_quality: 92,
             max_image_mp: 200,
+        }
+    }
+}
+
+impl Default for Pdf {
+    fn default() -> Self {
+        Pdf {
+            default_zoom: PdfZoom::FitWidth,
+            sidebar: PdfSidebar::None,
+            sidebar_width: Pdf::SIDEBAR_WIDTH_DEFAULT,
+            page_gap: Pdf::PAGE_GAP_DEFAULT,
+            dark_pages: PdfDarkPages::Off,
+            annotations: true,
+            system_fonts: true,
+            cache_mib: 256,
+            render_timeout_secs: 20,
+            external_links: PdfExternalLinks::Ask,
+            remember_position: true,
         }
     }
 }
@@ -555,7 +576,7 @@ const DIGITS: [KeyName; 9] = [
 /// Bindings shared by both presets.
 fn common(km: &mut Keymap) {
     use Action as A;
-    use KeyContext::{Editor as E, FileList as L, Global as G, Player as P};
+    use KeyContext::{Editor as E, FileList as L, Global as G, Pdf as D, Player as P};
     let mut b = |ctx, action, mods, key| km.bind(ctx, action, KeyChord::new(mods, key));
 
     // Global
@@ -678,6 +699,22 @@ fn common(km: &mut Keymap) {
     b(P, A::PlayerVolumeDown, NONE, KeyName::Minus);
     b(P, A::PlayerVolumeUp, NONE, KeyName::Equals);
     b(P, A::PlayerMute, NONE, KeyName::M);
+
+    // The PDF viewer while a PDF document has the keyboard (its find / go to / close come
+    // from the editor's chords). Not Ctrl+= / Ctrl+- / Ctrl+0: those zoom the UI.
+    // PdfToggleDarkPages has no default chord.
+    b(D, A::PdfZoomIn, NONE, KeyName::Plus);
+    b(D, A::PdfZoomOut, NONE, KeyName::Minus);
+    b(D, A::PdfZoomActual, NONE, KeyName::Num0);
+    b(D, A::PdfFitWidth, NONE, KeyName::W);
+    b(D, A::PdfFitPage, NONE, KeyName::F);
+    b(D, A::PdfNextPage, NONE, KeyName::N);
+    b(D, A::PdfPrevPage, NONE, KeyName::P);
+    b(D, A::PdfFirstPage, CTRL, KeyName::Home);
+    b(D, A::PdfLastPage, CTRL, KeyName::End);
+    b(D, A::PdfRotateCw, NONE, KeyName::R);
+    b(D, A::PdfRotateCcw, SHIFT, KeyName::R);
+    b(D, A::PdfToggleSidebar, NONE, KeyName::S);
 }
 
 /// Build the key map for a preset (before `[keys.bindings]` overrides).
@@ -875,6 +912,95 @@ mod tests {
             assert_eq!(km.chords_for(&Action::PlayerPlayPause).first().map(|c| c.key), Some(KeyName::P), "{p:?}");
         }
         assert!(!Media::default().quicklook_space_plays);
+    }
+
+    #[test]
+    fn pdf_viewer_keys_in_every_preset() {
+        let ch = |s: &str| s.parse::<KeyChord>().unwrap();
+        for p in KeyPreset::ALL {
+            let km = preset(p);
+            let at = |s: &str| km.lookup(KeyContext::Pdf, ch(s)).cloned();
+            assert_eq!(at("R"), Some(Action::PdfRotateCw), "{p:?}");
+            assert_eq!(at("Shift+R"), Some(Action::PdfRotateCcw), "{p:?}");
+            assert_eq!(at("+"), Some(Action::PdfZoomIn), "{p:?}");
+            assert_eq!(at("-"), Some(Action::PdfZoomOut), "{p:?}");
+            assert_eq!(at("0"), Some(Action::PdfZoomActual), "{p:?}");
+            assert_eq!(at("W"), Some(Action::PdfFitWidth), "{p:?}");
+            assert_eq!(at("F"), Some(Action::PdfFitPage), "{p:?}");
+            assert_eq!(at("N"), Some(Action::PdfNextPage), "{p:?}");
+            assert_eq!(at("P"), Some(Action::PdfPrevPage), "{p:?}");
+            assert_eq!(at("Ctrl+Home"), Some(Action::PdfFirstPage), "{p:?}");
+            assert_eq!(at("Ctrl+End"), Some(Action::PdfLastPage), "{p:?}");
+            assert_eq!(at("S"), Some(Action::PdfToggleSidebar), "{p:?}");
+            assert!(km.chords_for(&Action::PdfToggleDarkPages).is_empty(), "{p:?}");
+            // Every PDF command is bound in the viewer's context only.
+            assert!(km.bindings.keys().all(|(c, a)| !a.is_pdf() || *c == KeyContext::Pdf), "{p:?}");
+            // The UI zoom keeps its chords.
+            assert_eq!(km.lookup(KeyContext::Pdf, ch("Ctrl+=")), Some(&Action::UiZoomIn), "{p:?}");
+        }
+    }
+
+    #[test]
+    fn pdf_section_round_trip_and_defaults() {
+        let d = Config::default();
+        assert_eq!(d.preview.pdf_engine, PdfEngine::Hayro);
+        assert!(!d.open.pdf_in_viewer);
+        assert_eq!(d.pdf.default_zoom, PdfZoom::FitWidth);
+        assert_eq!(d.pdf.sidebar, PdfSidebar::None);
+        assert_eq!(d.pdf.dark_pages, PdfDarkPages::Off);
+        assert_eq!(d.pdf.external_links, PdfExternalLinks::Ask);
+        assert_eq!((d.pdf.cache_mib, d.pdf.render_timeout_secs), (256, 20));
+        // An old config without the keys loads with the defaults.
+        let old: Config = toml::from_str("[preview]\npdf = true\n[open]\nremember_choice = false\n").unwrap();
+        assert_eq!(old.preview.pdf_engine, PdfEngine::Hayro);
+        assert!(!old.open.pdf_in_viewer);
+        assert_eq!(old.pdf, Pdf::default());
+        // Every value survives a round trip.
+        let mut c = Config::default();
+        c.preview.pdf_engine = PdfEngine::Pdfium;
+        c.open.pdf_in_viewer = true;
+        c.pdf = Pdf {
+            default_zoom: PdfZoom::Actual,
+            sidebar: PdfSidebar::Outline,
+            sidebar_width: 250.0,
+            page_gap: 0.0,
+            dark_pages: PdfDarkPages::FollowTheme,
+            annotations: false,
+            system_fonts: false,
+            cache_mib: 1024,
+            render_timeout_secs: 60,
+            external_links: PdfExternalLinks::Off,
+            remember_position: false,
+        };
+        let text = toml::to_string(&c).unwrap();
+        assert!(text.contains("pdf_engine = \"pdfium\""), "{text}");
+        assert!(text.contains("dark_pages = \"follow_theme\""), "{text}");
+        let back: Config = toml::from_str(&text).unwrap();
+        assert_eq!(back, c);
+        let partial: Pdf = toml::from_str("default_zoom = \"fit_page\"\nsidebar = \"thumbnails\"").unwrap();
+        assert_eq!((partial.default_zoom, partial.sidebar), (PdfZoom::FitPage, PdfSidebar::Thumbnails));
+        assert!(toml::from_str::<Pdf>("external_links = \"always\"").is_err());
+    }
+
+    #[test]
+    fn pdf_values_are_clamped_when_read() {
+        let p = |f: fn(&mut Pdf)| {
+            let mut p = Pdf::default();
+            f(&mut p);
+            p
+        };
+        assert_eq!(Pdf::default().sidebar_width_clamped(), 180.0);
+        assert_eq!(p(|p| p.sidebar_width = 10.0).sidebar_width_clamped(), 120.0);
+        assert_eq!(p(|p| p.sidebar_width = 9000.0).sidebar_width_clamped(), 400.0);
+        assert_eq!(p(|p| p.sidebar_width = f32::NAN).sidebar_width_clamped(), 180.0);
+        assert_eq!(p(|p| p.page_gap = -3.0).page_gap_clamped(), 0.0);
+        assert_eq!(p(|p| p.page_gap = 100.0).page_gap_clamped(), 64.0);
+        assert_eq!(p(|p| p.page_gap = f32::INFINITY).page_gap_clamped(), 12.0);
+        assert_eq!(p(|p| p.cache_mib = 1).cache_mib_clamped(), 32);
+        assert_eq!(p(|p| p.cache_mib = 99_999).cache_mib_clamped(), 4096);
+        assert_eq!(p(|p| p.render_timeout_secs = 0).render_timeout_secs_clamped(), 2);
+        assert_eq!(p(|p| p.render_timeout_secs = 1000).render_timeout_secs_clamped(), 300);
+        assert_eq!(Pdf::default().render_timeout_secs_clamped(), 20);
     }
 
     #[test]

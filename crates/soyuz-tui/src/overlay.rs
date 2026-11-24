@@ -370,10 +370,10 @@ fn chord(s: &str) -> KeyChord {
     s.parse().unwrap_or(KeyChord::new(Mods::empty(), KeyName::F24))
 }
 
-/// `chord` is not bound in any context (but the editor's, which shadows the others only
-/// while a document has the keyboard) and starts no sequence.
+/// `chord` is not bound in any context (but the editor's and the PDF viewer's, which shadow
+/// the others only while a document has the keyboard) and starts no sequence.
 fn is_free(km: &Keymap, chord: KeyChord) -> bool {
-    !km.bindings.iter().any(|((ctx, _), v)| *ctx != KeyContext::Editor && v.contains(&chord))
+    !km.bindings.iter().any(|((ctx, _), v)| !matches!(ctx, KeyContext::Editor | KeyContext::Pdf) && v.contains(&chord))
         && !km.sequences.values().any(|seqs| seqs.iter().any(|s| s.first() == Some(&chord)))
 }
 

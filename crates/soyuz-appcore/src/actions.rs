@@ -542,9 +542,10 @@ pub fn tui_only(a: &Action) -> bool {
 }
 
 /// Actions only the GUI has (the terminal UI's palette leaves them out): the welcome
-/// card is a GUI view. Their keys stay editable in the keyboard settings.
+/// card is a GUI view, and the PDF viewer's commands have no terminal view yet. Their keys
+/// stay editable in the keyboard settings.
 pub fn gui_only(a: &Action) -> bool {
-    matches!(a, Action::Welcome)
+    matches!(a, Action::Welcome) || a.is_pdf()
 }
 
 /// Actions without an implementation yet: hidden from the command palette and the

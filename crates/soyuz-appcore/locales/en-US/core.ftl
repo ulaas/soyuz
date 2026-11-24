@@ -52,6 +52,7 @@ core-key-context-rename = Rename
 core-key-context-sidebar = Sidebar
 core-key-context-editor = Editor
 core-key-context-player = Player
+core-key-context-pdf = PDF viewer
 
 core-key-preset-explorer = Explorer
 core-key-preset-commander = Commander (F-keys)

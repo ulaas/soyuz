@@ -57,6 +57,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[preview]`](#preview)
 - [`[media]`](#media)
 - [`[editor]`](#editor)
+- [`[pdf]`](#pdf)
 - [`[git]`](#git)
 - [`[sync]`](#sync)
 - [`[updates]`](#updates)
@@ -369,6 +370,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `store_apps_via_explorer` | boolean | `true` | Windows: a file whose default app is a Store app Soyuz cannot start itself (Photos, …) is handed to Explorer, which opens it in that app; off = it opens with the first registered program Soyuz can start (or Open with… when there is none). |
 | `elevate_when_required` | boolean | `true` | Windows: Enter / double-click on a program that needs administrator rights (its manifest asks for them, e.g. most installers) starts it through the UAC prompt; off = it fails with an error and only "Run as administrator" starts it. |
 | `palette_apps` | boolean | `true` | The command palette also lists the applications installed on the system (the Start menu and Store apps on Windows, desktop entries on Linux, the Applications folders on macOS): type a name to start one, or `!` to list only apps; off = neither. |
+| `pdf_in_viewer` | boolean | `false` | Enter / double-click (Open) on a PDF opens it in Soyuz's PDF viewer instead of the default application; off = the default application (F4 opens the viewer either way). |
 | `last_used` | table: name → string | `{}` | The application last chosen in Open with…, by extension (its `id`, else its program path; `"."` for files without an extension). Written by Soyuz. |
 
 ## `[[open.default_apps]]`
@@ -496,6 +498,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `max_image_mp` | integer | `40` | Largest image the preview decodes (megapixels). |
 | `syntax_theme` | string | `"auto"` | Syntax highlighting theme for code previews (`auto` follows the app theme). |
 | `pdf` | boolean | `true` | Needs cargo feature `pdf`. |
+| `pdf_engine` | `"hayro"` \| `"pdfium"` | `"hayro"` | Which engine renders PDFs in the preview pane, Quick Look, thumbnails and document text: `hayro` (built in) or `pdfium` (used when its library loads, see `pdfium_dir`; else hayro). The PDF viewer always uses hayro. (`hayro`: The built-in pure-Rust renderer; `pdfium`: pdfium when its library is found (`[preview] pdfium_dir`), else hayro) |
 | `thumb_cache_mib` | integer | `64` | Memory budget of decoded thumbnails (MiB of graphics memory, counting each texture's alignment and per-texture overhead). |
 | `thumb_idle_trim_secs` | integer | `60` | Free thumbnails not drawn for this many seconds, even while the app is idle (0 = keep them until the memory budget needs the room). |
 | `preview_cache_mib` | integer | `96` | Memory budget of decoded previews (images, text, media) (MiB). |
@@ -557,6 +560,24 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `backup_to_trash` | boolean | `true` | Before overwriting a file, put a copy of the previous version (`<name>.bak`) in the trash. |
 | `jpeg_quality` | integer | `92` | JPEG quality when an edited JPEG is saved (always a lossy re-encode). |
 | `max_image_mp` | integer | `200` | Largest image the image editor decodes (megapixels). |
+
+## `[pdf]`
+
+`[pdf]`: the built-in PDF viewer (F4 on a PDF, or Enter with `[open] pdf_in_viewer`).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `default_zoom` | `"fit_width"` \| `"fit_page"` \| `"actual"` | `"fit_width"` | Zoom of a newly opened document: `fit_width`, `fit_page` or `actual` (100 %). (`fit_width`: The page width fills the view; `fit_page`: The whole page fits in the view; `actual`: 100 %) |
+| `sidebar` | `"none"` \| `"thumbnails"` \| `"outline"` | `"none"` | Sidebar shown when a document opens: `none`, `thumbnails` or `outline`. (`none`: No sidebar; `thumbnails`: Page thumbnails; `outline`: The document outline (bookmarks)) |
+| `sidebar_width` | float | `180.0` | Sidebar width (points, 120–400). |
+| `page_gap` | float | `12.0` | Gap between pages (points, 0–64). |
+| `dark_pages` | `"off"` \| `"invert"` \| `"follow_theme"` | `"off"` | Dark pages when a document opens: `off`, `invert` (lightness inverted) or `follow_theme` (inverted under a dark theme). Toggling them in a tab does not change this setting. (`off`: Pages as printed; `invert`: Page lightness inverted (dark background, light text); `follow_theme`: Inverted while the app uses a dark theme) |
+| `annotations` | boolean | `true` | Draw annotation appearances (form fields, stamps, comments). |
+| `system_fonts` | boolean | `true` | Fonts a PDF does not embed are taken from the installed system fonts (CJK and others); off = the built-in standard fonts only. |
+| `cache_mib` | integer | `256` | Memory budget of rendered page images (MiB, 32–4096). |
+| `render_timeout_secs` | integer | `20` | A page render or text extraction taking longer than this is abandoned (seconds, 2–300). |
+| `external_links` | `"ask"` \| `"open"` \| `"off"` | `"ask"` | Clicking a web link in a document (http, https and mailto only; other links never open): `ask` first, `open` at once, or `off` (ignored). (`ask`: Ask before opening the link; `open`: Open the link at once (default browser or mail program); `off`: Web links do nothing) |
+| `remember_position` | boolean | `true` | Remember the page, zoom and rotation of each document for this session. |
 
 ## `[git]`
 
