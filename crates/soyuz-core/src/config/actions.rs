@@ -134,6 +134,10 @@ define_actions! {
         // The media player (`KeyContext::Player`, see [`Action::is_player`]).
         PlayerPlayPause, PlayerSeekBack, PlayerSeekForward, PlayerVolumeUp, PlayerVolumeDown,
         PlayerMute,
+        // The PDF viewer (`KeyContext::Pdf`, see [`Action::is_pdf`]).
+        PdfZoomIn, PdfZoomOut, PdfZoomActual, PdfFitWidth, PdfFitPage, PdfNextPage, PdfPrevPage,
+        PdfFirstPage, PdfLastPage, PdfRotateCw, PdfRotateCcw, PdfToggleSidebar,
+        PdfToggleDarkPages,
     ],
     Jobs: [
         JobsPauseAll, JobsResumeAll, JobsCancelAll, JobsClearFinished, JobsShowHistory,
@@ -253,6 +257,29 @@ impl Action {
                 | A::PlayerVolumeUp
                 | A::PlayerVolumeDown
                 | A::PlayerMute
+        )
+    }
+
+    /// A command of the PDF viewer: bound in `KeyContext::Pdf` and run while a PDF document
+    /// has the keyboard (or from the palette, on the active PDF document). Not
+    /// [`Action::PdfPassword`], which asks for a preview's password.
+    pub fn is_pdf(&self) -> bool {
+        use Action as A;
+        matches!(
+            self,
+            A::PdfZoomIn
+                | A::PdfZoomOut
+                | A::PdfZoomActual
+                | A::PdfFitWidth
+                | A::PdfFitPage
+                | A::PdfNextPage
+                | A::PdfPrevPage
+                | A::PdfFirstPage
+                | A::PdfLastPage
+                | A::PdfRotateCw
+                | A::PdfRotateCcw
+                | A::PdfToggleSidebar
+                | A::PdfToggleDarkPages
         )
     }
 
@@ -388,6 +415,16 @@ mod tests {
         assert!("nope".parse::<Action>().is_err());
         assert_eq!(Action::Copy.category(), ActionCategory::FileOps);
         assert_eq!(Action::SortBy(Column::Size).title(), "Sort by: Size");
+    }
+
+    #[test]
+    fn pdf_actions() {
+        let pdf: Vec<Action> = Action::all().into_iter().filter(Action::is_pdf).collect();
+        assert_eq!(pdf.len(), 13);
+        assert!(!Action::PdfPassword.is_pdf());
+        assert!(pdf.iter().all(|a| !a.is_editor() && !a.is_player() && a.name().starts_with("pdf_")));
+        assert_eq!(Action::PdfRotateCw.to_string(), "pdf_rotate_cw");
+        assert_eq!("pdf_toggle_dark_pages".parse::<Action>().unwrap(), Action::PdfToggleDarkPages);
     }
 
     #[test]

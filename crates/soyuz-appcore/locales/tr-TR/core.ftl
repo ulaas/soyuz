@@ -52,6 +52,7 @@ core-key-context-rename = Yeniden adlandırma
 core-key-context-sidebar = Kenar çubuğu
 core-key-context-editor = Düzenleyici
 core-key-context-player = Oynatıcı
+core-key-context-pdf = PDF görüntüleyici
 
 core-key-preset-explorer = Explorer
 core-key-preset-commander = Commander (F tuşları)

@@ -80,7 +80,8 @@ pub fn analyze(km: &Keymap) -> Vec<Conflict> {
                 }
                 // Text fields and dialogs never see most global chords anyway.
                 // The editors' commands shadow global chords on purpose (Ctrl+F finds in the
-                // document, not in the folder); so do the player's transport keys.
+                // document, not in the folder); so do the player's transport keys and the
+                // PDF viewer's commands.
                 if matches!(
                     other_ctx,
                     KeyContext::Omnibar
@@ -88,6 +89,7 @@ pub fn analyze(km: &Keymap) -> Vec<Conflict> {
                         | KeyContext::Rename
                         | KeyContext::Editor
                         | KeyContext::Player
+                        | KeyContext::Pdf
                 ) {
                     continue;
                 }
