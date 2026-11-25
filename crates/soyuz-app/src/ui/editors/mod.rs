@@ -1,10 +1,11 @@
 //! The editor panel in egui (`crate::editors` holds the documents): the docked or
-//! maximized card with its tabs, the text, hex and image views, and keyboard routing
-//! while one of the editor's widgets has focus.
+//! maximized card with its tabs, the text, hex and image views, the PDF viewer, and
+//! keyboard routing while one of the editor's widgets has focus.
 
 pub mod hex;
 pub mod image;
 mod panel;
+pub mod pdf;
 pub mod text;
 pub mod widgets;
 

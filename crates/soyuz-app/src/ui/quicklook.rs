@@ -370,7 +370,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View, player: bool
         Some(PreviewAction::UnlockPdf(path)) => crate::models::archive::ask_pdf_password(&mut app.core, path),
         Some(PreviewAction::EditFile(path)) => {
             app.core.ui.quicklook.close();
-            crate::editors::open_path(&mut app.core, &path, crate::editors::io::Want::Text);
+            crate::editors::open_path(&mut app.core, &path, crate::ui::editors::pdf::edit_want(&path));
         }
         Some(PreviewAction::ToggleHex) => {
             if let Some(s) = &mut v.state {

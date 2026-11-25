@@ -929,6 +929,20 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
             nav.text = !nav.text;
         }
     }
+    // "Open in viewer": the file in the editor panel's PDF viewer.
+    let mut viewer = None;
+    if let crate::services::pdf::PdfSrc::File(path) = &v.src
+        && v.locked.is_none()
+    {
+        let right = if can_render && !v.info.text.is_empty() { toggle_r.left() } else { bar.right() - 6.0 };
+        let vr = Rect::from_min_size(pos2(right - 32.0, bar.top() + 5.0), vec2(28.0, bar.height() - 10.0));
+        let mut vc =
+            ui.new_child(UiBuilder::new().max_rect(vr).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        if crate::ui::widgets::icon_toggle(&mut vc, ph::BOOK_OPEN, tr!("pdf-ui-open-in-viewer"), true, false).clicked()
+        {
+            viewer = Some(PreviewAction::EditFile(path.clone()));
+        }
+    }
     let body = Rect::from_min_max(pos2(rect.left(), bar.bottom()), rect.max);
     // Fetch the wanted page.
     if can_render && nav.shown.as_ref().is_none_or(|(pg, _)| *pg != nav.page) {
@@ -947,7 +961,7 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
             nav.pending = None;
         }
     }
-    let mut action = None;
+    let mut action = viewer;
     if !can_render || nav.text {
         ui.painter().rect_filled(body, 0.0, p.bg_surface1);
         let mut c = child(ui, body.shrink2(vec2(16.0, 10.0)));

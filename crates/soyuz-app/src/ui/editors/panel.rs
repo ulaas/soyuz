@@ -171,10 +171,13 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         }
         let is_text = matches!(d.kind, DocKind::Text(_));
         let is_hex = matches!(d.kind, DocKind::Hex(_));
+        // The PDF viewer never saves; a PDF shown as hex / text can go back to it.
+        let is_pdf = matches!(d.kind, DocKind::Pdf(_));
+        let pdf_file = !is_pdf && crate::models::archive::is_pdf(&d.path);
         crate::ui::native::popup::context_menu(&resp, |ui| {
             ui.set_width(220.0);
             use crate::ui::widgets::{menu_item, menu_separator};
-            if menu_item(ui, Some(ph::FLOPPY_DISK), tr!("common-save"), Some("Ctrl+S"), dirty).clicked() {
+            if !is_pdf && menu_item(ui, Some(ph::FLOPPY_DISK), tr!("common-save"), Some("Ctrl+S"), dirty).clicked() {
                 cmds.push(TabCmd::Save(i));
                 ui.close();
             }
@@ -187,8 +190,15 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                 cmds.push(TabCmd::Reopen(i, Want::Hex));
                 ui.close();
             }
-            if !is_text && menu_item(ui, Some(ph::FILE_TEXT), tr!("editors-tab-reopen-text"), None, true).clicked() {
+            if !is_text
+                && !is_pdf
+                && menu_item(ui, Some(ph::FILE_TEXT), tr!("editors-tab-reopen-text"), None, true).clicked()
+            {
                 cmds.push(TabCmd::Reopen(i, Want::Text));
+                ui.close();
+            }
+            if pdf_file && menu_item(ui, Some(ph::FILE_PDF), tr!("pdf-ui-open-in-viewer"), None, true).clicked() {
+                cmds.push(TabCmd::Reopen(i, Want::Auto));
                 ui.close();
             }
             if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), tr!("editors-tab-reveal"), None, true).clicked() {
@@ -245,6 +255,8 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let mut toggle_ws = false;
     let mut external_answer: Option<usize> = None;
     let cfg = app.core.config.editor.clone();
+    let pdf_sidebar_w = app.core.config.pdf.sidebar_width_clamped();
+    let mut pdf_out = super::pdf::PdfOutput::default();
     if let Some(d) = app.core.editors.docs.get_mut(idx) {
         if let Some(ext) = d.external {
             let r = Rect::from_min_size(pos2(body.left() + 8.0, body.top() + 6.0), vec2(body.width() - 16.0, 30.0));
@@ -291,35 +303,15 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                 save_now = super::image::show(im, ui, body, &p, cfg.jpeg_quality, &mut focus, doc_id).save;
             }
             DocKind::Pdf(pdf) => {
-                // Placeholder until the viewer UI lands: a spinner while it opens, then
-                // the page count (or the error).
-                pdf.set_viewport([body.width(), body.height()], ui.ctx().pixels_per_point());
-                pdf.pump();
-                match pdf.status() {
-                    crate::editors::pdf::Status::Opening => {
-                        crate::ui::widgets::spinner(ui, body.center(), 12.0, p.accent);
-                    }
-                    crate::editors::pdf::Status::Ready => {
-                        let label = pdf.page_label(pdf.page());
-                        ui.painter().text(
-                            body.center(),
-                            Align2::CENTER_CENTER,
-                            label,
-                            crate::theme::font::ui(13.0),
-                            p.text_secondary,
-                        );
-                    }
-                    crate::editors::pdf::Status::Failed(e) => {
-                        let msg = tr!("editors-open-failed", name = &d.name, error = e.to_string());
-                        ui.painter().text(
-                            body.center(),
-                            Align2::CENTER_CENTER,
-                            msg,
-                            crate::theme::font::ui(13.0),
-                            p.text_secondary,
-                        );
-                    }
-                }
+                let mut env = super::pdf::PdfEnv {
+                    p: &p,
+                    focus: &mut focus,
+                    id: doc_id,
+                    sidebar_width: pdf_sidebar_w,
+                    name: &d.name,
+                    keymap: &app.core.keymap,
+                };
+                pdf_out = super::pdf::show(pdf, ui, body, &mut env);
             }
         }
     } else {
@@ -349,6 +341,18 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         );
     }
     super::set_focus_ids(&ctx, focus);
+    if pdf_out.ask_password {
+        crate::editors::ask_pdf_password(&mut app.core, idx);
+    }
+    if let Some(url) = pdf_out.open_link {
+        crate::editors::open_pdf_link(&mut app.core, &url);
+    }
+    if pdf_out.open_hex {
+        cmds.push(TabCmd::Reopen(idx, Want::Hex));
+    }
+    if pdf_out.reveal {
+        cmds.push(TabCmd::Reveal(idx));
+    }
     if save_now {
         crate::editors::save(&mut app.core, idx);
     }

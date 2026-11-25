@@ -54,6 +54,126 @@ fn parses_frame_log() {
 }
 
 /// `(worst, p95)` of frame times in ms.
+/// A text PDF of `pages` A4 pages (Helvetica, no dependencies), for the viewer step.
+fn text_pdf(pages: usize) -> Vec<u8> {
+    let mut objs: Vec<Vec<u8>> = vec![Vec::new(); 3 + 2 * pages];
+    let kids: Vec<String> = (0..pages).map(|i| format!("{} 0 R", 4 + 2 * i)).collect();
+    objs[0] = b"<< /Type /Catalog /Pages 2 0 R >>".to_vec();
+    objs[1] = format!("<< /Type /Pages /Kids [{}] /Count {pages} >>", kids.join(" ")).into_bytes();
+    objs[2] = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec();
+    for i in 0..pages {
+        let mut text = format!(
+            "BT /F1 24 Tf 72 760 Td (Page {}) Tj ET
+",
+            i + 1
+        );
+        for k in 0..30 {
+            let word = if k % 5 == 0 { "Hello" } else { "Lorem" };
+            text.push_str(&format!(
+                "BT /F1 11 Tf 72 {} Td ({word} ipsum dolor sit amet, line {k}.) Tj ET
+",
+                720 - k * 20
+            ));
+        }
+        objs[3 + 2 * i] = format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
+            5 + 2 * i
+        )
+        .into_bytes();
+        let mut c = format!(
+            "<< /Length {} >>
+stream
+",
+            text.len()
+        )
+        .into_bytes();
+        c.extend_from_slice(text.as_bytes());
+        c.extend_from_slice(
+            b"
+endstream",
+        );
+        objs[4 + 2 * i] = c;
+    }
+    let mut out = b"%PDF-1.7
+"
+    .to_vec();
+    let mut offsets = Vec::new();
+    for (k, o) in objs.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(
+            format!(
+                "{} 0 obj
+",
+                k + 1
+            )
+            .as_bytes(),
+        );
+        out.extend_from_slice(o);
+        out.extend_from_slice(
+            b"
+endobj
+",
+        );
+    }
+    let xref = out.len();
+    out.extend_from_slice(
+        format!(
+            "xref
+0 {}
+0000000000 65535 f 
+",
+            objs.len() + 1
+        )
+        .as_bytes(),
+    );
+    for o in offsets {
+        out.extend_from_slice(
+            format!(
+                "{o:010} 00000 n 
+"
+            )
+            .as_bytes(),
+        );
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer
+<< /Size {} /Root 1 0 R >>
+startxref
+{xref}
+%%EOF
+",
+            objs.len() + 1
+        )
+        .as_bytes(),
+    );
+    out
+}
+
+#[test]
+fn text_pdf_is_well_formed() {
+    let pdf = text_pdf(3);
+    assert!(pdf.starts_with(b"%PDF-1.7"));
+    let s = String::from_utf8_lossy(&pdf);
+    assert!(
+        s.contains("/Count 3")
+            && s.ends_with(
+                "%%EOF
+"
+            )
+    );
+    // The xref offsets point at the objects.
+    let at = s
+        .find(
+            "0000000000 65535 f 
+",
+        )
+        .unwrap()
+        + 20;
+    let first: usize = s[at..at + 10].parse().unwrap();
+    assert!(s[first..].starts_with("1 0 obj"));
+}
+
 fn stats(times: &[f64]) -> (f64, f64) {
     let worst = times.iter().copied().fold(0.0, f64::max);
     let mut sorted = times.to_vec();
@@ -94,6 +214,9 @@ fn scripted_tour_stays_within_frame_budget() {
         std::fs::write(data.join("hd_cpu.avi"), &clip).unwrap();
         std::fs::write(data.join("hd_gpu.avi"), &clip).unwrap();
     }
+    // A 200-page PDF for the viewer step.
+    let book = data.join("book.pdf");
+    std::fs::write(&book, text_pdf(200)).unwrap();
     // Portable copy of the binary.
     let bin = tmp.path().join("bin");
     std::fs::create_dir(&bin).unwrap();
@@ -156,6 +279,23 @@ fn scripted_tour_stays_within_frame_budget() {
         "quick_look".into(),
         "toggle_preview_pane".into(),
         "wait:300".into(),
+        // The PDF viewer: open, zoom, find, jump, thumbnails, close.
+        format!("edit:{}", book.display()),
+        "editor:maximize".into(),
+        "mark:pdf".into(),
+        "wait:1500".into(),
+        "editor:pdf=zoom=200".into(),
+        "wait:500".into(),
+        "editor:pdf=find=Hello".into(),
+        "wait:800".into(),
+        "editor:pdf=page=120".into(),
+        "wait:500".into(),
+        "editor:pdf=sidebar=thumbnails".into(),
+        "wait:800".into(),
+        "editor:pdf=fit=page".into(),
+        "wait:500".into(),
+        "editor:close".into(),
+        "wait:300".into(),
         "mark:end".into(),
         "quit".into(),
     ]
@@ -192,7 +332,9 @@ fn scripted_tour_stays_within_frame_budget() {
     assert!(times.len() > 10, "too few frames logged:\n{log}");
     let (worst, p95) = stats(&times);
     println!("{} frames after load: worst {worst:.2} ms, p95 {p95:.2} ms (budget {budget} ms)", times.len());
-    for (name, from, to) in [("720p CPU RGBA", "cpu", "gpu"), ("720p GPU YUV", "gpu", "end")] {
+    for (name, from, to) in
+        [("720p CPU RGBA", "cpu", "gpu"), ("720p GPU YUV", "gpu", "pdf"), ("PDF viewer", "pdf", "end")]
+    {
         let seg = frame_times_until(&log, from, Some(to));
         let (w, p) = stats(&seg);
         println!("  {name}: {} frames, worst {w:.2} ms, p95 {p:.2} ms", seg.len());

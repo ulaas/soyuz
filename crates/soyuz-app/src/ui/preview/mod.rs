@@ -262,7 +262,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         Some(PreviewAction::ToggleHex) => app.gui.preview.toggle_hex(),
         Some(PreviewAction::UnlockPdf(path)) => crate::models::archive::ask_pdf_password(&mut app.core, path),
         Some(PreviewAction::EditFile(path)) => {
-            crate::editors::open_path(&mut app.core, &path, crate::editors::io::Want::Text)
+            crate::editors::open_path(&mut app.core, &path, crate::ui::editors::pdf::edit_want(&path))
         }
         Some(PreviewAction::Open(path)) => {
             app.core.cmds.push(Cmd::Navigate {
