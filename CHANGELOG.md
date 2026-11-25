@@ -5,7 +5,7 @@ original milestones, R = rigidity, B = looks, F = features, A = AI,
 D = distribution. Generated from `git log` by `scripts/changelog.ps1` (or `git cliff`
 with `cliff.toml`); commit hashes refer to the main branch.
 
-## Unreleased
+## 0.8.7 (2026-11-25)
 
 ### Other features
 
@@ -28,6 +28,11 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - docs: third-party notices for the PDF engine's embedded fonts, CMaps and ICC profiles (be13948)
 - docs: PDF viewer and the built-in PDF engine in the user guide, README and known gaps (2e3172f)
 - docs: keep the PDF viewer plan local (untracked, like the other planning docs) (abbed05)
+- docs: changelog regenerated (0.3.0 to 0.8.6 and the unreleased PDF viewer) (d0d7395)
+
+### Other
+
+- release: 0.8.7 (a built-in PDF viewer; PDF previews, thumbnails and search no longer need pdfium) (d42f537)
 
 ## 0.8.6 (2026-11-21)
 
