@@ -77,8 +77,8 @@ pub struct ViewerCfg {
 }
 
 impl ViewerCfg {
-    /// From `[pdf]` and `[preview] max_document_mib` (the file size cap).
-    pub fn from_config(pdf: &soyuz_core::config::Pdf, max_document_mib: u64) -> ViewerCfg {
+    /// From `[pdf]` (the file size cap is `max_file_mib`).
+    pub fn from_config(pdf: &soyuz_core::config::Pdf) -> ViewerCfg {
         ViewerCfg {
             default_zoom: pdf.default_zoom,
             sidebar: pdf.sidebar,
@@ -88,7 +88,7 @@ impl ViewerCfg {
             cache_bytes: pdf.cache_mib_clamped() << 20,
             session: SessionCfg {
                 timeout: Duration::from_secs(pdf.render_timeout_secs_clamped()),
-                max_bytes: max_document_mib.max(1).saturating_mul(1 << 20),
+                max_bytes: pdf.max_file_mib_clamped().saturating_mul(1 << 20),
                 opts: RenderOpts { annotations: pdf.annotations, invert: false, system_fonts: pdf.system_fonts },
                 ..SessionCfg::default()
             },

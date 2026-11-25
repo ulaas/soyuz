@@ -283,9 +283,9 @@ fn remember_pdf(app: &mut AppCore, d: &Doc) {
     }
 }
 
-/// The viewer settings from `[pdf]` (and `[preview] max_document_mib`).
+/// The viewer settings from `[pdf]`.
 fn pdf_cfg(app: &AppCore) -> pdf::ViewerCfg {
-    pdf::ViewerCfg::from_config(&app.config.pdf, app.config.preview.max_document_mib)
+    pdf::ViewerCfg::from_config(&app.config.pdf)
 }
 
 /// Enter / Open on a PDF with `[open] pdf_in_viewer`: open it in the viewer instead of the

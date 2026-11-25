@@ -321,7 +321,7 @@ after asking. Your files stay as they are, but those operations can no longer be
     only) ask first (`[pdf] external_links`). *Dark pages* inverts page colours (or follows
     the theme). *Open as hex* is in the tab menu. Viewer settings are under Settings →
     Preview & search → *PDF viewer* (`[pdf]`: zoom and sidebar on open, page gap, page
-    memory, render time limit, annotations, installed fonts for PDFs without embedded
+    memory, render time limit, largest file (512 MiB by default), annotations, installed fonts for PDFs without embedded
     fonts, remembering the position). The single-letter keys are rebindable in context
     *PDF viewer*. The terminal UI shows the text of each page instead (`PgUp` / `PgDn`,
     `N` / `P`, `Ctrl+G`, `Ctrl+F`, `Ctrl+C` copies the page).

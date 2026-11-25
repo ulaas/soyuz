@@ -348,6 +348,7 @@ annotations = true               # draw annotation appearances (form fields, sta
 system_fonts = true              # fonts a PDF does not embed come from the installed fonts (CJK, ...)
 cache_mib = 256                  # memory budget of rendered pages, 32-4096
 render_timeout_secs = 20         # a page render taking longer is abandoned, 2-300
+max_file_mib = 512               # largest PDF the viewer opens (read into memory), 16-16384
 external_links = "ask"           # ask | open | off (http / https / mailto only)
 remember_position = true         # page, zoom and rotation per document for this session
 

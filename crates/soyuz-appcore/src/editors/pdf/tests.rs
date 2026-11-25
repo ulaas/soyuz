@@ -9,7 +9,7 @@ use crate::services::pdf::fixtures;
 use crate::services::preview_gfx::no_upload;
 
 fn cfg() -> ViewerCfg {
-    let mut c = ViewerCfg::from_config(&soyuz_core::config::Pdf::default(), 64);
+    let mut c = ViewerCfg::from_config(&soyuz_core::config::Pdf::default());
     c.session.threads = 2;
     c
 }

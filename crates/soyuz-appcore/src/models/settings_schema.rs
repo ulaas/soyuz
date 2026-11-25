@@ -197,6 +197,7 @@ pub const HINTS: &[(&str, Hint)] = &[
     ("pdf.page_gap", Hint::Range(0.0, Pdf::PAGE_GAP_MAX as f64)),
     ("pdf.cache_mib", Hint::Range(Pdf::CACHE_MIB_MIN as f64, Pdf::CACHE_MIB_MAX as f64)),
     ("pdf.render_timeout_secs", Hint::Range(Pdf::RENDER_TIMEOUT_MIN as f64, Pdf::RENDER_TIMEOUT_MAX as f64)),
+    ("pdf.max_file_mib", Hint::Range(Pdf::MAX_FILE_MIB_MIN as f64, Pdf::MAX_FILE_MIB_MAX as f64)),
     ("ai.scope.max_read_kib", Hint::Range(16.0, 4096.0)),
     ("ai.request_timeout_secs", Hint::Range(5.0, 600.0)),
     ("ai.idle_timeout_secs", Hint::Range(10.0, 900.0)),
@@ -759,6 +760,7 @@ mod tests {
         assert_eq!(float("pdf.page_gap"), (0.0, Pdf::PAGE_GAP_MAX));
         assert_eq!(int("pdf.cache_mib"), (Pdf::CACHE_MIB_MIN as i64, Pdf::CACHE_MIB_MAX as i64));
         assert_eq!(int("pdf.render_timeout_secs"), (Pdf::RENDER_TIMEOUT_MIN as i64, Pdf::RENDER_TIMEOUT_MAX as i64));
+        assert_eq!(int("pdf.max_file_mib"), (Pdf::MAX_FILE_MIB_MIN as i64, Pdf::MAX_FILE_MIB_MAX as i64));
         let names = |p: &str| match &row(p).unwrap().kind {
             FieldKind::Enum { values } => values.iter().map(|(v, _)| v.clone()).collect::<Vec<_>>(),
             k => panic!("{p}: {k:?}"),

@@ -500,6 +500,7 @@ impl Default for Pdf {
             system_fonts: true,
             cache_mib: 256,
             render_timeout_secs: 20,
+            max_file_mib: 512,
             external_links: PdfExternalLinks::Ask,
             remember_position: true,
         }
@@ -969,6 +970,7 @@ mod tests {
             system_fonts: false,
             cache_mib: 1024,
             render_timeout_secs: 60,
+            max_file_mib: 2048,
             external_links: PdfExternalLinks::Off,
             remember_position: false,
         };
@@ -1001,6 +1003,9 @@ mod tests {
         assert_eq!(p(|p| p.render_timeout_secs = 0).render_timeout_secs_clamped(), 2);
         assert_eq!(p(|p| p.render_timeout_secs = 1000).render_timeout_secs_clamped(), 300);
         assert_eq!(Pdf::default().render_timeout_secs_clamped(), 20);
+        assert_eq!(p(|p| p.max_file_mib = 0).max_file_mib_clamped(), 16);
+        assert_eq!(p(|p| p.max_file_mib = u64::MAX).max_file_mib_clamped(), 16384);
+        assert_eq!(Pdf::default().max_file_mib_clamped(), 512);
     }
 
     #[test]

@@ -2269,6 +2269,14 @@ fn pdf_viewer_group(ui: &mut Ui, q: &str, ctx: &str, d: &mut soyuz_core::config:
             },
         );
         r.row_kw(
+            tr!("settings-pdf-max-file"),
+            tr!("settings-pdf-max-file-desc"),
+            "pdf viewer file size limit large big book scanned",
+            |ui| {
+                number(ui, &mut p.max_file_mib, Pdf::MAX_FILE_MIB_MIN..=Pdf::MAX_FILE_MIB_MAX, " MiB");
+            },
+        );
+        r.row_kw(
             tr!("settings-pdf-links"),
             tr!("settings-pdf-links-desc"),
             "pdf viewer links web url browser mailto external",

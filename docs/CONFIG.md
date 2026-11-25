@@ -576,6 +576,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `system_fonts` | boolean | `true` | Fonts a PDF does not embed are taken from the installed system fonts (CJK and others); off = the built-in standard fonts only. |
 | `cache_mib` | integer | `256` | Memory budget of rendered page images (MiB, 32–4096). |
 | `render_timeout_secs` | integer | `20` | A page render or text extraction taking longer than this is abandoned (seconds, 2–300). |
+| `max_file_mib` | integer | `512` | Largest PDF the viewer opens (MiB, 16–16384). The whole file is read into memory. Previews, thumbnails and search keep `[preview] max_document_mib`. |
 | `external_links` | `"ask"` \| `"open"` \| `"off"` | `"ask"` | Clicking a web link in a document (http, https and mailto only; other links never open): `ask` first, `open` at once, or `off` (ignored). (`ask`: Ask before opening the link; `open`: Open the link at once (default browser or mail program); `off`: Web links do nothing) |
 | `remember_position` | boolean | `true` | Remember the page, zoom and rotation of each document for this session. |
 

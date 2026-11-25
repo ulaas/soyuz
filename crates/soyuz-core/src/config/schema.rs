@@ -1307,6 +1307,9 @@ pub struct Pdf {
     /// A page render or text extraction taking longer than this is abandoned (seconds,
     /// 2–300).
     pub render_timeout_secs: u64,
+    /// Largest PDF the viewer opens (MiB, 16–16384). The whole file is read into memory.
+    /// Previews, thumbnails and search keep `[preview] max_document_mib`.
+    pub max_file_mib: u64,
     /// Clicking a web link in a document (http, https and mailto only; other links never
     /// open): `ask` first, `open` at once, or `off` (ignored).
     pub external_links: PdfExternalLinks,
@@ -1385,6 +1388,10 @@ impl Pdf {
     pub const RENDER_TIMEOUT_MIN: u64 = 2;
     /// Longest `render_timeout_secs_clamped`.
     pub const RENDER_TIMEOUT_MAX: u64 = 300;
+    /// Smallest `max_file_mib_clamped`.
+    pub const MAX_FILE_MIB_MIN: u64 = 16;
+    /// Largest `max_file_mib_clamped`.
+    pub const MAX_FILE_MIB_MAX: u64 = 16384;
 
     /// `sidebar_width` clamped to `SIDEBAR_WIDTH_MIN..=SIDEBAR_WIDTH_MAX` (the default when
     /// it is not a number).
@@ -1409,6 +1416,11 @@ impl Pdf {
     /// `render_timeout_secs` clamped to `RENDER_TIMEOUT_MIN..=RENDER_TIMEOUT_MAX`.
     pub fn render_timeout_secs_clamped(&self) -> u64 {
         self.render_timeout_secs.clamp(Self::RENDER_TIMEOUT_MIN, Self::RENDER_TIMEOUT_MAX)
+    }
+
+    /// `max_file_mib` clamped to `MAX_FILE_MIB_MIN..=MAX_FILE_MIB_MAX`.
+    pub fn max_file_mib_clamped(&self) -> u64 {
+        self.max_file_mib.clamp(Self::MAX_FILE_MIB_MIN, Self::MAX_FILE_MIB_MAX)
     }
 }
 
