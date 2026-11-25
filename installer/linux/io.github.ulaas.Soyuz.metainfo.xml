@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.8.7" date="2026-11-25" type="development">
+      <description>
+        <p>A built-in PDF viewer: continuous pages that stay sharp at any zoom, thumbnails and
+          the outline in a sidebar, find with highlights, text selection and copy, links,
+          rotation and dark pages. PDF previews, thumbnails and search now use a built-in
+          engine, so pdfium is no longer needed (it stays available as an option).</p>
+      </description>
+    </release>
     <release version="0.8.6" date="2026-11-21" type="development">
       <description>
         <p>The system monitor shows every GPU: side by side on the GPU page, one card each

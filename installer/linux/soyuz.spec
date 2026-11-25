@@ -3,13 +3,13 @@
 #
 #   scripts/package.sh --rpm                       # builds the tarball, then this spec
 #   rpmbuild -bb installer/linux/soyuz.spec \
-#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.8.6"
+#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.8.7"
 #
 # The org.freedesktop.FileManager1 D-Bus activation file is deliberately NOT installed:
 # Soyuz writes it to the user's ~/.local/share/dbus-1/services/ only on opt-in
 # (docs/RELEASING.md, "Linux").
 
-%{!?soyuz_version: %global soyuz_version 0.8.6}
+%{!?soyuz_version: %global soyuz_version 0.8.7}
 %{!?soyuz_arch: %global soyuz_arch %{_arch}}
 # 1 when the tarball carries the FFmpeg runtime (scripts/package.sh --ffmpeg-dir sets it):
 # lib/soyuz/lib*.so.* go to %{_libdir}/soyuz/ (private; the exe looks in
@@ -114,6 +114,10 @@ fi
 %endif
 
 %changelog
+* Wed Nov 25 2026 The Soyuz contributors - 0.8.7-1
+- Version 0.8.7: a built-in PDF viewer (sharp zoom, thumbnails and outline, find,
+  selection and copy); PDF previews, thumbnails and search no longer need pdfium.
+
 * Sat Nov 21 2026 The Soyuz contributors - 0.8.6-1
 - Version 0.8.6: the system monitor shows every GPU, side by side on the GPU page, and
   one GPU and GPU memory column per adapter in the process table.
