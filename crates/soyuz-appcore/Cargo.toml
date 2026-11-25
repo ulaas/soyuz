@@ -57,6 +57,8 @@ chrono.workspace = true
 blake3.workspace = true
 pdfium-render = { workspace = true, optional = true }
 lopdf.workspace = true
+# The built-in PDF engine (`services::pdf`); pdfium above is the optional alternative.
+hayro.workspace = true
 quick-xml.workspace = true
 skrifa.workspace = true
 ab_glyph.workspace = true
