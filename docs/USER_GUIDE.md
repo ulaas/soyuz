@@ -261,14 +261,16 @@ after asking. Your files stay as they are, but those operations can no longer be
 - **Preview** (`Alt+P`): syntax-highlighted text, markdown, images, hex for binaries, plus
   file info. *Toggle hex preview* (palette) switches to the hex view.
   Richer previews (each can be switched off in *Settings → Preview & search*, `[preview]`):
-  - **PDF**: pages render with pdfium (`PgUp` / `PgDn` flip pages in Quick Look; a *Text*
-    tab shows the extracted text). Soyuz does not bundle or download pdfium: get a prebuilt
-    `pdfium.dll` (for example from the *bblanchon/pdfium-binaries* GitHub releases, the
-    `pdfium-win-x64` archive's `bin/pdfium.dll`) and put it next to `soyuz.exe`, in the
-    config folder, or in the folder named by `[preview] pdfium_dir`. No restart is needed.
-    With pdfium present the grid and gallery views also show the first page as the PDF's
-    thumbnail (`[appearance] pdf_thumbnails`).
-    Without it, PDFs show their page count, document info and text (pure-Rust fallback).
+  - **PDF**: pages render with the built-in engine (hayro, pure Rust; nothing to install).
+    `PgUp` / `PgDn` flip pages in Quick Look, a *Text* tab shows the extracted text, and
+    *Open in viewer* (or `F4`) opens the PDF viewer (below). The grid and gallery views
+    show the first page as the PDF's thumbnail (`[appearance] pdf_thumbnails`).
+    To use pdfium instead, set *PDF engine* to *pdfium* in Settings → Preview & search
+    (`[preview] pdf_engine`) and put a prebuilt `pdfium.dll` (for example from the
+    *bblanchon/pdfium-binaries* releases, `bin/pdfium.dll`) next to `soyuz.exe`, in the
+    config folder, or in the folder named by `[preview] pdfium_dir`; when it isn't found the
+    built-in engine is used and the preview says so. pdfium drives previews, thumbnails and
+    PDF text; the viewer always uses the built-in engine.
     An encrypted PDF shows a lock card: *Enter password…* there, or *PDF password…* in the
     item menu or the palette (terminal UI too), opens it. The password is kept until Soyuz
     closes, never written to disk.
@@ -306,6 +308,23 @@ after asking. Your files stay as they are, but those operations can no longer be
     inspector, go to offset, find hex bytes or text.
   - *Image*: zoom (wheel, `+`/`-`/`0`/`1`), rotate (`R`), flip (`H`/`V`), crop (`C`, drag,
     `Enter`). PNG/BMP/TIFF/WebP/GIF save losslessly; JPEG is re-encoded.
+  - *PDF viewer*: `F4` on a PDF (or *Open in viewer* in the preview, or Enter with
+    *Open PDFs in the built-in viewer*, `[open] pdf_in_viewer`). Pages scroll continuously
+    and are redrawn sharp at every zoom: `+` / `-` / `0` (100 % = printed size), `W` fit
+    width, `F` fit page, `Ctrl`+wheel or pinch zooms around the pointer, middle-drag pans.
+    `N` / `P` next and previous page, `Ctrl+Home` / `Ctrl+End` first and last, `Ctrl+G` (or
+    a click on the page field) goes to a page, `R` / `Shift+R` rotate the view, `S` toggles
+    the sidebar (page thumbnails or the document outline). `Ctrl+F` finds text with
+    highlights (`F3` / `Shift+F3`, match case, whole word). Drag to select text,
+    double-click a word, triple-click a line, `Ctrl+A` / `Ctrl+C` to copy; the context menu
+    copies a whole page. Links inside the document jump; web links (http, https, mailto
+    only) ask first (`[pdf] external_links`). *Dark pages* inverts page colours (or follows
+    the theme). *Open as hex* is in the tab menu. Viewer settings are under Settings →
+    Preview & search → *PDF viewer* (`[pdf]`: zoom and sidebar on open, page gap, page
+    memory, render time limit, annotations, installed fonts for PDFs without embedded
+    fonts, remembering the position). The single-letter keys are rebindable in context
+    *PDF viewer*. The terminal UI shows the text of each page instead (`PgUp` / `PgDn`,
+    `N` / `P`, `Ctrl+G`, `Ctrl+F`, `Ctrl+C` copies the page).
   - Saving puts the previous version in the trash as `<name>.bak` (`[editor]
     backup_to_trash`). Files changed on disk reload by themselves, or ask when you have
     unsaved changes. Closing a modified tab or the window asks first.
@@ -791,8 +810,8 @@ name patterns (substring, glob, regex, fuzzy), content search, size / date / kin
 `.gitignore` awareness. Results stream into a normal file view, so every action works on
 them. Save a search to keep it in the sidebar.
 
-Content search also looks inside PDFs, in their text (through pdfium when it is installed,
-else the built-in reader), and the index's `content:` words include PDF text when content
+Content search also looks inside PDFs, in their text (through the PDF engine chosen under
+Preview, with a simpler built-in reader as a fallback), and the index's `content:` words include PDF text when content
 indexing is on. Turn it off with *Search inside PDFs* in Settings → Search (`[search]
 document_text`); PDFs larger than the document limit under Preview are skipped, and an
 encrypted PDF is only searched after its password was typed this session.
@@ -840,7 +859,7 @@ Search the settings with `Ctrl+F` inside the window.
   turns both off), high contrast, colour emoji (the system's colour emoji font, or a
   monochrome symbol font when off), icons and thumbnails
   (icon pack, extension badges, program icons, folder mosaics, video keyframes through the FFmpeg
-  libraries, PDF first pages through pdfium, the on-disk thumbnail cache). **Import theme…** / **Export current…**
+  libraries, PDF first pages, the on-disk thumbnail cache). **Import theme…** / **Export current…**
   share theme files.
 - *Icon packs*: *Appearance → Icon pack* switches between the built-in glyphs, the built-in
   *Flat* pack and your own packs, with a live sample row. A pack is a folder in `icons/`
@@ -1512,8 +1531,8 @@ you install system-wide yourself.
   (`--filesystem=host`, including drives under `/run/media` and gvfs mounts), so browsing
   works as with the other packages. Differences inside the sandbox:
   - Settings and the search index live in `~/.var/app/io.github.ulaas.Soyuz/` (`config/soyuz/`,
-    `data/soyuz/`), not `~/.config/soyuz/`. Put `libpdfium.so` in that `config/soyuz/` folder
-    for PDF pages (the app's own `/app` folder is read-only).
+    `data/soyuz/`), not `~/.config/soyuz/`. If you choose the pdfium PDF engine, put `libpdfium.so` in that
+    `config/soyuz/` folder (the app's own `/app` folder is read-only).
   - Updates come from `flatpak update`; Soyuz only tells you a new version exists.
   - Files open with your default apps through the desktop portal (it may ask which app to
     use the first time). *Open with*, *Open terminal here* and terminal apps run on the host
@@ -1573,8 +1592,8 @@ you install system-wide yourself.
   with GNOME Files; *Views → Show GTK bookmarks*). Cloud lists GNOME Online Accounts drives
   (gvfs) and rclone mounts; an rclone mount appears only there, not again under Drives.
 - **Thumbnails and PDF** — thumbnails other apps already made (`~/.cache/thumbnails`) are
-  reused (*Appearance → Shared thumbnail cache*). PDF pages and thumbnails need
-  `libpdfium.so`: next to the `soyuz` binary, in the config folder, in the folder set under
+  reused (*Appearance → Shared thumbnail cache*). PDF pages and thumbnails render with the
+  built-in engine. With the pdfium engine chosen, `libpdfium.so` is looked for next to the `soyuz` binary, in the config folder, in the folder set under
   *Preview & search*, or in a system library folder (`/usr/lib64`, `/usr/local/lib`, …).
 - **Previous versions** — Properties → *Previous versions* and the context menu list earlier
   versions of a file or folder from Snapper (`<mount>/.snapshots`), ZFS

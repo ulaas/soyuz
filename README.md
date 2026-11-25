@@ -137,8 +137,8 @@ console program: run `soyuz-tui [folder]` in a terminal.
 and **Linux** (x64, Wayland and X11), with native integration on each. Release builds are not
 code-signed yet.
 
-PDF page rendering needs `pdfium.dll` next to `soyuz.exe` or in the config folder (Soyuz
-never downloads it; without it PDFs preview as text). Video posters use an `ffmpeg` found
+PDFs render with a built-in pure-Rust engine (hayro), in the preview, thumbnails and the
+PDF viewer (`F4`); pdfium can be chosen instead in Settings. Video posters use an `ffmpeg` found
 on `PATH`.
 
 ## Configuration
