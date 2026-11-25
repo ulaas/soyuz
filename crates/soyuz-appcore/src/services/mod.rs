@@ -18,6 +18,7 @@ pub mod mcp_bridge;
 pub mod media;
 pub mod media_player;
 pub mod os_clipboard;
+pub mod pdf;
 pub mod places;
 pub mod preview;
 pub mod preview_audio;
