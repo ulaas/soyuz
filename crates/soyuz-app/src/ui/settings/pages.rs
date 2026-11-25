@@ -6,8 +6,9 @@ use std::time::SystemTime;
 use egui::{RichText, Ui};
 use soyuz_core::config::{
     ActivityPlacement, CloseWindowSessions, CursorAfterDelete, DragDefault, DuplicatesPref, MiddleClick, OpenFoldersIn,
-    Orientation, Osc52Policy, PasteConflict, PreserveItem, ReflinkPref, RenameSelects, SidebarMode, SidebarSection,
-    TabStripMode, TrashUnsupportedPolicy, TypeAhead,
+    Orientation, Osc52Policy, PasteConflict, Pdf, PdfDarkPages, PdfEngine, PdfExternalLinks, PdfSidebar, PdfZoom,
+    PreserveItem, ReflinkPref, RenameSelects, SidebarMode, SidebarSection, TabStripMode, TrashUnsupportedPolicy,
+    TypeAhead,
 };
 use soyuz_core::{Column, DateFormat, DateFormatName, SizeStyle, ViewMode, format_size, format_time};
 
@@ -1126,6 +1127,14 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.open.palette_apps);
             },
         );
+        r.row_kw(
+            tr!("settings-open-pdf-in-viewer"),
+            tr!("settings-open-pdf-in-viewer-desc"),
+            "pdf open viewer built-in internal default application enter",
+            |ui| {
+                switch(ui, &mut d.open.pdf_in_viewer);
+            },
+        );
         if cfg!(windows) {
             r.row_kw(
                 tr!("settings-open-store-apps"),
@@ -2012,18 +2021,31 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-preview-syntax"), tr!("settings-preview-syntax-desc"), "highlight code", |ui| {
             syntax_theme_choice(ui, &mut d.preview.syntax_theme);
         });
-        let pdf_desc =
-            if cfg!(windows) { tr!("settings-preview-pdf-desc") } else { tr!("settings-preview-pdf-desc-unix") };
-        r.row_kw(tr!("settings-preview-pdf"), pdf_desc, "pdfium document", |ui| {
+        r.row_kw(tr!("settings-preview-pdf"), tr!("settings-preview-pdf-desc"), "pdf document pages", |ui| {
             switch(ui, &mut d.preview.pdf);
         });
+        r.row_kw(
+            tr!("settings-preview-pdf-engine"),
+            tr!("settings-preview-pdf-engine-desc"),
+            "pdf engine renderer hayro pdfium thumbnails quick look",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.preview.pdf_engine,
+                    &[(PdfEngine::Hayro, tr!("settings-preview-pdf-engine-builtin")), (PdfEngine::Pdfium, "pdfium")],
+                );
+            },
+        );
         let (pdfium_desc, pdfium_hint) = if cfg!(windows) {
             (tr!("settings-preview-pdfium-desc"), tr!("settings-preview-pdfium-hint"))
         } else {
             (tr!("settings-preview-pdfium-desc-unix"), tr!("settings-preview-pdfium-hint-unix"))
         };
-        r.row_kw(tr!("settings-preview-pdfium"), pdfium_desc, "pdf dll so library", |ui| {
-            text(ui, &mut d.preview.pdfium_dir, pdfium_hint, 220.0);
+        let pdfium_on = d.preview.pdf_engine == PdfEngine::Pdfium;
+        r.row_kw(tr!("settings-preview-pdfium"), pdfium_desc, "pdf dll so library engine", |ui| {
+            ui.add_enabled_ui(pdfium_on, |ui| {
+                text(ui, &mut d.preview.pdfium_dir, pdfium_hint, 220.0);
+            });
         });
         r.row_kw(tr!("settings-preview-office"), tr!("settings-preview-office-desc"), "docx xlsx pptx odt ods", |ui| {
             switch(ui, &mut d.preview.office);
@@ -2101,6 +2123,7 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
     });
+    any |= pdf_viewer_group(ui, q, ctx, d);
     // `[media]`: the FFmpeg libraries (its own module; it needs the whole app for the
     // status and the folder picker).
     any |= super::media::media(ui, app, q);
@@ -2148,6 +2171,128 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
     });
     any
+}
+
+/// `[pdf]`: the built-in PDF viewer (F4 on a PDF).
+fn pdf_viewer_group(ui: &mut Ui, q: &str, ctx: &str, d: &mut soyuz_core::config::Config) -> bool {
+    let p = &mut d.pdf;
+    group(ui, q, ctx, tr!("settings-pdf"), |r| {
+        r.row_kw(
+            tr!("settings-pdf-zoom"),
+            tr!("settings-pdf-zoom-desc"),
+            "pdf viewer zoom fit width page open",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut p.default_zoom,
+                    &[
+                        (PdfZoom::FitWidth, tr!("settings-pdf-zoom-fit-width")),
+                        (PdfZoom::FitPage, tr!("settings-pdf-zoom-fit-page")),
+                        (PdfZoom::Actual, "100 %"),
+                    ],
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-pdf-sidebar"),
+            tr!("settings-pdf-sidebar-desc"),
+            "pdf viewer sidebar thumbnails outline bookmarks contents",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut p.sidebar,
+                    &[
+                        (PdfSidebar::None, tr!("settings-pdf-sidebar-none")),
+                        (PdfSidebar::Thumbnails, tr!("settings-pdf-sidebar-thumbnails")),
+                        (PdfSidebar::Outline, tr!("settings-pdf-sidebar-outline")),
+                    ],
+                );
+            },
+        );
+        r.row_kw(tr!("settings-pdf-sidebar-width"), "", "pdf viewer sidebar width size", |ui| {
+            number(ui, &mut p.sidebar_width, Pdf::SIDEBAR_WIDTH_MIN..=Pdf::SIDEBAR_WIDTH_MAX, " px");
+        });
+        r.row_kw(
+            tr!("settings-pdf-page-gap"),
+            tr!("settings-pdf-page-gap-desc"),
+            "pdf viewer page gap spacing",
+            |ui| {
+                number(ui, &mut p.page_gap, 0.0..=Pdf::PAGE_GAP_MAX, " px");
+            },
+        );
+        r.row_kw(
+            tr!("settings-pdf-dark"),
+            tr!("settings-pdf-dark-desc"),
+            "pdf viewer dark pages invert night theme",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut p.dark_pages,
+                    &[
+                        (PdfDarkPages::Off, tr!("settings-pdf-dark-off")),
+                        (PdfDarkPages::Invert, tr!("settings-pdf-dark-invert")),
+                        (PdfDarkPages::FollowTheme, tr!("settings-pdf-dark-follow")),
+                    ],
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-pdf-annotations"),
+            tr!("settings-pdf-annotations-desc"),
+            "pdf viewer annotations comments forms stamps",
+            |ui| {
+                switch(ui, &mut p.annotations);
+            },
+        );
+        r.row_kw(
+            tr!("settings-pdf-system-fonts"),
+            tr!("settings-pdf-system-fonts-desc"),
+            "pdf viewer fonts cjk chinese japanese korean embedded missing",
+            |ui| {
+                switch(ui, &mut p.system_fonts);
+            },
+        );
+        r.row_kw(
+            tr!("settings-pdf-cache"),
+            tr!("settings-pdf-cache-desc"),
+            "pdf viewer cache ram memory budget",
+            |ui| {
+                number(ui, &mut p.cache_mib, Pdf::CACHE_MIB_MIN..=Pdf::CACHE_MIB_MAX, " MiB");
+            },
+        );
+        r.row_kw(
+            tr!("settings-pdf-timeout"),
+            tr!("settings-pdf-timeout-desc"),
+            "pdf viewer render timeout time limit slow",
+            |ui| {
+                number(ui, &mut p.render_timeout_secs, Pdf::RENDER_TIMEOUT_MIN..=Pdf::RENDER_TIMEOUT_MAX, " s");
+            },
+        );
+        r.row_kw(
+            tr!("settings-pdf-links"),
+            tr!("settings-pdf-links-desc"),
+            "pdf viewer links web url browser mailto external",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut p.external_links,
+                    &[
+                        (PdfExternalLinks::Ask, tr!("settings-pdf-links-ask")),
+                        (PdfExternalLinks::Open, tr!("settings-pdf-links-open")),
+                        (PdfExternalLinks::Off, tr!("settings-pdf-links-off")),
+                    ],
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-pdf-remember"),
+            tr!("settings-pdf-remember-desc"),
+            "pdf viewer remember position page zoom rotation",
+            |ui| {
+                switch(ui, &mut p.remember_position);
+            },
+        );
+    })
 }
 
 pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
@@ -2231,5 +2376,24 @@ mod tests {
             assert!(src.contains(&format!("d.tui.{key}")), "[tui] {key} has no row on the Terminal UI page");
         }
         assert!(table.len() >= 15);
+    }
+
+    /// Every `[pdf]` key, `[preview] pdf_engine` and `[open] pdf_in_viewer` has a row (no
+    /// dead settings: a new `[pdf]` key without a GUI row fails here).
+    #[test]
+    fn pdf_settings_have_rows() {
+        let table = toml::Table::try_from(soyuz_core::config::Pdf::default()).unwrap();
+        let src = include_str!("pages.rs");
+        let start = src.find("fn pdf_viewer_group").unwrap();
+        let end = start + src[start..].find("\npub fn ").unwrap();
+        let body = &src[start..end];
+        for key in table.keys() {
+            assert!(body.contains(&format!("&mut p.{key}")), "[pdf] {key} has no row in the PDF viewer group");
+        }
+        assert!(table.len() >= 11);
+        // Built with `format!` so this test's own text does not match.
+        for (section, key) in [("preview", "pdf_engine"), ("open", "pdf_in_viewer")] {
+            assert!(src.contains(&format!("&mut d.{section}.{key}")), "[{section}] {key} has no row");
+        }
     }
 }

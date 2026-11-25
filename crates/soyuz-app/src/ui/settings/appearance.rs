@@ -303,12 +303,8 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
         r.row_kw(
             tr!("settings-appearance-pdf-thumbs"),
-            if cfg!(windows) {
-                tr!("settings-appearance-pdf-thumbs-desc")
-            } else {
-                tr!("settings-appearance-pdf-thumbs-desc-unix")
-            },
-            "pdf pdfium page document",
+            tr!("settings-appearance-pdf-thumbs-desc"),
+            "pdf pdfium hayro page document",
             |ui| {
                 switch(ui, &mut d.appearance.pdf_thumbnails);
             },

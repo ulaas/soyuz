@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use soyuz_core::config::meta::{self, Kind, Schema};
-use soyuz_core::config::{Config, TuiSection};
+use soyuz_core::config::{Config, Pdf, TuiSection};
 
 use crate::models::settings::Section;
 
@@ -193,6 +193,10 @@ pub const HINTS: &[(&str, Hint)] = &[
     ("editor.max_text_mib", Hint::Range(1.0, 512.0)),
     ("editor.jpeg_quality", Hint::Range(50.0, 100.0)),
     ("editor.max_image_mp", Hint::Range(10.0, 1000.0)),
+    ("pdf.sidebar_width", Hint::Range(Pdf::SIDEBAR_WIDTH_MIN as f64, Pdf::SIDEBAR_WIDTH_MAX as f64)),
+    ("pdf.page_gap", Hint::Range(0.0, Pdf::PAGE_GAP_MAX as f64)),
+    ("pdf.cache_mib", Hint::Range(Pdf::CACHE_MIB_MIN as f64, Pdf::CACHE_MIB_MAX as f64)),
+    ("pdf.render_timeout_secs", Hint::Range(Pdf::RENDER_TIMEOUT_MIN as f64, Pdf::RENDER_TIMEOUT_MAX as f64)),
     ("ai.scope.max_read_kib", Hint::Range(16.0, 4096.0)),
     ("ai.request_timeout_secs", Hint::Range(5.0, 600.0)),
     ("ai.idle_timeout_secs", Hint::Range(10.0, 900.0)),
@@ -739,6 +743,39 @@ mod tests {
         names.sort_unstable();
         assert_eq!(names, keys.keys().map(String::as_str).collect::<Vec<_>>());
         assert!(matches!(&row("tui.shell_mode").unwrap().kind, FieldKind::Enum { values } if values.len() == 2));
+    }
+
+    #[test]
+    fn pdf_ranges_and_enums_match_the_schema() {
+        let int = |p: &str| match row(p).unwrap().kind {
+            FieldKind::Int { min, max } => (min.unwrap(), max.unwrap()),
+            ref k => panic!("{p}: {k:?}"),
+        };
+        let float = |p: &str| match row(p).unwrap().kind {
+            FieldKind::Float { min, max } => (min.unwrap() as f32, max.unwrap() as f32),
+            ref k => panic!("{p}: {k:?}"),
+        };
+        assert_eq!(float("pdf.sidebar_width"), (Pdf::SIDEBAR_WIDTH_MIN, Pdf::SIDEBAR_WIDTH_MAX));
+        assert_eq!(float("pdf.page_gap"), (0.0, Pdf::PAGE_GAP_MAX));
+        assert_eq!(int("pdf.cache_mib"), (Pdf::CACHE_MIB_MIN as i64, Pdf::CACHE_MIB_MAX as i64));
+        assert_eq!(int("pdf.render_timeout_secs"), (Pdf::RENDER_TIMEOUT_MIN as i64, Pdf::RENDER_TIMEOUT_MAX as i64));
+        let names = |p: &str| match &row(p).unwrap().kind {
+            FieldKind::Enum { values } => values.iter().map(|(v, _)| v.clone()).collect::<Vec<_>>(),
+            k => panic!("{p}: {k:?}"),
+        };
+        assert_eq!(names("preview.pdf_engine"), ["hayro", "pdfium"]);
+        assert_eq!(names("pdf.default_zoom"), ["fit_width", "fit_page", "actual"]);
+        assert_eq!(names("pdf.sidebar"), ["none", "thumbnails", "outline"]);
+        assert_eq!(names("pdf.dark_pages"), ["off", "invert", "follow_theme"]);
+        assert_eq!(names("pdf.external_links"), ["ask", "open", "off"]);
+        for p in ["pdf.annotations", "pdf.system_fonts", "pdf.remember_position", "open.pdf_in_viewer"] {
+            assert_eq!(row(p).unwrap().kind, FieldKind::Bool, "{p}");
+        }
+        // Every [pdf] key is a row of the [pdf] table.
+        let keys = to_table(&Config::default())["pdf"].as_table().unwrap().clone();
+        let mut rows: Vec<&str> = table("pdf").unwrap().rows.iter().map(|r| r.name.as_str()).collect();
+        rows.sort_unstable();
+        assert_eq!(rows, keys.keys().map(String::as_str).collect::<Vec<_>>());
     }
 
     #[test]
