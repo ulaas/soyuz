@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: [main, "phase-*"]
+    # A release tag gets its own CI run, so Release's ci-gate finds a run on the tagged
+    # commit even when main was pushed with newer commits on top of it.
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -357,7 +360,8 @@ jobs:
   # FFmpeg runtime libraries (from the ffmpeg job).
   package:
     name: Package (${{ matrix.name }})
-    if: github.event_name != 'pull_request'
+    # Tag runs skip it: Release builds the real packages for tags.
+    if: github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/')
     needs: [build, ffmpeg]
     strategy:
       fail-fast: false

@@ -134,10 +134,11 @@ changing the installer or the packaging scripts.
   secrets exist), a Linux x86_64 PREFIX tarball and `.rpm` (see "Linux" below), and the macOS arm64 tarball plus `Soyuz.app` in a
   disk image (signed with the Developer ID, notarized and stapled when the Apple secrets exist;
   ad hoc otherwise). The first job, `ci-gate`, waits
-  until *CI* has passed on the tagged commit (polling once a minute), so the commit and the tag
-  can be pushed together. It fails when that CI run fails or is cancelled (re-run CI, then the
-  release), or when no CI run appears within 10 minutes (a tag on a commit that never reached
-  `main` / `phase-*`). A manual *Release* run can tick `skip_ci_gate` in an emergency.
+  until *CI* has passed on the tagged commit (polling once a minute). Pushing a `v*` tag starts
+  its own CI run on the tagged commit, so the tag may sit below newer commits on `main`. It
+  fails when that CI run fails or is cancelled (re-run CI, then the release), or when no CI run
+  appears within 10 minutes (for a tag pushed before CI ran on tags: start CI by hand with
+  `gh workflow run ci.yml --ref <tag>`, then re-run the release). A manual *Release* run can tick `skip_ci_gate` in an emergency.
 - Linux and macOS builds are supported and verified on real machines. In CI the Linux tests
   are a gate; the macOS test step is still `continue-on-error` (reported as warnings) until it
   has been confirmed green on hosted runners. Linux runners

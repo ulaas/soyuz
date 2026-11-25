@@ -42,9 +42,9 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Waits for ci.yml on the same commit: push the commit to main and the tag together, and the
-  # release starts building once that CI run is green. Fails if CI fails or is cancelled, or if
-  # no CI run shows up for the commit (a tag on a commit that never reached main / phase-*).
+  # Waits for ci.yml on the same commit: pushing a `v*` tag starts its own CI run (ci.yml's
+  # push.tags), and the release starts building once a CI run on that commit is green. Fails if
+  # CI fails or is cancelled, or if no CI run shows up for the commit within 10 minutes.
   ci-gate:
     name: Wait for CI on this commit
     runs-on: ubuntu-latest
@@ -74,7 +74,7 @@ jobs:
               exit 1
             fi
             if (( total == 0 && waited >= 600 )); then
-              echo "::error::No CI run for $SHA after 10 minutes. Push the commit to main first (or run CI on it by hand)."
+              echo "::error::No CI run for $SHA after 10 minutes. Run CI on the tag by hand (gh workflow run ci.yml --ref <tag>), then re-run this release."
               exit 1
             fi
             echo "Waiting for CI on $SHA ($total run(s), ${waited}s so far)"
