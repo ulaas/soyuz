@@ -20,8 +20,9 @@
 //! The panel: a tab row (one tab per document: kind mark, name, `●` while unsaved, `×`
 //! to close), the external-change banner when the file changed on disk under unsaved
 //! edits (Reload with the notice key, Keep my version with Esc, or a click), then the
-//! document: text ([`text`]), hex ([`hex`]) or image ([`image`]), each with its bars
-//! (find / replace, go to, crop, resize, save as), an optional notice and a status line.
+//! document: text ([`text`]), hex ([`hex`]), image ([`image`]) or a PDF's page text
+//! ([`pdf`]), each with its bars (find / replace, go to, crop, resize, save as), an
+//! optional notice and a status line.
 //! Cells are laid out with [`layout`]: wide characters take two cells, tabs expand,
 //! controls show as `¤`. The bars and notices name the editor commands' current chords
 //! ([`Keys`], from the key map: `KeyContext::Editor`).
@@ -29,6 +30,7 @@
 pub mod hex;
 pub mod image;
 pub mod layout;
+pub mod pdf;
 pub mod text;
 
 use ratatui::Frame;
@@ -71,6 +73,11 @@ pub struct Keys {
     pub regex: String,
     pub resize: String,
     pub save: String,
+    /// The PDF view's hint: find, go to page, next / previous page.
+    pub find: String,
+    pub goto: String,
+    pub next_page: String,
+    pub prev_page: String,
 }
 
 impl Keys {
@@ -84,6 +91,10 @@ impl Keys {
             regex: l(Action::EditorRegex),
             resize: l(Action::EditorResizeImage),
             save: l(Action::EditorSave),
+            find: l(Action::EditorFind),
+            goto: l(Action::EditorGoTo),
+            next_page: l(Action::PdfNextPage),
+            prev_page: l(Action::PdfPrevPage),
         }
     }
 }
@@ -112,6 +123,7 @@ pub enum TabKind {
     Text,
     Hex,
     Image,
+    Pdf,
 }
 
 /// One document tab.
@@ -137,6 +149,7 @@ pub enum BodyVm {
     Text(text::TextVm),
     Hex(hex::HexVm),
     Image(image::ImageVm),
+    Pdf(pdf::PdfVm),
 }
 
 /// One row of a bar (find, replace, go to, save as) above the document.
@@ -281,8 +294,7 @@ fn prepare_editor(core: &mut AppCore, st: &mut crate::input::editor::State, regi
                 DocKind::Text(_) => TabKind::Text,
                 DocKind::Hex(_) => TabKind::Hex,
                 DocKind::Image(_) => TabKind::Image,
-                // The terminal PDF view replaces this placeholder.
-                DocKind::Pdf(_) => TabKind::Image,
+                DocKind::Pdf(_) => TabKind::Pdf,
             },
             active: i == active,
             dirty: d.is_dirty(),
@@ -347,6 +359,26 @@ fn prepare_editor(core: &mut AppCore, st: &mut crate::input::editor::State, regi
                         }
                     }
                 }
+                DocKind::Pdf(p) => {
+                    // Page text only: no page bitmaps for a terminal.
+                    p.text_only = true;
+                    p.pump();
+                    if std::mem::take(&mut p.focus_request) {
+                        st.focused = true;
+                        v.bar = Bar::Text;
+                    }
+                    if std::mem::take(&mut p.find.focus_find) {
+                        st.focused = true;
+                        v.bar = Bar::Find;
+                        v.find_edit = crate::widgets::LineEdit::at_end(&p.find.query.text);
+                    }
+                    if std::mem::take(&mut p.goto_focus) {
+                        st.focused = true;
+                        v.bar = Bar::Goto;
+                        v.goto_edit = crate::widgets::LineEdit::new();
+                        v.field_error = None;
+                    }
+                }
                 _ => {}
             }
             let save_as = st.save_as.as_mut().filter(|s| s.doc == d.id);
@@ -369,20 +401,25 @@ fn prepare_editor(core: &mut AppCore, st: &mut crate::input::editor::State, regi
                     BodyVm::Text(text::prepare(t, v, save_as, body, &env))
                 }
                 DocKind::Hex(h) => BodyVm::Hex(hex::prepare(h, v, save_as, body, focused, &keys.notice)),
-                // Placeholder until the terminal PDF view lands: the page count.
                 DocKind::Pdf(p) => {
-                    p.pump();
-                    match p.status() {
-                        soyuz_appcore::editors::pdf::Status::Opening => BodyVm::Loading,
-                        soyuz_appcore::editors::pdf::Status::Ready => BodyVm::Message(vec![p.page_label(p.page())]),
-                        soyuz_appcore::editors::pdf::Status::Failed(e) => BodyVm::Message(vec![
+                    use soyuz_appcore::editors::pdf::Status;
+                    p.field_focus = focused && matches!(v.bar, Bar::Find | Bar::Goto);
+                    match p.status().clone() {
+                        Status::Opening => BodyVm::Loading,
+                        Status::Ready => BodyVm::Pdf(pdf::prepare(p, v, body, focused, &keys)),
+                        Status::Failed(e) if p.locked().is_some() => {
+                            BodyVm::Message(vec![e.to_string(), tr!("tui-editor-pdf-unlock").into()])
+                        }
+                        Status::Failed(e) => BodyVm::Message(
                             tr!(
                                 "editors-open-failed",
                                 name = crate::dialog::safe(&d.name),
                                 error = crate::dialog::safe(&e.to_string())
                             )
-                            .to_string(),
-                        ]),
+                            .lines()
+                            .map(str::to_string)
+                            .collect(),
+                        ),
                     }
                 }
             }
@@ -475,6 +512,7 @@ pub fn draw_editor(f: &mut Frame<'_>, area: Rect, m: &EditorVm, theme: &TuiTheme
         BodyVm::Text(t) => text::draw(f, body, t, m.doc, theme, hits),
         BodyVm::Hex(h) => hex::draw(f, body, h, m.doc, theme, hits),
         BodyVm::Image(i) => image::draw(f, body, i, m.doc, theme, hits),
+        BodyVm::Pdf(p) => pdf::draw(f, body, p, m.doc, theme, hits),
     }
 }
 
@@ -554,6 +592,7 @@ fn draw_tabs(buf: &mut Buffer, r: Rect, m: &EditorVm, theme: &TuiTheme, hits: &m
             (TabKind::Text, _) => "T",
             (TabKind::Hex, _) => "H",
             (TabKind::Image, _) => "I",
+            (TabKind::Pdf, _) => "P",
             (TabKind::Failed, _) => "!",
             (TabKind::Loading, true) => ".",
             (TabKind::Loading, false) => "…",
@@ -739,6 +778,7 @@ mod tests {
             BodyVm::Text(t),
             BodyVm::Hex(hex::tests::sample_vm()),
             BodyVm::Image(image::tests::sample_vm()),
+            BodyVm::Pdf(pdf::tests::sample_vm()),
         ];
         for (k, body) in bodies.into_iter().enumerate() {
             m.body = body;

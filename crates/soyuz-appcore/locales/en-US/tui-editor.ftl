@@ -38,3 +38,13 @@ tui-editor-resize-invalid = Enter sizes in pixels (1 to 65535) or a percentage
 tui-editor-resize-too-large = Larger than [editor] max_image_mp ({ $limit } megapixels)
 tui-editor-crop-invalid = The area is outside the image or empty
 tui-editor-resize-image-only = Resize works for images
+# The PDF viewer's text view: its keys ($next, $prev, $goto, $find: the commands' chords),
+# the go-to-page bar, the page's text being read or missing, a locked document, copying.
+tui-editor-pdf-keys = { $next } / { $prev }: page · PgUp / PgDn: scroll · { $goto }: go to page · { $find }: find · Ctrl+C: copy the page
+tui-editor-pdf-page = Page
+tui-editor-pdf-page-invalid = Type a page number
+tui-editor-pdf-reading = Reading the page text…
+tui-editor-pdf-no-text = This page has no text (it may be a scanned image)
+tui-editor-pdf-unlock = Enter: type the password
+# $page: the page number (1-based).
+tui-editor-pdf-copied = Copied the text of page { $page }

@@ -38,3 +38,13 @@ tui-editor-resize-invalid = Boyutları piksel (1 ile 65535 arası) ya da yüzde 
 tui-editor-resize-too-large = [editor] max_image_mp sınırından büyük ({ $limit } megapiksel)
 tui-editor-crop-invalid = Alan görüntünün dışında ya da boş
 tui-editor-resize-image-only = Yeniden boyutlandırma görüntülerde çalışır
+# The PDF viewer's text view: its keys ($next, $prev, $goto, $find: the commands' chords),
+# the go-to-page bar, the page's text being read or missing, a locked document, copying.
+tui-editor-pdf-keys = { $next } / { $prev }: sayfa · PgUp / PgDn: kaydır · { $goto }: sayfaya git · { $find }: bul · Ctrl+C: sayfayı kopyala
+tui-editor-pdf-page = Sayfa
+tui-editor-pdf-page-invalid = Bir sayfa numarası yazın
+tui-editor-pdf-reading = Sayfanın metni okunuyor…
+tui-editor-pdf-no-text = Bu sayfada metin yok (taranmış bir görüntü olabilir)
+tui-editor-pdf-unlock = Enter: parolayı yazın
+# $page: the page number (1-based).
+tui-editor-pdf-copied = { $page }. sayfanın metni kopyalandı

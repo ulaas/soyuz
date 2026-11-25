@@ -418,3 +418,29 @@ fn bad_files_fail() {
     assert_eq!(d.locked(), None);
     assert!(d.position().is_none());
 }
+
+/// A text-only frontend (the terminal UI) gets the page texts and find results, never a
+/// page bitmap or tile request.
+#[test]
+fn text_only_reads_text_and_renders_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("doc.pdf");
+    std::fs::write(&path, fixtures::text_pages()).unwrap();
+    let mut d = PdfDoc::new(path, cfg(), no_wake(), no_upload(), None);
+    d.text_only = true;
+    settle(&mut d, "the first page's text", |d| d.page_text(0).is_some());
+    assert!(d.page_text(0).is_some_and(|t| t.contains("Hello world")));
+    d.next_page();
+    settle(&mut d, "the second page's text", |d| d.page_text(1).is_some());
+    d.find.open = true;
+    d.find.query.text = "hello".into();
+    d.find_changed();
+    settle(&mut d, "the find sweep", |d| d.find.done());
+    assert_eq!(d.find.page_matches(0).len(), 2);
+    assert!(d.find.page_matches(1).is_empty());
+    d.find_step(true);
+    assert_eq!(d.page(), 0, "the match's page");
+    assert!(d.requested.is_empty(), "no bitmap was asked for: {:?}", d.requested);
+    assert!(d.render_key.is_none());
+    assert!(d.visible_pages().iter().all(|p| p.base.is_none() && p.tiles.is_empty()));
+}

@@ -62,6 +62,8 @@ mod headless {
     mod grid;
     /// T4: images (`[tui] images`).
     mod images;
+    /// The PDF viewer's text view.
+    mod pdf;
     /// Phase V3b: the media player in the preview pane and Quick Look.
     mod player;
     /// T4: the preview pane.

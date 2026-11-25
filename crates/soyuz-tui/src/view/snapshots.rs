@@ -919,6 +919,27 @@ fn editor_text() {
     snap("editor", &m, &Facts { editor: true, ..Facts::default() }, (W, H), Look::Default);
 }
 
+/// The editor panel on a PDF: the current page's text with find marks, the find bar, the
+/// key hint and the status line.
+fn pdf_editor() -> EditorVm {
+    use editor::{BodyVm, TabKind, TabVm};
+    EditorVm {
+        tabs: vec![
+            TabVm { name: "manual.pdf".into(), kind: TabKind::Pdf, active: true, ..TabVm::default() },
+            TabVm { name: "notes.txt".into(), kind: TabKind::Text, ..TabVm::default() },
+        ],
+        body: BodyVm::Pdf(editor::pdf::tests::sample_vm()),
+        ..editor()
+    }
+}
+
+#[test]
+fn editor_pdf() {
+    let mut m = base();
+    m.editor = pdf_editor();
+    snap("editor_pdf", &m, &Facts { editor: true, ..Facts::default() }, (W, H), Look::Default);
+}
+
 #[test]
 fn quicklook_text() {
     let mut m = base();
@@ -1023,6 +1044,15 @@ fn snap_sr(name: &str, m: &ViewModel, facts: &Facts, want: &str) {
 
 fn sr_facts(focus: TuiFocus) -> Facts {
     Facts { focus, ..Facts::default() }
+}
+
+/// The PDF view in screen-reader mode: the cursor on the page's first text row.
+#[test]
+fn screen_reader_editor_pdf() {
+    let mut m = base();
+    m.editor = pdf_editor();
+    let facts = Facts { editor: true, focus: TuiFocus::Editor, ..Facts::default() };
+    snap_sr("editor_pdf", &m, &facts, "Hello from page one");
 }
 
 #[test]

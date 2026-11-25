@@ -38,7 +38,12 @@
 //!    the core's image keys (`ImageDoc::key`: R / Shift+R rotate, H / V flip, C crop,
 //!    Ctrl+Z / Ctrl+Y); the crop bar (x, y, width, height) and the resize bar (width,
 //!    height: an empty field keeps the aspect ratio, `50%` scales) are fields, Tab / Up /
-//!    Down move between them, Enter applies.
+//!    Down move between them, Enter applies. A PDF shows its current page's text
+//!    (`crate::view::editor::pdf`): Up / Down scroll a row, Page Up / Page Down (Space /
+//!    Shift+Space) a screen and turn the page at its end, Left / Right turn the page, Home
+//!    / End go to the page's top / bottom, Ctrl+C copies the page's text, Enter on a locked
+//!    document asks for its password; the viewer's zoom, rotation, sidebar and dark-page
+//!    chords do nothing here (`actions::gui_only`).
 //!
 //! Mouse ([`click`], [`wheel`]): a tab selects (middle button closes), `×` closes, the
 //! panel buttons dock / maximize / hide; in the text a press places the caret (Shift
@@ -129,6 +134,13 @@ pub struct DocView {
     pub field: usize,
     pub field_edits: Vec<LineEdit>,
     pub field_error: Option<String>,
+    /// PDF: the page shown last frame (a new page starts at its top), Page Up turned back
+    /// a page (it starts at its bottom), the page's wrapped rows last frame, and the find
+    /// match last scrolled into view. The first row shown is [`DocView::top`].
+    pub pdf_page: Option<u32>,
+    pub pdf_end: bool,
+    pub pdf_rows: usize,
+    pub pdf_cur: Option<(u32, usize)>,
 }
 
 /// The "Save as" bar of a document.
@@ -339,7 +351,14 @@ fn keys(app: &mut App, evs: &[Event]) {
     if !has_focus(&app.core, &app.input) {
         return;
     }
-    // 3. The core's editor keys and the global bindings.
+    // 3. The core's editor keys and the global bindings. A PDF's unmodified viewer keys
+    // type while its find / page field has the keyboard.
+    if let Some(d) = app.core.editors.active_doc_mut() {
+        let bar = app.input.editor.views.get(&d.id).map(|v| v.bar).unwrap_or_default();
+        if let DocKind::Pdf(p) = &mut d.kind {
+            p.field_focus = matches!(bar, Bar::Find | Bar::Goto);
+        }
+    }
     let focus_before = (app.core.ui.focus, app.core.ui.address.editing, app.core.palette.open);
     let out = editors::handle_keys(&mut app.core, &mut frame);
     if out.release_focus {
@@ -401,6 +420,7 @@ fn local_key(app: &mut App, c: KeyChord) -> bool {
             DocKind::Text(t) => t.find.open || t.goto.is_some(),
             DocKind::Hex(h) => h.find.is_some() || h.goto.is_some(),
             DocKind::Image(i) => i.crop_mode || i.crop.is_some(),
+            DocKind::Pdf(p) => p.find.open || p.goto.is_some(),
             _ => false,
         };
         if !bars_open {
@@ -414,6 +434,15 @@ fn local_key(app: &mut App, c: KeyChord) -> bool {
     {
         h.toggle_find_mode();
         return true;
+    }
+    // The PDF viewer's picture commands (zoom, fit, rotate, sidebar, dark pages) mean
+    // nothing in the text view: their chords do nothing.
+    if matches!(d.kind, DocKind::Pdf(_)) {
+        let field = matches!(bar, Bar::Find | Bar::Goto);
+        let bound = editors::commands::binding(&app.core.keymap, c, editors::commands::BindDoc::Pdf, field);
+        if bound.is_some_and(|a| soyuz_appcore::actions::gui_only(&a)) {
+            return true;
+        }
     }
     false
 }
@@ -512,6 +541,91 @@ fn bar_event(app: &mut App, id: u64, bar: Bar, ev: &InputEvent) {
             }
             _ => {}
         },
+        DocKind::Pdf(p) => match bar {
+            Bar::Find => {
+                if shift_enter {
+                    p.find_step(false);
+                    return;
+                }
+                let before = p.find.query.text.clone();
+                let out = v.find_edit.apply(&mut p.find.query.text, ev);
+                if p.find.query.text != before {
+                    p.find_changed();
+                }
+                match out {
+                    EditOutcome::Submit | EditOutcome::Down => p.find_step(true),
+                    EditOutcome::Up => p.find_step(false),
+                    _ => {}
+                }
+            }
+            Bar::Goto => {
+                let Some(mut text) = p.goto.clone() else { return };
+                let out = v.goto_edit.apply(&mut text, ev);
+                if out == EditOutcome::Consumed {
+                    v.field_error = None;
+                }
+                if let Some(g) = p.goto.as_mut() {
+                    g.clone_from(&text);
+                }
+                if out == EditOutcome::Submit && !p.submit_goto(&text) {
+                    v.field_error = Some(tr!("tui-editor-pdf-page-invalid").into());
+                }
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
+/// The PDF view's own keys (see the module docs): scrolling the page's rows, turning the
+/// page at either end, copying the page's text, the password prompt of a locked document.
+fn pdf_key(app: &mut App, id: u64, c: KeyChord) {
+    let Some(idx) = app.core.editors.docs.iter().position(|d| d.id == id) else { return };
+    let v = app.input.editor.views.entry(id).or_default();
+    let DocKind::Pdf(p) = &mut app.core.editors.docs[idx].kind else { return };
+    if p.locked().is_some() {
+        if is(&c, Mods::empty(), KeyName::Enter) {
+            editors::ask_pdf_password(&mut app.core, idx);
+        }
+        return;
+    }
+    if !p.is_ready() {
+        return;
+    }
+    let ctrl = c.mods.intersects(Mods::CTRL | Mods::CMD) && !c.mods.intersects(Mods::ALT | Mods::SHIFT);
+    let screen = v.geom.rows.saturating_sub(1).max(1);
+    let last_top = v.pdf_rows.saturating_sub(v.geom.rows.max(1));
+    let page = p.page();
+    let back = c.key == KeyName::PageUp || c.key == KeyName::Space && c.mods == Mods::SHIFT;
+    match c.key {
+        KeyName::C | KeyName::Insert if ctrl => {
+            let Some(text) = p.page_text(page).map(str::to_string) else { return };
+            app.host.copy_text(text.clone());
+            app.input.editor.clip = Some(text);
+            app.core.ui.toasts.push_replacing(Toast::info(tr!("tui-editor-pdf-copied", page = page + 1)));
+        }
+        _ if c.mods.intersects(Mods::CTRL | Mods::CMD | Mods::ALT) => {}
+        KeyName::ArrowUp => v.top = v.top.saturating_sub(1),
+        KeyName::ArrowDown => v.top = (v.top + 1).min(last_top),
+        KeyName::ArrowLeft => p.prev_page(),
+        KeyName::ArrowRight => p.next_page(),
+        KeyName::Home => v.top = 0,
+        KeyName::End => v.top = last_top,
+        KeyName::PageUp | KeyName::PageDown | KeyName::Space if back => {
+            if v.top > 0 {
+                v.top = v.top.saturating_sub(screen);
+            } else if page > 0 {
+                p.prev_page();
+                v.pdf_end = true;
+            }
+        }
+        KeyName::PageDown | KeyName::Space => {
+            if v.top < last_top {
+                v.top = (v.top + screen).min(last_top);
+            } else {
+                p.next_page();
+            }
+        }
         _ => {}
     }
 }
@@ -522,6 +636,12 @@ fn doc_event(app: &mut App, id: u64, ev: &InputEvent) {
     let st = &mut app.input.editor;
     let v = st.views.entry(id).or_default();
     let Some(d) = app.core.editors.docs.iter_mut().find(|d| d.id == id) else { return };
+    if matches!(d.kind, DocKind::Pdf(_)) {
+        if let InputEvent::Chord(c) = ev {
+            pdf_key(app, id, *c);
+        }
+        return;
+    }
     if let DocKind::Image(i) = &mut d.kind {
         // The core's image keys (rotate, flip, crop, undo / redo); the terminal fits the
         // image, so its zoom keys change nothing here.
@@ -908,6 +1028,7 @@ pub fn click(app: &mut App, target: HitTarget, m: &MouseEvent) {
                     (DocKind::Text(t), 0) if t.find.open => Bar::Find,
                     (DocKind::Text(t), 1) if t.find.open && t.find.replace => Bar::Replace,
                     (DocKind::Hex(h), 0) if h.find.is_some() => Bar::Find,
+                    (DocKind::Pdf(p), 0) if p.find.open => Bar::Find,
                     _ if app.input.editor.save_as.as_ref().is_some_and(|s| s.doc == doc) => Bar::SaveAs,
                     _ => Bar::Goto,
                 };
@@ -963,6 +1084,10 @@ pub fn wheel(app: &mut App, target: HitTarget, rows: i32) {
         DocKind::Hex(h) => {
             let max = h.total_rows().saturating_sub(1) as f64;
             h.scroll_row = (h.scroll_row + f64::from(rows)).clamp(0.0, max);
+        }
+        DocKind::Pdf(_) => {
+            let last = v.pdf_rows.saturating_sub(v.geom.rows.max(1));
+            v.top = v.top.saturating_add_signed(rows as isize).min(last);
         }
         _ => {}
     }

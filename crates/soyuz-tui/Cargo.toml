@@ -76,6 +76,8 @@ tempfile.workspace = true
 soyuz-script.workspace = true
 # Archives made for the extract tests (`tests/headless/archive.rs`).
 soyuz-archive.workspace = true
+# PDFs made for the PDF view tests (`tests/headless/pdf.rs`); the core's version.
+lopdf.workspace = true
 
 [build-dependencies]
 # Embeds the icon + version info into soyuz-tui.exe (Windows hosts with rc.exe only; no-op elsewhere).

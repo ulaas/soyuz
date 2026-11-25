@@ -173,10 +173,10 @@ extra ones, see [Terminal UI on legacy terminals and in Windows Terminal](#termi
 | PDF: Actual size | <kbd>0</kbd> *(pdf viewer)* | — | Show the PDF document at 100 % |
 | PDF: Fit width | <kbd>W</kbd> *(pdf viewer)* | — | Zoom so the page width fills the view |
 | PDF: Fit page | <kbd>F</kbd> *(pdf viewer)* | — | Zoom so the whole page fits in the view |
-| PDF: Next page | <kbd>N</kbd> *(pdf viewer)* | — | Go to the next page of the PDF document |
-| PDF: Previous page | <kbd>P</kbd> *(pdf viewer)* | — | Go to the previous page of the PDF document |
-| PDF: First page | <kbd>Ctrl</kbd>+<kbd>Home</kbd> *(pdf viewer)* | — | Go to the first page of the PDF document |
-| PDF: Last page | <kbd>Ctrl</kbd>+<kbd>End</kbd> *(pdf viewer)* | — | Go to the last page of the PDF document |
+| PDF: Next page | <kbd>N</kbd> *(pdf viewer)* | same | Go to the next page of the PDF document |
+| PDF: Previous page | <kbd>P</kbd> *(pdf viewer)* | same | Go to the previous page of the PDF document |
+| PDF: First page | <kbd>Ctrl</kbd>+<kbd>Home</kbd> *(pdf viewer)* | same | Go to the first page of the PDF document |
+| PDF: Last page | <kbd>Ctrl</kbd>+<kbd>End</kbd> *(pdf viewer)* | same | Go to the last page of the PDF document |
 | PDF: Rotate clockwise | <kbd>R</kbd> *(pdf viewer)* | — | Turn the pages a quarter to the right (view only, the file is not changed) |
 | PDF: Rotate counterclockwise | <kbd>Shift</kbd>+<kbd>R</kbd> *(pdf viewer)* | — | Turn the pages a quarter to the left (view only, the file is not changed) |
 | PDF: Toggle sidebar | <kbd>S</kbd> *(pdf viewer)* | — | Show or hide the page thumbnails and the outline |

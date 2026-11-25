@@ -229,6 +229,11 @@ impl PdfFind {
         self.id.is_some()
     }
 
+    /// The matches found on `page` so far, in text order.
+    pub fn page_matches(&self, page: u32) -> &[Match] {
+        self.matches.get(&page).map_or(&[], Vec::as_slice)
+    }
+
     fn flat(&self) -> Vec<(u32, usize)> {
         self.matches.iter().flat_map(|(p, m)| (0..m.len()).map(move |i| (*p, i))).collect()
     }
@@ -307,6 +312,9 @@ pub struct PdfDoc {
     /// Set by the frontend every frame: a text field of this document (find, page) has
     /// the keyboard, so unmodified viewer keys type instead (`commands::binding`).
     pub field_focus: bool,
+    /// A text-only frontend (the terminal UI): [`PdfDoc::pump`] asks for the current
+    /// page's text (and its neighbours') only, never for page bitmaps or tiles.
+    pub text_only: bool,
 }
 
 impl PdfDoc {
@@ -357,6 +365,7 @@ impl PdfDoc {
             pw_gen: preview_pdf::password_generation(),
             focus_request: true,
             field_focus: false,
+            text_only: false,
         }
     }
 
@@ -898,6 +907,15 @@ impl PdfDoc {
     }
 
     fn request_wanted(&mut self) {
+        if self.text_only {
+            let (page, n) = (self.page, self.page_count());
+            self.request_text(page, prio::VISIBLE_TEXT);
+            for p in [page.checked_sub(1), (page + 1 < n).then_some(page + 1)].into_iter().flatten() {
+                self.request_text(p, prio::PREFETCH);
+            }
+            self.trim_texts(page as usize..page as usize + 1);
+            return;
+        }
         let key = self.current_key();
         if self.render_key != Some(key) {
             if self.render_key.is_some() {
@@ -942,6 +960,12 @@ impl PdfDoc {
             }
         }
         self.tex.trim(self.page as f32, |k| keep.contains(k));
+        self.trim_texts(vis);
+    }
+
+    /// Keep at most [`MAX_TEXTS`] page texts (never the visible ones), dropping the
+    /// farthest from the current page first.
+    fn trim_texts(&mut self, vis: Range<usize>) {
         if self.texts.len() > MAX_TEXTS && !self.pending_copy {
             let focus = self.page as i64;
             let mut pages: Vec<u32> = self.texts.keys().copied().filter(|p| !vis.contains(&(*p as usize))).collect();

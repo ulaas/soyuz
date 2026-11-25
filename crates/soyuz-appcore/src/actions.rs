@@ -543,10 +543,14 @@ pub fn tui_only(a: &Action) -> bool {
 }
 
 /// Actions only the GUI has (the terminal UI's palette leaves them out): the welcome
-/// card is a GUI view, and the PDF viewer's commands have no terminal view yet. Their keys
-/// stay editable in the keyboard settings.
+/// card is a GUI view, and the terminal UI's PDF view shows a page's text, so the viewer's
+/// zoom, fit, rotation, sidebar and dark-page commands mean nothing there (it does page
+/// through: next / previous / first / last). Their keys stay editable in the keyboard
+/// settings.
 pub fn gui_only(a: &Action) -> bool {
-    matches!(a, Action::Welcome) || a.is_pdf()
+    matches!(a, Action::Welcome)
+        || a.is_pdf()
+            && !matches!(a, Action::PdfNextPage | Action::PdfPrevPage | Action::PdfFirstPage | Action::PdfLastPage)
 }
 
 /// Actions without an implementation yet: hidden from the command palette and the
