@@ -11,7 +11,7 @@ SIL Open Font License, Version 1.1 (full text in the appendix below).
 
 | Font | Copyright |
 |---|---|
-| Inter, Inter Variable | Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter) |
+| Inter, Inter Variable, Inter Tabular | Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter) |
 | IBM Plex Sans, IBM Plex Mono | Copyright © 2017 IBM Corp. with Reserved Font Name "Plex" |
 | Noto Sans | Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic) |
 | Cascadia Mono | Copyright (c) 2019 - Present, Microsoft Corporation, with Reserved Font Name Cascadia Code |
@@ -32,6 +32,82 @@ and text-preview font):
 
 [Phosphor Icons](https://phosphoricons.com/), Copyright (c) 2023 Phosphor Icons, MIT License,
 bundled through the `egui-phosphor` crate (Copyright (c) 2023 Romet Tagobert, MIT OR Apache-2.0).
+
+## PDF engine data (hayro)
+
+The built-in PDF engine (`hayro` crates, MIT OR Apache-2.0, listed below) embeds data that
+carries its own licence:
+
+- **Standard PDF fonts** (`hayro-font`): the 14 Foxit Type 1 fonts extracted from PDFium.
+  Original code copyright 2014 Foxit Software Inc. (http://www.foxitsoftware.com);
+  Copyright 2014 PDFium Authors. BSD-style licence:
+
+  ```
+  Copyright 2014 PDFium Authors. All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are
+  met:
+
+     * Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer.
+     * Redistributions in binary form must reproduce the above
+  copyright notice, this list of conditions and the following disclaimer
+  in the documentation and/or other materials provided with the
+  distribution.
+     * Neither the name of Google Inc. nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  ```
+
+- **CMap resources** (`hayro-cmap`): Adobe's predefined CMaps
+  (https://github.com/adobe-type-tools/cmap-resources). Copyright 1990-2023 Adobe. All rights
+  reserved. BSD-3-Clause:
+
+  ```
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are
+  met:
+
+  Redistributions of source code must retain the above copyright notice,
+  this list of conditions and the following disclaimer.
+
+  Redistributions in binary form must reproduce the above copyright
+  notice, this list of conditions and the following disclaimer in the
+  documentation and/or other materials provided with the distribution.
+
+  Neither the name of Adobe nor the names of its contributors may be
+  used to endorse or promote products derived from this software without
+  specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+  HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  ```
+
+- **ICC colour profiles** (`hayro-interpret`): a compact CMYK profile from
+  https://github.com/saucecontrol/Compact-ICC-Profiles and a LAB profile generated with
+  LittleCMS, both dedicated to the public domain under CC0-1.0.
 
 ## FFmpeg libraries (LGPL-2.1-or-later)
 
