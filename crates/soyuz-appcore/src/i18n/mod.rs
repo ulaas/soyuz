@@ -55,6 +55,7 @@ pub const FILES: &[(&str, &str, &str)] = &[
     ftl!("automation"),
     ftl!("workspaces"),
     ftl!("editors"),
+    ftl!("pdf"),
     ftl!("services"),
     ftl!("remote"),
     ftl!("tui"),

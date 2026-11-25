@@ -3,7 +3,9 @@
 //!
 //! * Open with `Action::OpenInEditor` (F4 in the file list, "Edit in Soyuz" in the
 //!   context menu, the palette). Text files open in the text editor, images in the image
-//!   editor, everything else (and text over `[editor] max_text_mib`) in the hex editor.
+//!   editor, PDFs in the PDF viewer ([`pdf`]; "Open as hex" reopens one with
+//!   [`Want::Hex`]), everything else (and text over `[editor] max_text_mib`) in the hex
+//!   editor.
 //! * All file I/O runs on worker threads ([`io`]); saving optionally puts the previous
 //!   version in the trash first (`[editor] backup_to_trash`) and then writes atomically.
 //! * Open files are watched: a clean document reloads by itself, a modified one shows a
@@ -19,8 +21,10 @@ pub mod commands;
 pub mod hex;
 pub mod image;
 pub mod io;
+pub mod pdf;
 pub mod text;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -69,6 +73,8 @@ pub enum DocKind {
     Text(Box<text::TextDoc>),
     Hex(Box<hex::HexDoc>),
     Image(Box<image::ImageDoc>),
+    /// The PDF viewer (read-only).
+    Pdf(Box<pdf::PdfDoc>),
 }
 
 /// The file changed on disk while the document had unsaved changes.
@@ -108,6 +114,7 @@ impl Doc {
             DocKind::Text(t) => t.focus_request = true,
             DocKind::Hex(h) => h.focus_request = true,
             DocKind::Image(i) => i.focus_request = true,
+            DocKind::Pdf(p) => p.focus_request = true,
             _ => {}
         }
     }
@@ -134,6 +141,8 @@ pub struct Editors {
     /// A command only the frontend can carry out (`EditorSaveAs`, `EditorResizeImage`:
     /// the terminal UI's bars), taken by the frontend ([`commands`]).
     pub request: Option<Action>,
+    /// Where each PDF was left this session (`[pdf] remember_position`).
+    pdf_positions: HashMap<PathBuf, pdf::Position>,
 }
 
 impl Default for Editors {
@@ -160,6 +169,7 @@ impl Editors {
             quit_allowed: false,
             prompting_quit: false,
             request: None,
+            pdf_positions: HashMap::new(),
         }
     }
 
@@ -258,6 +268,59 @@ pub fn open_path(app: &mut AppCore, path: &Path, want: Want) {
     start_load(app, id, false);
 }
 
+/// The position of a PDF document to remember (`[pdf] remember_position`).
+fn remember_position(app: &AppCore, d: &Doc) -> Option<(PathBuf, pdf::Position)> {
+    let DocKind::Pdf(p) = &d.kind else { return None };
+    if !app.config.pdf.remember_position {
+        return None;
+    }
+    Some((d.path.clone(), p.position()?))
+}
+
+fn remember_pdf(app: &mut AppCore, d: &Doc) {
+    if let Some((path, p)) = remember_position(app, d) {
+        app.editors.pdf_positions.insert(path, p);
+    }
+}
+
+/// The viewer settings from `[pdf]` (and `[preview] max_document_mib`).
+fn pdf_cfg(app: &AppCore) -> pdf::ViewerCfg {
+    pdf::ViewerCfg::from_config(&app.config.pdf, app.config.preview.max_document_mib)
+}
+
+/// Enter / Open on a PDF with `[open] pdf_in_viewer`: open it in the viewer instead of the
+/// default application. `false` when the setting is off or `path` is not a PDF.
+pub fn open_pdf_in_viewer(app: &mut AppCore, path: &Path) -> bool {
+    if !app.config.open.pdf_in_viewer || !crate::models::archive::is_pdf(path) {
+        return false;
+    }
+    crate::services::recent::opened_file(path);
+    open_path(app, path, Want::Auto);
+    true
+}
+
+/// The locked PDF document `idx` asks for its password (the archive password prompt;
+/// typing one reopens the document).
+pub fn ask_pdf_password(app: &mut AppCore, idx: usize) {
+    if let Some(d) = app.editors.docs.get(idx)
+        && let DocKind::Pdf(p) = &d.kind
+        && p.locked().is_some()
+    {
+        let path = d.path.clone();
+        crate::models::archive::ask_pdf_password(app, path);
+    }
+}
+
+/// Open a web link from a PDF (after the frontend confirmed it when `[pdf]
+/// external_links = "ask"`): http, https and mailto only.
+pub fn open_pdf_link(app: &mut AppCore, url: &str) {
+    if crate::services::pdf::nav::is_web_uri(url) {
+        crate::models::terminal::open_web_link(app, url);
+    } else {
+        app.ui.toasts.push(Toast::warning(tr!("pdf-link-not-web")).body(url.to_string()));
+    }
+}
+
 fn limits(app: &AppCore) -> io::Limits {
     io::Limits {
         max_text_bytes: app.config.editor.max_text_mib.max(1) * 1024 * 1024,
@@ -276,6 +339,10 @@ fn start_load(app: &mut AppCore, doc: u64, reload: bool) {
 
 /// Reopen a document as text or hex (discarding unsaved changes is asked by the UI).
 pub fn reopen_as(app: &mut AppCore, idx: usize, want: Want) {
+    // "Open as hex" from the PDF viewer: remember where it was.
+    if let Some(pos) = app.editors.docs.get(idx).and_then(|d| remember_position(app, d)) {
+        app.editors.pdf_positions.insert(pos.0, pos.1);
+    }
     let Some(d) = app.editors.docs.get_mut(idx) else { return };
     d.want = want;
     d.kind = DocKind::Loading;
@@ -327,6 +394,7 @@ pub fn close(app: &mut AppCore, idx: usize, force: bool) {
         return;
     }
     let d = app.editors.docs.remove(idx);
+    remember_pdf(app, &d);
     if let Some(w) = &app.editors.watcher {
         w.remove(&d.path);
     }
@@ -349,6 +417,17 @@ pub fn close(app: &mut AppCore, idx: usize, force: bool) {
 
 /// Apply worker results. Called every frame before drawing.
 pub fn pump(app: &mut AppCore, host: &dyn Host) {
+    if app.editors.docs.iter().any(|d| matches!(d.kind, DocKind::Pdf(_))) {
+        let cfg = pdf_cfg(app);
+        for d in &mut app.editors.docs {
+            if let DocKind::Pdf(p) = &mut d.kind {
+                p.set_config(&cfg);
+                if let Some(text) = p.take_copy() {
+                    host.copy_text(text);
+                }
+            }
+        }
+    }
     while let Ok(msg) = app.editors.rx.try_recv() {
         match msg {
             Msg::Loaded { doc, reload, stamp, result } => on_loaded(app, doc, reload, stamp, result),
@@ -395,6 +474,9 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
 fn on_loaded(app: &mut AppCore, doc: u64, reload: bool, stamp: Option<Stamp>, r: LoadResult) {
     let wake = app.wake.clone();
     let upload = app.editors.upload.clone();
+    let viewer = pdf_cfg(app);
+    let remember = app.config.pdf.remember_position;
+    let positions = &app.editors.pdf_positions;
     let Some(d) = app.editors.docs.iter_mut().find(|d| d.id == doc) else { return };
     d.stamp = stamp;
     d.external = None;
@@ -402,6 +484,7 @@ fn on_loaded(app: &mut AppCore, doc: u64, reload: bool, stamp: Option<Stamp>, r:
         (LoadResult::Text(fresh), DocKind::Text(t)) if reload => t.reload_from(*fresh),
         (LoadResult::Hex { len, .. }, DocKind::Hex(h)) if reload => h.reload(len),
         (LoadResult::Image(l), DocKind::Image(i)) if reload => i.reload(l),
+        (LoadResult::Pdf { .. }, DocKind::Pdf(p)) if reload => p.reload(),
         (LoadResult::Text(fresh), _) => d.kind = DocKind::Text(fresh),
         (LoadResult::Hex { len, too_large }, _) => {
             let mut h = hex::HexDoc::new(d.path.clone(), len, wake);
@@ -411,6 +494,10 @@ fn on_loaded(app: &mut AppCore, doc: u64, reload: bool, stamp: Option<Stamp>, r:
         }
         (LoadResult::Image(l), _) => {
             d.kind = DocKind::Image(Box::new(image::ImageDoc::new(d.path.clone(), l, wake, upload)))
+        }
+        (LoadResult::Pdf { .. }, _) => {
+            let restore = if remember { positions.get(&d.path).copied() } else { None };
+            d.kind = DocKind::Pdf(Box::new(pdf::PdfDoc::new(d.path.clone(), viewer, wake, upload, restore)));
         }
         (LoadResult::Error(e), _) => {
             if reload {
@@ -580,13 +667,17 @@ pub fn handle_keys(app: &mut AppCore, frame: &mut InputFrame) -> EditorKeys {
     let mut ed: Vec<EdKey> = Vec::new();
     let mut out = EditorKeys::default();
     let km = &app.keymap;
+    let (doc, field) = match app.editors.active_doc().map(|d| &d.kind) {
+        Some(DocKind::Pdf(p)) => (commands::BindDoc::Pdf, p.field_focus),
+        _ => (commands::BindDoc::Editor, false),
+    };
     for i in 0..frame.events.len() {
         if frame.consumed[i] {
             continue;
         }
         let InputEvent::Chord(chord) = &frame.events[i] else { continue };
         let chord = *chord;
-        let k = match commands::binding(km, chord) {
+        let k = match commands::binding(km, chord, doc, field) {
             Some(a) => Some(EdKey::Command(a)),
             None if chord.key == KeyName::Escape && chord.mods.is_empty() => Some(EdKey::Escape),
             None => None,
@@ -614,6 +705,7 @@ pub fn handle_keys(app: &mut AppCore, frame: &mut InputFrame) -> EditorKeys {
                     Some(DocKind::Text(t)) => t.close_bars(),
                     Some(DocKind::Hex(h)) => h.close_bars(),
                     Some(DocKind::Image(i)) => i.close_bars(),
+                    Some(DocKind::Pdf(p)) => p.close_bars(),
                     _ => false,
                 };
                 if !handled {
@@ -720,7 +812,9 @@ impl UnsavedPrompt {
 
 /// `edit:<path>` opens a file; `editor:<command>` drives the active document:
 /// `save`, `close`, `type=<text>`, `goto=<line>`, `find=<text>`, `hex=<offset>=<byte>`,
-/// `image=<rr|rl|fh|fv>`, `maximize`, `dock=<right|bottom>`.
+/// `image=<rr|rl|fh|fv>`, `pdf=<page=N|zoom=150|fit=width|fit=page|rotate=cw|find=text|
+/// next|sidebar=outline|select=all|copy>` ([`pdf::PdfDoc::devscript`]), `maximize`,
+/// `dock=<right|bottom>`.
 pub fn devscript(app: &mut AppCore, host: &dyn Host, verb: &str, arg: &str) {
     let arg = arg.trim();
     if verb == "edit" {
@@ -762,6 +856,12 @@ pub fn devscript(app: &mut AppCore, host: &dyn Host, verb: &str, arg: &str) {
                         _ => image::ops::ImgOp::RotateCw,
                     };
                     i.push(op);
+                }
+                (DocKind::Pdf(p), "pdf") => {
+                    p.devscript(val);
+                    if let Some(text) = p.take_copy() {
+                        host.copy_text(text);
+                    }
                 }
                 _ => log::warn!("SOYUZ_SCRIPT editor:{arg}: not applicable"),
             }

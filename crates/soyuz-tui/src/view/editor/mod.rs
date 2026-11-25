@@ -281,6 +281,8 @@ fn prepare_editor(core: &mut AppCore, st: &mut crate::input::editor::State, regi
                 DocKind::Text(_) => TabKind::Text,
                 DocKind::Hex(_) => TabKind::Hex,
                 DocKind::Image(_) => TabKind::Image,
+                // The terminal PDF view replaces this placeholder.
+                DocKind::Pdf(_) => TabKind::Image,
             },
             active: i == active,
             dirty: d.is_dirty(),
@@ -367,6 +369,22 @@ fn prepare_editor(core: &mut AppCore, st: &mut crate::input::editor::State, regi
                     BodyVm::Text(text::prepare(t, v, save_as, body, &env))
                 }
                 DocKind::Hex(h) => BodyVm::Hex(hex::prepare(h, v, save_as, body, focused, &keys.notice)),
+                // Placeholder until the terminal PDF view lands: the page count.
+                DocKind::Pdf(p) => {
+                    p.pump();
+                    match p.status() {
+                        soyuz_appcore::editors::pdf::Status::Opening => BodyVm::Loading,
+                        soyuz_appcore::editors::pdf::Status::Ready => BodyVm::Message(vec![p.page_label(p.page())]),
+                        soyuz_appcore::editors::pdf::Status::Failed(e) => BodyVm::Message(vec![
+                            tr!(
+                                "editors-open-failed",
+                                name = crate::dialog::safe(&d.name),
+                                error = crate::dialog::safe(&e.to_string())
+                            )
+                            .to_string(),
+                        ]),
+                    }
+                }
             }
         }
     };

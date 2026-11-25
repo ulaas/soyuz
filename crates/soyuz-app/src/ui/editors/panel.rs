@@ -61,6 +61,7 @@ fn kind_glyph(k: &DocKind) -> &'static str {
         DocKind::Text(_) => ph::FILE_TEXT,
         DocKind::Hex(_) => ph::BINARY,
         DocKind::Image(_) => ph::IMAGE,
+        DocKind::Pdf(_) => ph::FILE_PDF,
         DocKind::Loading => ph::FILE,
         DocKind::Failed(_) => ph::WARNING,
     }
@@ -130,6 +131,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         let fg = if active { p.text_primary } else { p.text_secondary };
         let glyph_color = match &d.kind {
             DocKind::Image(_) => p.glyph_image,
+            DocKind::Pdf(_) => p.glyph_doc,
             DocKind::Hex(_) => p.glyph_exe,
             DocKind::Text(_) => p.glyph_code,
             DocKind::Failed(_) => p.danger,
@@ -287,6 +289,37 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             }
             DocKind::Image(im) => {
                 save_now = super::image::show(im, ui, body, &p, cfg.jpeg_quality, &mut focus, doc_id).save;
+            }
+            DocKind::Pdf(pdf) => {
+                // Placeholder until the viewer UI lands: a spinner while it opens, then
+                // the page count (or the error).
+                pdf.set_viewport([body.width(), body.height()], ui.ctx().pixels_per_point());
+                pdf.pump();
+                match pdf.status() {
+                    crate::editors::pdf::Status::Opening => {
+                        crate::ui::widgets::spinner(ui, body.center(), 12.0, p.accent);
+                    }
+                    crate::editors::pdf::Status::Ready => {
+                        let label = pdf.page_label(pdf.page());
+                        ui.painter().text(
+                            body.center(),
+                            Align2::CENTER_CENTER,
+                            label,
+                            crate::theme::font::ui(13.0),
+                            p.text_secondary,
+                        );
+                    }
+                    crate::editors::pdf::Status::Failed(e) => {
+                        let msg = tr!("editors-open-failed", name = &d.name, error = e.to_string());
+                        ui.painter().text(
+                            body.center(),
+                            Align2::CENTER_CENTER,
+                            msg,
+                            crate::theme::font::ui(13.0),
+                            p.text_secondary,
+                        );
+                    }
+                }
             }
         }
     } else {

@@ -262,6 +262,10 @@ pub fn open_entry(app: &mut AppCore, id: PaneId, key: &str) {
         }
         return;
     }
+    // `[open] pdf_in_viewer`: PDFs open in Soyuz's viewer.
+    if crate::editors::open_pdf_in_viewer(app, &path) {
+        return;
+    }
     launch(app, &path);
 }
 
@@ -364,7 +368,9 @@ pub fn open_selection(app: &mut AppCore) {
                     open_in_new_tab(app, Location::Dir(path), false);
                 } else if files < 32 {
                     files += 1;
-                    launch(app, &path);
+                    if !crate::editors::open_pdf_in_viewer(app, &path) {
+                        launch(app, &path);
+                    }
                 }
             }
         }

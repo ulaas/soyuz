@@ -545,6 +545,8 @@ mod tests {
         assert_eq!(km.chords_for(&Action::FocusSidebar), vec!["Alt+S".parse::<KeyChord>().unwrap()]);
     }
 
+    use soyuz_appcore::editors::commands::BindDoc;
+
     fn ch(s: &str) -> KeyChord {
         s.parse().unwrap()
     }
@@ -557,7 +559,7 @@ mod tests {
             let (km, _) = keymap(&c);
             let mut over = km.clone();
             legacy(&mut over);
-            let ed = |s: &str| soyuz_appcore::editors::commands::binding(&over, ch(s));
+            let ed = |s: &str| soyuz_appcore::editors::commands::binding(&over, ch(s), BindDoc::Editor, false);
             assert_eq!(ed("Ctrl+R"), Some(Action::EditorReplace), "{p:?}");
             assert_eq!(ed("Ctrl+H"), None, "{p:?}: Ctrl+H deletes a word");
             assert_eq!(ed("Ctrl+F"), Some(Action::EditorFind), "{p:?}");
@@ -572,6 +574,10 @@ mod tests {
             if p == KeyPreset::Explorer {
                 assert_eq!(over.lookup(KeyContext::Global, ch("Ctrl+PageDown")), Some(&Action::NextTab));
             }
+            // A PDF document looks up its own keys first.
+            let pdf = |s: &str| soyuz_appcore::editors::commands::binding(&over, ch(s), BindDoc::Pdf, false);
+            assert_eq!(pdf("R"), Some(Action::PdfRotateCw), "{p:?}");
+            assert_eq!(pdf("Ctrl+F"), Some(Action::EditorFind), "{p:?}");
             assert_eq!(analyze(&over), analyze(&km), "{p:?}");
         }
         // A user binding of Replace stays; its Ctrl+H goes.
@@ -585,7 +591,10 @@ mod tests {
         c.keys.bindings.insert("editor_toggle_wrap".into(), vec!["Alt+M".into()]);
         let (mut km, _) = keymap(&c);
         tui_defaults(&mut km);
-        assert_eq!(soyuz_appcore::editors::commands::binding(&km, ch("Alt+M")), Some(Action::EditorToggleWrap));
+        assert_eq!(
+            soyuz_appcore::editors::commands::binding(&km, ch("Alt+M"), BindDoc::Editor, false),
+            Some(Action::EditorToggleWrap)
+        );
         assert!(km.chords_for(&Action::EditorMaximize).is_empty());
     }
 

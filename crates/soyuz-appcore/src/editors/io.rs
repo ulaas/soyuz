@@ -37,6 +37,10 @@ pub enum LoadResult {
         too_large: bool,
     },
     Image(super::image::Loaded),
+    /// A PDF (`%PDF-` near the start): the viewer opens it on its own workers.
+    Pdf {
+        len: u64,
+    },
     Error(String),
 }
 
@@ -78,6 +82,22 @@ pub fn is_image(path: &Path) -> bool {
     matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "jfif" | "bmp" | "gif" | "webp" | "ico" | "tif" | "tiff")
 }
 
+/// Where a PDF header (`%PDF-`) starts within the first KiB of `head`.
+fn pdf_header_at(head: &[u8]) -> Option<usize> {
+    head[..head.len().min(1024)].windows(5).position(|w| w == b"%PDF-")
+}
+
+/// `head` (the file's first bytes) starts a PDF: the header at offset 0, or anywhere in
+/// the first KiB (junk before it is allowed) of a `.pdf` file. Checked before the text
+/// sniff, since many PDFs look like text there.
+pub fn is_pdf_head(path: &Path, head: &[u8]) -> bool {
+    match pdf_header_at(head) {
+        Some(0) => true,
+        Some(_) => crate::models::archive::is_pdf(path),
+        None => false,
+    }
+}
+
 pub struct Limits {
     pub max_text_bytes: u64,
     pub max_image_mp: u32,
@@ -114,6 +134,9 @@ fn load(path: &Path, want: Want, limits: &Limits) -> LoadResult {
     let mut head = vec![0u8; 8192.min(len as usize)];
     if let Err(e) = std::fs::File::open(path).and_then(|mut f| std::io::Read::read_exact(&mut f, &mut head)) {
         return LoadResult::Error(e.to_string());
+    }
+    if want == Want::Auto && is_pdf_head(path, &head) {
+        return LoadResult::Pdf { len };
     }
     let text = want == Want::Text || crate::services::preview_text::looks_like_text(&head);
     if !text {
@@ -330,6 +353,34 @@ mod tests {
         let bad = dir.path().join("bad.png");
         std::fs::write(&bad, b"not an image").unwrap();
         assert!(matches!(load(&bad, Want::Auto, &limits()), LoadResult::Hex { .. }));
+    }
+
+    #[test]
+    fn pdfs_are_sniffed_before_text() {
+        let dir = tempfile::tempdir().unwrap();
+        // Text-like bytes: the text sniff alone would take it.
+        let body = b"%PDF-1.4
+1 0 obj << /Type /Catalog >> endobj
+trailer << >>
+%%EOF
+";
+        let pdf = dir.path().join("doc.bin");
+        std::fs::write(&pdf, body).unwrap();
+        assert!(matches!(load(&pdf, Want::Auto, &limits()), LoadResult::Pdf { len } if len == body.len() as u64));
+        assert!(matches!(load(&pdf, Want::Hex, &limits()), LoadResult::Hex { .. }), "Open as hex still works");
+        assert!(matches!(load(&pdf, Want::Text, &limits()), LoadResult::Text(_)));
+        // Junk before the header: only for a .pdf name.
+        let mut junky = b"junk junk
+"
+        .to_vec();
+        junky.extend_from_slice(body);
+        let named = dir.path().join("junky.pdf");
+        std::fs::write(&named, &junky).unwrap();
+        assert!(matches!(load(&named, Want::Auto, &limits()), LoadResult::Pdf { .. }));
+        let txt = dir.path().join("notes.txt");
+        std::fs::write(&txt, &junky).unwrap();
+        assert!(matches!(load(&txt, Want::Auto, &limits()), LoadResult::Text(_)), "a note mentioning %PDF-");
+        assert!(!is_pdf_head(&named, &[b' '; 2000]));
     }
 
     #[test]
