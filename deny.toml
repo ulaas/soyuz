@@ -31,7 +31,12 @@ unsound = "all"
 #   RUSTSEC-2025-0141 bincode 1.x and RUSTSEC-2024-0320 yaml-rust, both via syntect 5.3
 #   (precompiled syntax dumps / .sublime-syntax loading). No known vulnerability; drop
 #   when syntect moves off them.
-ignore = []
+ignore = [
+    # chrono is unmaintained (2026-11; no fixed release, no known vulnerability). Used
+    # directly by 11 workspace crates and transitively by pdfium-render and russh-sftp.
+    # Revisit on each dependency bump: migrate to jiff / time when those dependencies move.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no vulnerability; migration tracked" },
+]
 
 # ---------------------------------------------------------------------------
 # Licences. Soyuz is MIT; only permissive licences (and the weak,
