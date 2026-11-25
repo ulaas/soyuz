@@ -2,7 +2,8 @@
 //! ([`super::preview`]) and the format modules — Office / ODF documents, EPUB, fonts,
 //! 3D models, audio (waveform + player), video metadata and poster frames (the FFmpeg
 //! libraries, `services::media`, with the pure-Rust `preview_media` fallback) and PDF
-//! (pdfium, with a pure-Rust text fallback).
+//! (`services::pdf`: hayro, or pdfium when chosen and found; lopdf reads facts and text
+//! of files neither engine opens).
 //!
 //! Everything here runs on the preview worker threads: inputs are size-capped by the
 //! `[preview]` limits, long loops check the request's staleness, and the caller's
@@ -12,11 +13,13 @@
 use std::io::{Read, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
-use soyuz_core::config::{Media as MediaCfg, Preview as PreviewCfg};
+use soyuz_core::config::{Media as MediaCfg, Pdf as PdfCfg, Preview as PreviewCfg};
 use soyuz_media::{MediaInfo, Source as MediaSource, StreamKind};
 
 use super::media;
+use super::pdf::{self as pdf_engine, Engine, EngineKind, PdfError, RenderOpts};
 use super::preview::{Content, Kind, Limits, Loaded, ReadSeek, Source};
 use super::preview_audio::{self, AudioInfo, AudioSrc};
 use super::preview_epub::{self, EpubModel};
@@ -36,6 +39,12 @@ use crate::icon::IconId;
 pub struct RichLimits {
     pub pdf: bool,
     pub pdfium_dir: String,
+    /// `[preview] pdf_engine` (pdfium is used only when its library loads).
+    pub pdf_engine: EngineKind,
+    /// Budget of one PDF render / text extraction (`[pdf] render_timeout_secs`).
+    pub pdf_timeout: Duration,
+    /// `[pdf] annotations` / `system_fonts` (never inverted in the preview).
+    pub pdf_opts: RenderOpts,
     pub office: bool,
     pub epub: bool,
     pub fonts: bool,
@@ -64,9 +73,17 @@ pub struct RichLimits {
 
 impl RichLimits {
     pub fn from_config(c: &PreviewCfg, m: &MediaCfg, big: bool) -> Self {
+        let pdf_cfg = PdfCfg::default();
         RichLimits {
             pdf: c.pdf,
             pdfium_dir: c.pdfium_dir.clone(),
+            pdf_engine: preview_pdf::engine_kind(c.pdf_engine),
+            pdf_timeout: Duration::from_secs(pdf_cfg.render_timeout_secs_clamped()),
+            pdf_opts: RenderOpts {
+                annotations: pdf_cfg.annotations,
+                invert: false,
+                system_fonts: pdf_cfg.system_fonts,
+            },
             office: c.office,
             epub: c.epub,
             fonts: c.fonts,
@@ -84,6 +101,14 @@ impl RichLimits {
             big,
             terminal: false,
         }
+    }
+
+    /// The `[pdf]` settings PDF previews share with the viewer: render timeout,
+    /// annotations and system fonts.
+    pub fn with_pdf(mut self, p: &PdfCfg) -> Self {
+        self.pdf_timeout = Duration::from_secs(p.render_timeout_secs_clamped());
+        self.pdf_opts = RenderOpts { annotations: p.annotations, invert: false, system_fonts: p.system_fonts };
+        self
     }
 
     /// Render width in points for page-like content.
@@ -114,13 +139,19 @@ pub enum RichKind {
 pub struct PdfView {
     pub src: PdfSrc,
     pub info: Arc<PdfInfo>,
-    /// First page (pdfium only).
+    /// First page, on white.
     pub first: Option<Tex>,
-    /// Why pages can't be rendered (`None` = pdfium works).
+    /// Why pages can't be rendered (`None` = the engine rendered the first page).
     pub no_render: Option<String>,
+    /// The engine that renders the pages (picked on the preview worker), with its limits.
+    pub engine: Engine,
+    /// `[preview] pdf_engine` is pdfium but its library was not found (hayro renders
+    /// instead): the pdfium card explains where to put it ([`preview_pdf::missing_message`]).
+    pub pdfium_missing: bool,
+    /// Folders searched for pdfium (for the card).
     pub dirs: Vec<PathBuf>,
-    pub cap: u64,
     pub width_px: u32,
+    pub opts: RenderOpts,
     /// The file is encrypted and no (right) password was typed: Enter PDF password…
     /// unlocks it ([`preview_pdf::set_password`]).
     pub locked: Option<PathBuf>,
@@ -743,50 +774,55 @@ fn pdf(
     };
     let dirs = preview_pdf::pdfium_dirs(&lim.pdfium_dir);
     let width_px = ((lim.width_pt() * ppp) as u32).min(2600);
-    let mut no_render: Option<String>;
-    let mut info: Option<PdfInfo> = None;
-    #[cfg_attr(not(feature = "pdf"), allow(unused_mut))]
+    // Picked here, on the preview worker (pdfium's lookup touches the file system).
+    let engine = pdf_engine::pick(lim.pdf_engine, dirs.clone(), lim.max_document, lim.pdf_timeout);
+    // pdfium reads big files in place; hayro holds the whole file (the document cap).
+    let engine = match engine.kind {
+        EngineKind::Pdfium => Engine { max_bytes: lim.max_document.max(1 << 30), ..engine },
+        EngineKind::Hayro => engine,
+    };
+    let pdfium_missing = cfg!(feature = "pdf") && lim.pdf_engine == EngineKind::Pdfium && engine.kind != lim.pdf_engine;
+    if engine.kind == EngineKind::Hayro && len > lim.max_document {
+        return too_large(Kind::Pdf, IconId::FilePdf, len, lim.max_document, "max_document_mib");
+    }
+    let stale_card = || card(Kind::Pdf, IconId::FilePdf, "", "");
+    let mut no_render: Option<String> = None;
     let mut first = None;
-    #[cfg(feature = "pdf")]
-    {
-        match preview_pdf::pdfium::info(&src, &dirs, lim.max_document.max(1 << 30), stale) {
-            Ok(i) => {
-                no_render = None;
-                if i.pages > 0 {
-                    match preview_pdf::pdfium::render(&src, &dirs, u64::MAX, 0, width_px, width_px * 3, stale) {
-                        Ok(pg) => {
-                            first =
-                                Some(upload(up, format!("preview:pdf:{id}:0"), &pg.rgba, pg.width, pg.height, false))
-                        }
-                        Err(e) if e == "stale" => return card(Kind::Pdf, IconId::FilePdf, "", ""),
-                        Err(e) => no_render = Some(e),
+    let mut rendered_by = engine.kind;
+    let mut info: Option<PdfInfo> = match pdf_engine::open_info(&src, &engine, stale) {
+        Ok(doc) => {
+            rendered_by = doc.engine;
+            if doc.pages > 0 {
+                match pdf_engine::render_page_fit(&src, &engine, 0, width_px, width_px * 3, lim.pdf_opts, stale) {
+                    Ok(b) => {
+                        let name = format!("preview:pdf:{id}:0");
+                        first = Some(upload(up, name, &b.rgba, b.w as usize, b.h as usize, true));
                     }
+                    Err(PdfError::Stale) => return stale_card(),
+                    Err(e) => no_render = Some(e.to_string()),
                 }
-                info = Some(i);
             }
-            Err(e) if e == "stale" => return card(Kind::Pdf, IconId::FilePdf, "", ""),
-            Err(e) => no_render = Some(e),
+            if stale() {
+                return stale_card();
+            }
+            let text = preview_pdf::text_with(&src, &engine, preview_pdf::TEXT_PAGES, preview_pdf::TEXT_CHARS);
+            Some(doc.to_pdf_info(text.unwrap_or_default()))
         }
-    }
-    #[cfg(not(feature = "pdf"))]
-    {
-        let _ = (up, id, stale, width_px);
-        no_render = Some(tr!("services-preview-no-pdf-renderer").into());
-    }
+        Err(PdfError::Stale) => return stale_card(),
+        // Locked: the view asks for the password.
+        Err(e @ PdfError::Password { .. }) => {
+            no_render = Some(e.to_string());
+            Some(PdfInfo { encrypted: true, ..Default::default() })
+        }
+        Err(e) => {
+            no_render = Some(e.to_string());
+            None
+        }
+    };
+    // The engine could not open it: lopdf may still read its facts and text.
     if info.is_none() {
-        if len > lim.max_document {
-            let mut l = too_large(Kind::Pdf, IconId::FilePdf, len, lim.max_document, "max_document_mib");
-            if let Content::Message { body, .. } = &mut l.content
-                && let Some(why) = &no_render
-            {
-                body.push_str("\n\n");
-                body.push_str(why);
-            }
-            return l;
-        }
         match preview_pdf::info_lopdf(&src, lim.max_document) {
             Ok(i) => info = Some(i),
-            // Locked: the view asks for the password (whatever pdfium said).
             Err(e) if preview_pdf::is_password_error(&e) => {
                 info = Some(PdfInfo { encrypted: true, ..Default::default() });
                 no_render = Some(e);
@@ -820,21 +856,28 @@ fn pdf(
     if info.encrypted {
         fact(&mut facts, "Encrypted", tr!("common-yes"));
     }
-    fact(&mut facts, "Renderer", if no_render.is_none() { "pdfium" } else { tr!("services-preview-text-only") });
-    if let Some(why) = &mut no_render {
-        *why = why.trim_start_matches("pdfium: ").to_string();
-    }
+    fact(&mut facts, "Renderer", if first.is_some() { rendered_by.label() } else { tr!("services-preview-text-only") });
     let locked = match &src {
         PdfSrc::File(p) => no_render.as_deref().is_some_and(preview_pdf::is_password_error).then(|| p.clone()),
         PdfSrc::Mem(_) => None,
     };
-    let cap = lim.max_document.max(1 << 30);
-    let view = PdfView { src, info: Arc::new(info), first, no_render, dirs, cap, width_px, locked };
+    let view = PdfView {
+        src,
+        info: Arc::new(info),
+        first,
+        no_render,
+        engine,
+        pdfium_missing,
+        dirs,
+        width_px,
+        opts: lim.pdf_opts,
+        locked,
+    };
     loaded(Kind::Pdf, Rich::Pdf(view), facts)
 }
 
-/// Render another PDF page off the UI thread; the texture arrives on the receiver, then
-/// `wake` runs.
+/// Render another PDF page off the UI thread (with the view's engine, on white); the
+/// texture arrives on the receiver, then `wake` runs.
 pub fn pdf_page_async(
     view: &PdfView,
     page: u32,
@@ -842,35 +885,24 @@ pub fn pdf_page_async(
     up: &Uploader,
 ) -> crossbeam_channel::Receiver<Result<(u32, Tex), String>> {
     let (tx, rx) = crossbeam_channel::bounded(1);
-    #[cfg(feature = "pdf")]
-    {
-        let (src, dirs, cap, w) = (view.src.clone(), view.dirs.clone(), view.cap, view.width_px);
-        let (wake, up) = (wake.clone(), up.clone());
-        let _ = std::thread::Builder::new().name("soyuz-pdf-page".into()).spawn(move || {
-            let r = preview_pdf::pdfium::render(&src, &dirs, cap, page, w, w * 3, &|| false).map(|pg| {
-                let t = upload(
-                    &up,
-                    format!("preview:pdfpage:{page}:{}", src_key(&src)),
-                    &pg.rgba,
-                    pg.width,
-                    pg.height,
-                    false,
-                );
-                (page, t)
-            });
-            let _ = tx.send(r);
-            wake();
-        });
-    }
-    #[cfg(not(feature = "pdf"))]
-    {
-        let _ = (view, page, wake, up);
-        let _ = tx.send(Err(tr!("services-preview-no-pdf-renderer-short").into()));
+    let (src, engine, w, opts) = (view.src.clone(), view.engine.clone(), view.width_px, view.opts);
+    let (wake, up) = (wake.clone(), up.clone());
+    let spawned = std::thread::Builder::new().name("soyuz-pdf-page".into()).spawn(move || {
+        let r = pdf_engine::render_page_fit(&src, &engine, page, w, w * 3, opts, &|| false)
+            .map(|b| {
+                let name = format!("preview:pdfpage:{page}:{}", src_key(&src));
+                (page, upload(&up, name, &b.rgba, b.w as usize, b.h as usize, true))
+            })
+            .map_err(|e| e.to_string());
+        let _ = tx.send(r);
+        wake();
+    });
+    if let Err(e) = spawned {
+        log::warn!("cannot start the PDF page thread: {e}");
     }
     rx
 }
 
-#[cfg(feature = "pdf")]
 fn src_key(src: &PdfSrc) -> String {
     match src {
         PdfSrc::File(p) => p.display().to_string(),
@@ -882,6 +914,7 @@ fn src_key(src: &PdfSrc) -> String {
 mod tests {
     use super::*;
     use crate::services::preview::{Msg, PreviewClient};
+    use crate::services::preview_gfx::no_upload;
     use crate::services::preview_office::fixtures;
     use std::time::{Duration, Instant};
 
@@ -910,6 +943,117 @@ mod tests {
         assert_eq!(route("m.obj", b"", Kind::Text, &off), None);
         assert_eq!(route("s.mp3", b"", Kind::Audio, &off), None);
         assert_eq!(route("d.pdf", b"", Kind::Pdf, &off), None);
+    }
+
+    type Captured = Arc<parking_lot::Mutex<Vec<([usize; 2], Vec<u8>)>>>;
+
+    /// An uploader that keeps a copy of every picture.
+    fn capturing() -> (Uploader, Captured) {
+        let seen: Captured = Arc::default();
+        let s = seen.clone();
+        let up: Uploader = Arc::new(move |_, px: Pixels<'_>| {
+            s.lock().push((px.size, px.rgba.to_vec()));
+            Arc::new(())
+        });
+        (up, seen)
+    }
+
+    /// Load `bytes` as a PDF preview from a file (or from memory: an archive entry).
+    fn pdf_preview(bytes: &[u8], lim: &RichLimits, up: &Uploader, on_disk: bool) -> (Loaded, tempfile::TempDir) {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("doc.pdf");
+        std::fs::write(&path, bytes).unwrap();
+        let mut reader = std::io::Cursor::new(bytes.to_vec());
+        let p = on_disk.then_some(path.as_path());
+        (pdf(&mut reader, bytes.len() as u64, p, lim, up, 7, 1.0, &|| false), d)
+    }
+
+    fn fact_of<'a>(l: &'a Loaded, k: &str) -> Option<&'a str> {
+        l.facts.iter().find(|(fk, _)| fk == k).map(|(_, v)| v.as_str())
+    }
+
+    #[test]
+    fn pdf_preview_renders_through_hayro() {
+        let (up, seen) = capturing();
+        let lim = RichLimits { pdfium_dir: "Z:/no/pdfium".into(), ..RichLimits::default() };
+        assert_eq!(lim.pdf_engine, EngineKind::Hayro, "hayro is the default engine");
+        for on_disk in [true, false] {
+            seen.lock().clear();
+            let (l, _dir) = pdf_preview(&crate::services::preview_pdf::tests::sample_pdf(), &lim, &up, on_disk);
+            assert_eq!(fact_of(&l, "Renderer"), Some("hayro"), "{:?}", l.facts);
+            assert_eq!(fact_of(&l, "Pages"), Some("2"));
+            assert_eq!(fact_of(&l, "Title"), Some("Sample doc"));
+            let Content::Rich(Rich::Pdf(v)) = l.content else { panic!("expected a PDF view") };
+            assert!(v.no_render.is_none() && v.locked.is_none() && !v.pdfium_missing);
+            assert_eq!(v.engine.kind, EngineKind::Hayro);
+            assert!(v.info.text.contains("Hello from page one"), "{:?}", v.info.text);
+            let first = v.first.as_ref().expect("first page rendered");
+            assert_eq!(first.size[0], 340, "fits the pane width");
+            {
+                let seen = seen.lock();
+                let (size, rgba) = &seen[0];
+                assert_eq!(*size, first.size);
+                assert_eq!(&rgba[0..4], &[255, 255, 255, 255], "white page, not transparent");
+                assert!(rgba.as_chunks::<4>().0.iter().any(|p| p[0] < 100), "text drew ink");
+            }
+            // The next page, off the UI thread.
+            let rx = pdf_page_async(&v, 1, &crate::host::no_wake(), &up);
+            let (page, tex) = rx.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+            assert_eq!((page, tex.size[0]), (1, 340));
+            let rx = pdf_page_async(&v, 9, &crate::host::no_wake(), &up);
+            assert!(rx.recv_timeout(Duration::from_secs(30)).unwrap().is_err(), "no page 10");
+        }
+    }
+
+    #[test]
+    fn pdf_preview_falls_back_from_a_missing_pdfium() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().to_string_lossy().into_owned();
+        if preview_pdf::pdfium_available(&preview_pdf::pdfium_dirs(&dir)) {
+            return; // A real pdfium is installed (next to the test exe or in the config dir).
+        }
+        let lim = RichLimits { pdfium_dir: dir, pdf_engine: EngineKind::Pdfium, ..RichLimits::default() };
+        let (l, _) = pdf_preview(&crate::services::preview_pdf::tests::sample_pdf(), &lim, &no_upload(), true);
+        assert_eq!(fact_of(&l, "Renderer"), Some("hayro"));
+        let Content::Rich(Rich::Pdf(v)) = l.content else { panic!("expected a PDF view") };
+        assert_eq!(v.engine.kind, EngineKind::Hayro);
+        assert!(v.first.is_some() && v.no_render.is_none());
+        assert_eq!(v.pdfium_missing, cfg!(feature = "pdf"), "the card explains where pdfium goes");
+    }
+
+    #[test]
+    fn pdf_preview_of_a_locked_or_broken_file() {
+        let lim = RichLimits::default();
+        let (l, d) = pdf_preview(&crate::services::pdf::fixtures::encrypted("pw"), &lim, &no_upload(), true);
+        let path = d.path().join("doc.pdf");
+        assert_eq!(fact_of(&l, "Encrypted"), Some(tr!("common-yes")));
+        let Content::Rich(Rich::Pdf(v)) = l.content else { panic!("expected a PDF view") };
+        assert_eq!(v.locked.as_deref(), Some(path.as_path()), "Enter PDF password… unlocks it");
+        assert!(v.first.is_none());
+        preview_pdf::set_password(&path, "pw".into());
+        let len = std::fs::metadata(&path).unwrap().len();
+        let mut reader = std::io::Cursor::new(Vec::new());
+        let l = pdf(&mut reader, len, Some(&path), &lim, &no_upload(), 1, 1.0, &|| false);
+        let Content::Rich(Rich::Pdf(v)) = l.content else { panic!("expected a PDF view") };
+        assert!(v.locked.is_none() && v.first.is_some(), "{:?}", v.no_render);
+
+        let (l, _) = pdf_preview(b"%PDF-1.4 not really", &RichLimits::default(), &no_upload(), true);
+        assert!(matches!(l.content, Content::Message { .. }), "a card says it can't be read");
+        let big = RichLimits { max_document: 8, ..RichLimits::default() };
+        let (l, _) = pdf_preview(&crate::services::preview_pdf::tests::sample_pdf(), &big, &no_upload(), true);
+        assert!(matches!(l.content, Content::Message { .. }), "over the document cap");
+    }
+
+    #[test]
+    fn pdf_limits_follow_the_pdf_section() {
+        let mut p = PdfCfg { render_timeout_secs: 7, annotations: false, system_fonts: false, ..PdfCfg::default() };
+        let lim = RichLimits::default().with_pdf(&p);
+        assert_eq!(lim.pdf_timeout, Duration::from_secs(7));
+        assert!(!lim.pdf_opts.annotations && !lim.pdf_opts.system_fonts && !lim.pdf_opts.invert);
+        p.render_timeout_secs = 0;
+        assert_eq!(RichLimits::default().with_pdf(&p).pdf_timeout, Duration::from_secs(PdfCfg::RENDER_TIMEOUT_MIN));
+        let c = PreviewCfg { pdf_engine: soyuz_core::config::PdfEngine::Pdfium, ..PreviewCfg::default() };
+        assert_eq!(RichLimits::from_config(&c, &MediaCfg::default(), false).pdf_engine, EngineKind::Pdfium);
     }
 
     fn limits() -> Limits {

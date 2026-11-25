@@ -9,8 +9,8 @@
 //! ([`set_idle_trim_secs`]). [`memory`] reports the current use for the About dialog.
 //!
 //! Besides pictures, workers make video thumbnails (the FFmpeg libraries, `thumb_video`;
-//! without them a duration label only), PDF first pages (pdfium, when the library is found; otherwise PDFs
-//! keep their icon), folder mosaics (`thumb_folder`) and program icons (the icon in an
+//! without them a duration label only), PDF first pages (the engine of `[preview]
+//! pdf_engine`: hayro, or pdfium when chosen and found), folder mosaics (`thumb_folder`) and program icons (the icon in an
 //! `.exe`'s resources, `soyuz_fs::exe_icon`); every decoded result also goes
 //! through the on-disk cache (`thumb_disk`) so it survives restarts. On Linux / BSD,
 //! pictures, video frames and PDF pages Soyuz makes itself are also written to the shared
@@ -26,6 +26,7 @@ use std::time::{Duration, Instant, SystemTime};
 use image::RgbaImage;
 use parking_lot::{Condvar, Mutex};
 
+use super::pdf::EngineKind as PdfEngineKind;
 use super::preview_gfx::{Tex, Uploader};
 use crate::host::Wake;
 
@@ -143,16 +144,20 @@ pub fn set_video_frames(on: bool) {
     VIDEO_FRAMES.store(on, Ordering::Relaxed);
 }
 
-/// `[appearance] pdf_thumbnails` and `[preview] pdfium_dir` (read by the workers).
+/// `[appearance] pdf_thumbnails`, `[preview] pdfium_dir` and `[preview] pdf_engine`
+/// (read by the workers).
 static PDF_PAGES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
-static PDFIUM_DIR: Mutex<String> = Mutex::new(String::new());
+static PDF_ENGINE: Mutex<(String, PdfEngineKind)> = Mutex::new((String::new(), PdfEngineKind::Hayro));
+/// Time budget of one PDF thumbnail (hayro; a runaway page is abandoned).
+const PDF_THUMB_BUDGET: Duration = Duration::from_secs(5);
 
-/// PDF first-page thumbnails on / off and where pdfium is looked for.
-pub fn set_pdf(on: bool, pdfium_dir: &str) {
-    PDF_PAGES.store(on && cfg!(feature = "pdf"), Ordering::Relaxed);
-    let mut d = PDFIUM_DIR.lock();
-    if *d != pdfium_dir {
-        *d = pdfium_dir.to_string();
+/// PDF first-page thumbnails on / off, the engine that renders them and where pdfium
+/// is looked for (when the engine is pdfium).
+pub fn set_pdf(on: bool, pdfium_dir: &str, engine: PdfEngineKind) {
+    PDF_PAGES.store(on, Ordering::Relaxed);
+    let mut d = PDF_ENGINE.lock();
+    if d.0 != pdfium_dir || d.1 != engine {
+        *d = (pdfium_dir.to_string(), engine);
     }
 }
 
@@ -201,7 +206,7 @@ pub fn set_write_os_cache(on: bool) {
 /// This platform has a shared thumbnail cache Soyuz writes to.
 const WRITE_OS_SUPPORTED: bool = cfg!(all(unix, not(target_os = "macos")));
 
-/// A PDF that gets a first-page thumbnail (when pdfium turns out to be available).
+/// A PDF that gets a first-page thumbnail (`[appearance] pdf_thumbnails`).
 pub fn is_pdf_thumbnailable(path: &Path) -> bool {
     PDF_PAGES.load(Ordering::Relaxed) && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
 }
@@ -593,14 +598,20 @@ fn trim_idle(slots: &mut SlotTable, frame: u64, now: u64, idle: u64) -> usize {
 fn produce(key: &ThumbKey, kind: Kind) -> (Option<RgbaImage>, Option<String>) {
     use super::thumb_disk;
     let label = if kind == Kind::Video { super::thumb_video::duration_label(&key.path) } else { None };
-    // Video frames are keyed by the library build that made them (`media::source_tag`).
-    let source = if kind == Kind::Video { super::media::source_tag() } else { String::new() };
+    // Video frames are keyed by the library build that made them (`media::source_tag`),
+    // PDF pages by their engine (`EngineKind::cache_tag`).
+    let pdf = (kind == Kind::Pdf).then(pdf_engine);
+    let source = match (kind, &pdf) {
+        (Kind::Video, _) => super::media::source_tag(),
+        (_, Some(e)) => e.kind.cache_tag().to_string(),
+        _ => String::new(),
+    };
     let disk_key = thumb_disk::cache_key_with_source(kind, &key.path, key.size, key.mtime, key.px, &source);
     if let Some(img) = thumb_disk::get(disk_key) {
         return (Some(img), label);
     }
     // The OS cache (Explorer's / freedesktop, read-only): no decode, and videos / PDFs
-    // get a picture even without the FFmpeg libraries / pdfium.
+    // get a picture without the FFmpeg libraries / a PDF render.
     if !matches!(kind, Kind::Folder | Kind::ProgramIcon)
         && OS_CACHE.load(Ordering::Relaxed)
         && let Some(img) = os_cached(key)
@@ -614,13 +625,16 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<RgbaImage>, Option<String>) {
     if kind == Kind::Pdf && !pdf_available() {
         return (None, None);
     }
-    let img = match kind {
-        Kind::Image | Kind::Video | Kind::Pdf if WRITE_OS.load(Ordering::Relaxed) => make_shared(key, kind),
-        Kind::Image => decode(key),
-        Kind::Video => super::thumb_video::frame(&key.path, key.px),
-        Kind::Pdf => pdf_first_page(key),
-        Kind::ProgramIcon => program_icon(key),
-        Kind::Folder => super::thumb_folder::mosaic(&key.path, key.px, |p, px| {
+    let img = match (kind, &pdf) {
+        (Kind::Image | Kind::Video | Kind::Pdf, _) if WRITE_OS.load(Ordering::Relaxed) => {
+            make_shared(key, kind, pdf.as_ref())
+        }
+        (Kind::Image, _) => decode(key),
+        (Kind::Video, _) => super::thumb_video::frame(&key.path, key.px),
+        (Kind::Pdf, Some(e)) => pdf_first_page(key, e),
+        (Kind::Pdf, None) => None,
+        (Kind::ProgramIcon, _) => program_icon(key),
+        (Kind::Folder, _) => super::thumb_folder::mosaic(&key.path, key.px, |p, px| {
             let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX);
             decode(&ThumbKey { path: p.to_path_buf(), mtime: None, size, px })
         }),
@@ -637,7 +651,7 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<RgbaImage>, Option<String>) {
 /// would have made it).
 ///
 /// [`thumb_video::frame`]: super::thumb_video::frame
-fn make_shared(key: &ThumbKey, kind: Kind) -> Option<RgbaImage> {
+fn make_shared(key: &ThumbKey, kind: Kind, pdf: Option<&super::pdf::Engine>) -> Option<RgbaImage> {
     let (_, class_px) = soyuz_fs::thumbcache::freedesktop_class(key.px);
     let before = std::fs::metadata(&key.path).and_then(|m| m.modified()).ok();
     let class_key = ThumbKey { px: class_px, ..key.clone() };
@@ -648,7 +662,7 @@ fn make_shared(key: &ThumbKey, kind: Kind) -> Option<RgbaImage> {
                 .to_rgba8()
         }
         Kind::Video => super::thumb_video::frame(&key.path, class_px)?,
-        Kind::Pdf => pdf_first_page(&class_key)?,
+        Kind::Pdf => pdf_first_page(&class_key, pdf?)?,
         Kind::Folder | Kind::ProgramIcon => return None,
     };
     if before.is_some() {
@@ -703,37 +717,40 @@ fn fit_os_thumb(t: &soyuz_fs::thumbcache::OsThumb, px: u32) -> Option<RgbaImage>
     Some(fit.to_rgba8())
 }
 
-/// PDF thumbnails are on and the pdfium library is found (else the PDF icon shows).
+/// PDF thumbnails are on: hayro is always built in, so every PDF can get one.
 fn pdf_available() -> bool {
-    if !PDF_PAGES.load(Ordering::Relaxed) {
-        return false;
-    }
-    let dirs = super::preview_pdf::pdfium_dirs(&PDFIUM_DIR.lock());
-    super::preview_pdf::pdfium_available(&dirs)
+    PDF_PAGES.load(Ordering::Relaxed)
 }
 
-/// The first page rendered by pdfium, fitted into `key.px` square (on the pdfium thread).
-#[cfg(feature = "pdf")]
-fn pdf_first_page(key: &ThumbKey) -> Option<RgbaImage> {
-    use super::preview_pdf::{PdfSrc, pdfium, pdfium_dirs};
+/// The engine PDF thumbnails use now (`[preview] pdf_engine`; pdfium only when its
+/// library is found). Probes the file system for pdfium: workers only.
+fn pdf_engine() -> super::pdf::Engine {
+    let (dir, want) = PDF_ENGINE.lock().clone();
+    super::preview_pdf::pick_engine(want, &dir, MAX_FILE_BYTES, PDF_THUMB_BUDGET)
+}
+
+/// The first page rendered by `engine` on white, fitted into `key.px` square (hayro
+/// under the guard: [`PDF_THUMB_BUDGET`], panics caught).
+fn pdf_first_page(key: &ThumbKey, engine: &super::pdf::Engine) -> Option<RgbaImage> {
+    use super::pdf::{PdfSrc, RenderOpts, render_page_fit};
     if key.size > MAX_FILE_BYTES {
         return None;
     }
-    let dirs = pdfium_dirs(&PDFIUM_DIR.lock());
     let src = PdfSrc::File(key.path.clone());
-    let page = pdfium::render(&src, &dirs, MAX_FILE_BYTES, 0, key.px, key.px, &|| false).ok()?;
-    let fit = image::RgbaImage::from_raw(page.width as u32, page.height as u32, page.rgba)?;
+    let page = match render_page_fit(&src, engine, 0, key.px, key.px, RenderOpts::default(), &|| false) {
+        Ok(b) => b,
+        Err(e) => {
+            log::debug!("PDF thumbnail of {}: {e}", key.path.display());
+            return None;
+        }
+    };
+    let fit = image::RgbaImage::from_raw(page.w, page.h, page.rgba)?;
     let fit = if fit.width() > key.px || fit.height() > key.px {
         image::DynamicImage::ImageRgba8(fit).thumbnail(key.px, key.px).to_rgba8()
     } else {
         fit
     };
     Some(fit)
-}
-
-#[cfg(not(feature = "pdf"))]
-fn pdf_first_page(_key: &ThumbKey) -> Option<RgbaImage> {
-    None
 }
 
 /// The program's icon image closest to `key.px`, scaled to fit it (Lanczos, so small
@@ -1076,5 +1093,31 @@ mod tests {
         let key = ThumbKey { path: p, mtime: None, size: 1, px: 64 };
         let c = decode(&key).unwrap();
         assert_eq!(c.dimensions(), (64, 32));
+    }
+
+    #[test]
+    fn pdf_thumbnail_without_pdfium() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("doc.pdf");
+        std::fs::write(&p, super::super::pdf::fixtures::text_pages()).unwrap();
+        let size = std::fs::metadata(&p).unwrap().len();
+        let key = ThumbKey { path: p.clone(), mtime: None, size, px: 128 };
+        let engine = super::super::pdf::Engine::hayro(MAX_FILE_BYTES, PDF_THUMB_BUDGET);
+        let img = pdf_first_page(&key, &engine).expect("hayro renders the first page");
+        assert_eq!(img.dimensions(), (98, 128), "Letter fitted into 128 px");
+        assert_eq!(img.get_pixel(0, 0).0, [255, 255, 255, 255], "white page");
+        assert!(pdf_available(), "on by default: no library needed");
+        // The default engine (hayro) and its cache tag key the disk cache.
+        let e = pdf_engine();
+        assert_eq!(e.kind, PdfEngineKind::Hayro);
+        let key_of = |tag: &str| super::super::thumb_disk::cache_key_with_source(Kind::Pdf, &p, size, None, 128, tag);
+        assert_ne!(
+            key_of(e.kind.cache_tag()),
+            key_of(PdfEngineKind::Pdfium.cache_tag()),
+            "an engine switch re-renders"
+        );
+        // Not a PDF: no picture, no panic.
+        std::fs::write(&p, b"%PDF-1.4 nothing").unwrap();
+        assert!(pdf_first_page(&ThumbKey { size: 16, ..key }, &engine).is_none());
     }
 }

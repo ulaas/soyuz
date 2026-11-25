@@ -720,7 +720,11 @@ pub fn load_config() -> Config {
 pub fn apply_core_settings(c: &Config) {
     crate::i18n::apply_setting(&c.general.language);
     crate::services::archive::configure_nested(&c.archive);
-    crate::services::thumbs::set_pdf(c.appearance.pdf_thumbnails, &c.preview.pdfium_dir);
+    crate::services::thumbs::set_pdf(
+        c.appearance.pdf_thumbnails,
+        &c.preview.pdfium_dir,
+        crate::services::preview_pdf::engine_kind(c.preview.pdf_engine),
+    );
     crate::services::thumbs::set_video_frames(c.appearance.video_thumbnails);
     crate::services::thumbs::set_program_icons(c.appearance.program_icons);
     crate::services::thumb_video::set_poster_secs(c.media.poster_secs);

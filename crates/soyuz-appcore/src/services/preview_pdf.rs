@@ -1,12 +1,12 @@
-//! PDF previews.
+//! PDF previews: the facade over the PDF engine ([`super::pdf`]).
 //!
-//! * **Pages** render through pdfium (cargo feature `pdf`, on by default). Soyuz never
+//! * **Pages** render through the engine `[preview] pdf_engine` picks: hayro (pure Rust,
+//!   always built in) or pdfium (cargo feature `pdf`, on by default). Soyuz never
 //!   downloads or links pdfium at build time: the library is loaded at run time from
 //!   `[preview] pdfium_dir`, the folder of `soyuz.exe`, or the config dir (first hit
-//!   wins). Pdfium is not thread safe, so one dedicated thread owns it and runs jobs.
-//! * **Without pdfium** (or with the feature off) a pure-Rust fallback (`lopdf`) still
-//!   reads the page count, document info and the text of the first pages, and the UI
-//!   explains how to get page rendering.
+//!   wins); when it is missing, hayro renders instead.
+//! * `lopdf` (pure Rust) is the last resort: it still reads the page count, document
+//!   info and the text of files both engines reject.
 //!
 //! [`extract_text`] is the shared text entry point (preview "Text" view); [`search_text`]
 //! reads the whole document for content search and the index (`soyuz_core::doc_text`).
@@ -21,8 +21,20 @@ pub const TEXT_CHARS: usize = 24_000;
 const SEARCH_PAGES: u32 = 5_000;
 /// Characters of a document's text searched / indexed.
 const SEARCH_CHARS: usize = 4_000_000;
+/// Time budget of one document's text for content search and the index: past it the
+/// engine is abandoned and lopdf tries.
+pub(crate) const SEARCH_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub use super::pdf::PdfSrc;
+use super::pdf::{self as engine, EngineKind, PdfError};
+
+/// The engine kind `[preview] pdf_engine` asks for.
+pub fn engine_kind(e: soyuz_core::config::PdfEngine) -> EngineKind {
+    match e {
+        soyuz_core::config::PdfEngine::Hayro => EngineKind::Hayro,
+        soyuz_core::config::PdfEngine::Pdfium => EngineKind::Pdfium,
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct PdfInfo {
@@ -275,27 +287,42 @@ pub fn is_password_error(msg: &str) -> bool {
     msg == tr!("services-pdf-password") || msg == tr!("services-pdf-password-wrong")
 }
 
-/// Text of the first pages through whichever backend is available (pdfium first).
-pub fn extract_text(src: &PdfSrc, pdfium_dir: &str, cap: u64) -> Result<String, String> {
-    #[cfg(feature = "pdf")]
-    if let Ok(info) = pdfium::info(src, &pdfium_dirs(pdfium_dir), cap, &|| false) {
-        return Ok(info.text);
-    }
-    let _ = pdfium_dir;
-    info_lopdf(src, cap).map(|i| i.text)
+/// The engine for `want` (`[preview] pdf_engine`): pdfium only when chosen and its
+/// library is found, else hayro. Probes the file system: workers only.
+pub fn pick_engine(want: EngineKind, pdfium_dir: &str, cap: u64, timeout: std::time::Duration) -> engine::Engine {
+    let dirs = if want == EngineKind::Pdfium { pdfium_dirs(pdfium_dir) } else { Vec::new() };
+    engine::pick(want, dirs, cap, timeout)
+}
+
+/// Text of the first pages through the engine `want` picks ([`pick_engine`]), lopdf
+/// last. File I/O: workers only.
+pub fn extract_text(src: &PdfSrc, pdfium_dir: &str, want: EngineKind, cap: u64) -> Result<String, String> {
+    let eng = pick_engine(want, pdfium_dir, cap, SEARCH_BUDGET);
+    text_with(src, &eng, TEXT_PAGES, TEXT_CHARS)
 }
 
 /// Text of the whole document (up to [`SEARCH_PAGES`] pages / [`SEARCH_CHARS`]
-/// characters) for content search and the index, pdfium first. An encrypted PDF opens
-/// with the password typed this session, else it is an error.
-pub fn search_text(path: &Path, pdfium_dir: &str, cap: u64) -> Result<String, String> {
+/// characters) for content search and the index: pdfium when chosen and loadable, else
+/// hayro, lopdf last when the engine fails or runs past [`SEARCH_BUDGET`]. An encrypted
+/// PDF opens with the password typed this session, else it is an error.
+pub fn search_text(path: &Path, pdfium_dir: &str, want: EngineKind, cap: u64) -> Result<String, String> {
     let src = PdfSrc::File(path.to_path_buf());
-    #[cfg(feature = "pdf")]
-    if let Ok(info) = pdfium::info_pages(&src, &pdfium_dirs(pdfium_dir), cap, &|| false, SEARCH_PAGES, SEARCH_CHARS) {
-        return Ok(info.text);
+    let eng = pick_engine(want, pdfium_dir, cap, SEARCH_BUDGET);
+    text_with(&src, &eng, SEARCH_PAGES, SEARCH_CHARS)
+}
+
+/// The first `pages` pages' text (at most `chars` characters) through `eng` within its
+/// timeout, then lopdf when the engine fails (not for password errors: lopdf can't open
+/// those either).
+pub(crate) fn text_with(src: &PdfSrc, eng: &engine::Engine, pages: u32, chars: usize) -> Result<String, String> {
+    match engine::document_text(src, eng, pages, chars, eng.timeout) {
+        Ok(t) => Ok(t),
+        Err(e @ PdfError::Password { .. }) => Err(e.to_string()),
+        Err(e) => {
+            log::debug!("PDF text through {} failed ({e}); trying lopdf", eng.kind.label());
+            lopdf_text(src, eng.max_bytes, pages, chars).map(|i| i.text)
+        }
     }
-    let _ = pdfium_dir;
-    lopdf_text(&src, cap, SEARCH_PAGES, SEARCH_CHARS).map(|i| i.text)
 }
 
 /// The pdfium backend, now [`super::pdf::pdfium_backend`] (re-exported so callers keep
@@ -310,7 +337,7 @@ pub fn missing_message(dirs: &[PathBuf]) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A tiny two-page PDF built with lopdf.
@@ -376,7 +403,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("doc.pdf"), sample_pdf()).unwrap();
         std::fs::write(d.path().join("notes.txt"), "nothing here").unwrap();
-        let text = search_text(&d.path().join("doc.pdf"), "Z:/no/pdfium", 1 << 20).unwrap();
+        let text = search_text(&d.path().join("doc.pdf"), "Z:/no/pdfium", EngineKind::Hayro, 1 << 20).unwrap();
         assert!(text.contains("Hello from page one") && text.contains("Second page"), "{text:?}");
 
         // Through the hook the app registers: the walker matches the PDF's text.
@@ -439,6 +466,48 @@ mod tests {
         let info = info_lopdf(&src, 1 << 20).unwrap();
         assert_eq!(info.pages, 2);
         assert!(info.text.contains("Hello from page one"), "{:?}", info.text);
+    }
+
+    #[test]
+    fn document_text_goes_through_the_engine() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("doc.pdf");
+        std::fs::write(&path, sample_pdf()).unwrap();
+        // pdfium chosen but not found: hayro reads it.
+        let empty = d.path().join("no-pdfium").to_string_lossy().into_owned();
+        let text = search_text(&path, &empty, EngineKind::Pdfium, 1 << 20).unwrap();
+        assert!(text.contains("Hello from page one") && text.contains("Second page"), "{text:?}");
+        let first = extract_text(&PdfSrc::File(path.clone()), "", EngineKind::Hayro, 1 << 20).unwrap();
+        assert!(first.contains("Hello from page one"), "{first:?}");
+        // lopdf takes over when the engine rejects the file.
+        let eng = engine::Engine::hayro(10, std::time::Duration::from_secs(5));
+        assert!(text_with(&PdfSrc::File(path.clone()), &eng, 10, 1000).is_err(), "over both caps");
+        // Locked: a password error, not lopdf's guess.
+        let locked = d.path().join("locked.pdf");
+        std::fs::write(&locked, engine::fixtures::encrypted("pw")).unwrap();
+        let e = search_text(&locked, "", EngineKind::Hayro, 1 << 20).unwrap_err();
+        assert!(is_password_error(&e), "{e}");
+        set_password(&locked, "pw".into());
+        assert!(search_text(&locked, "", EngineKind::Hayro, 1 << 20).unwrap().contains("Hello from page one"));
+    }
+
+    /// hayro's text device vs lopdf on a generated 300-page document (run with
+    /// `--nocapture` to see the times).
+    #[test]
+    fn document_text_of_300_pages() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("book.pdf");
+        std::fs::write(&path, engine::fixtures::many_pages(300)).unwrap();
+        let t = std::time::Instant::now();
+        let text = search_text(&path, "", EngineKind::Hayro, 1 << 30).unwrap();
+        let hayro = t.elapsed();
+        assert!(text.contains("Page 0 of the sweep") && text.contains("Page 299 of the sweep"), "{}", text.len());
+        let t = std::time::Instant::now();
+        let lo = lopdf_text(&PdfSrc::File(path), 1 << 30, SEARCH_PAGES, SEARCH_CHARS).unwrap();
+        let lopdf = t.elapsed();
+        assert!(lo.text.contains("Page 299 of the sweep"));
+        println!("300 pages: hayro {hayro:?}, lopdf {lopdf:?}");
+        assert!(hayro < SEARCH_BUDGET, "within the search budget: {hayro:?}");
     }
 
     #[test]

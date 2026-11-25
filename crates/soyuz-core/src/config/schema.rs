@@ -234,8 +234,8 @@ pub struct Appearance {
     pub folder_thumbnails: bool,
     /// First-frame video thumbnails through the FFmpeg libraries (`[media]`).
     pub video_thumbnails: bool,
-    /// First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see
-    /// `[preview] pdfium_dir`); without it PDFs keep their icon.
+    /// First-page PDF thumbnails, rendered by `[preview] pdf_engine` (hayro is built in,
+    /// so every PDF gets one); off = PDFs keep their icon.
     pub pdf_thumbnails: bool,
     /// Programs (`.exe`, `.scr`) show the icon stored in their own resources instead of
     /// the generic program glyph, in every file view.
@@ -1094,7 +1094,8 @@ pub struct Preview {
     pub max_image_mp: u32,
     /// Syntax highlighting theme for code previews (`auto` follows the app theme).
     pub syntax_theme: String,
-    /// Needs cargo feature `pdf`.
+    /// PDF previews in the preview pane and Quick Look: first page, document facts and
+    /// text. Off = PDFs show a plain card (and their raw bytes on request).
     pub pdf: bool,
     /// Which engine renders PDFs in the preview pane, Quick Look, thumbnails and document
     /// text: `hayro` (built in) or `pdfium` (used when its library loads, see `pdfium_dir`;

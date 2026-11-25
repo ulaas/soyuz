@@ -134,6 +134,7 @@ impl PreviewLoader {
             rich: crate::services::preview_rich::RichLimits {
                 terminal: self.terminal,
                 ..crate::services::preview_rich::RichLimits::from_config(&cfg.preview, &cfg.media, self.big)
+                    .with_pdf(&cfg.pdf)
             },
             folder_notes: if cfg.preview.folder_notes { cfg.preview.folder_notes_files.clone() } else { Vec::new() },
         }

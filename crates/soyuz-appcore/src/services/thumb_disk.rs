@@ -44,7 +44,8 @@ pub enum Kind {
     Image,
     Video,
     Folder,
-    /// First page of a PDF (pdfium).
+    /// First page of a PDF (hayro or pdfium: the source tag is the engine's
+    /// `services::pdf::EngineKind::cache_tag`, so switching engines re-renders).
     Pdf,
     /// The icon in a program's resources (`soyuz_fs::exe_icon`).
     ProgramIcon,
@@ -65,7 +66,8 @@ pub fn cache_key(kind: Kind, path: &Path, size: u64, mtime: Option<SystemTime>, 
 }
 
 /// [`cache_key`] with a `source` tag of what made the picture (the FFmpeg build for
-/// video frames, `services::media::source_tag`), so a picture from one decoder is never
+/// video frames, `services::media::source_tag`; the PDF engine for PDF pages,
+/// `services::pdf::EngineKind::cache_tag`), so a picture from one decoder is never
 /// served for another; the empty tag is [`cache_key`].
 pub fn cache_key_with_source(
     kind: Kind,

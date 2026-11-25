@@ -30,7 +30,7 @@ services-preview-crashed = The previewer crashed on this file ({ $reason }).
 services-preview-entry-not-found = entry not found
 services-preview-cant-read-file = Can't read this file
 services-preview-limited = Preview limited to the first 64 MiB
-services-preview-pdf-no-feature = Page rendering needs the optional `pdf` build feature. Showing the raw bytes is one click away.
+services-preview-pdf-off = PDF previews are off ([preview] pdf). Showing the raw bytes is one click away.
 services-preview-cant-read-image = Can't read this image
 services-preview-unsupported-image = Unsupported image
 services-preview-image-too-large = Image too large to preview
@@ -85,8 +85,6 @@ services-preview-poster-disk-only = Poster frames are only made for files on dis
 # $tag: the GitHub release that carries the libraries (ffmpeg-runtime-9.0.2); $dir: the config folder's ffmpeg/ sub-folder.
 services-preview-no-ffmpeg-libs = The FFmpeg libraries aren't loaded, so there is no poster frame. Soyuz ships them next to the program; to add them, run “Download FFmpeg runtime” (Settings → Preview → Media or the command palette), get the "{ $tag }" release from GitHub and unpack it into { $dir }, or point Settings → Preview → Media at their folder.
 services-preview-crashed-last-time = Not previewed: decoding this file crashed the media library last time. Open it in Quick Look to try again.
-services-preview-no-pdf-renderer = This build has no PDF renderer (cargo feature `pdf`).
-services-preview-no-pdf-renderer-short = No PDF renderer in this build
 services-preview-cant-read-pdf = Can't read this PDF
 services-preview-text-only = text only
 
@@ -153,6 +151,7 @@ services-pdf-cant-read = Can't read this PDF ({ $error })
 services-pdf-parser-failed = The PDF parser failed on this file
 services-pdf-renderer-stopped = The PDF renderer stopped
 services-pdf-renderer-failed = The PDF renderer failed on this file
+services-pdf-timed-out = The PDF renderer took too long on this file
 services-pdf-too-large = This PDF is too large
 services-pdf-password = This PDF is password protected
 services-pdf-password-wrong = That password did not open this PDF

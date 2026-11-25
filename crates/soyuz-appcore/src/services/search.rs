@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use soyuz_core::{Column, ColumnSpec, EntryInfo, EntryKindSet, NamePatternSpec, OpControl, PatternKind, SearchId};
 use soyuz_search::{ContentPatternSpec, FuzzyScorer, SearchEvent, SearchHandle, SearchQuery, SizeEvent};
 
+use crate::services::pdf::EngineKind as PdfEngineKind;
 use crate::state::pane::{ListingStatus, Pane, PaneId};
 use crate::state::workspace::Workspace;
 
@@ -141,18 +142,21 @@ pub fn init(wake: &crate::host::Wake, threads: usize) {
 }
 
 /// What content search and the index read in documents: PDF text while
-/// `[search] document_text` is on, `(pdfium_dir, max bytes)`.
-fn document_reading(config: &soyuz_core::config::Config) -> Option<(String, u64)> {
-    config
-        .search
-        .document_text
-        .then(|| (config.preview.pdfium_dir.clone(), config.preview.max_document_mib.max(1).saturating_mul(1 << 20)))
+/// `[search] document_text` is on, `(pdfium_dir, engine, max bytes)` (`[preview]`).
+fn document_reading(config: &soyuz_core::config::Config) -> Option<(String, PdfEngineKind, u64)> {
+    config.search.document_text.then(|| {
+        (
+            config.preview.pdfium_dir.clone(),
+            crate::services::preview_pdf::engine_kind(config.preview.pdf_engine),
+            config.preview.max_document_mib.max(1).saturating_mul(1 << 20),
+        )
+    })
 }
 
 /// Document extensions and their size cap for `IndexConfig` (empty when off).
 pub fn index_documents(config: &soyuz_core::config::Config) -> (Vec<String>, u64) {
     match document_reading(config) {
-        Some((_, max)) => (vec!["pdf".to_string()], max),
+        Some((_, _, max)) => (vec!["pdf".to_string()], max),
         None => (Vec::new(), 0),
     }
 }
@@ -161,19 +165,19 @@ pub fn index_documents(config: &soyuz_core::config::Config) -> (Vec<String>, u64
 /// change; called every frame.
 pub fn sync_document_text(config: &soyuz_core::config::Config) {
     thread_local! {
-        static APPLIED: RefCell<Option<Option<(String, u64)>>> = const { RefCell::new(None) };
+        static APPLIED: RefCell<Option<Option<(String, PdfEngineKind, u64)>>> = const { RefCell::new(None) };
     }
     let want = document_reading(config);
     if APPLIED.with_borrow(|a| a.as_ref() == Some(&want)) {
         return;
     }
     match &want {
-        Some((dir, max)) => {
-            let (dir, cap) = (dir.clone(), *max);
+        Some((dir, engine, max)) => {
+            let (dir, engine, cap) = (dir.clone(), *engine, *max);
             soyuz_core::doc_text::set_extractor(
                 &["pdf"],
                 cap,
-                Arc::new(move |p| crate::services::preview_pdf::search_text(p, &dir, cap)),
+                Arc::new(move |p| crate::services::preview_pdf::search_text(p, &dir, engine, cap)),
             );
         }
         None => soyuz_core::doc_text::clear_extractor(),

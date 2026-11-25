@@ -186,7 +186,8 @@ impl std::fmt::Display for PdfError {
             PdfError::Password { wrong: true } => f.write_str(tr!("services-pdf-password-wrong")),
             PdfError::Invalid => f.write_str(tr!("services-pdf-parser-failed")),
             PdfError::TooLarge => f.write_str(tr!("services-pdf-too-large")),
-            PdfError::TimedOut | PdfError::Panicked => f.write_str(tr!("services-pdf-renderer-failed")),
+            PdfError::TimedOut => f.write_str(tr!("services-pdf-timed-out")),
+            PdfError::Panicked => f.write_str(tr!("services-pdf-renderer-failed")),
             PdfError::Stale => f.write_str("stale"),
             PdfError::Other(s) => f.write_str(s),
         }

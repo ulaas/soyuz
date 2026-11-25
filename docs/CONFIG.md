@@ -148,7 +148,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `extension_badges` | boolean | `true` | Extension label badges on file icons in the grid / gallery views. |
 | `folder_thumbnails` | boolean | `true` | 2×2 mosaic of the first images inside folders (grid / gallery views). |
 | `video_thumbnails` | boolean | `true` | First-frame video thumbnails through the FFmpeg libraries (`[media]`). |
-| `pdf_thumbnails` | boolean | `true` | First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see `[preview] pdfium_dir`); without it PDFs keep their icon. |
+| `pdf_thumbnails` | boolean | `true` | First-page PDF thumbnails, rendered by `[preview] pdf_engine` (hayro is built in, so every PDF gets one); off = PDFs keep their icon. |
 | `program_icons` | boolean | `true` | Programs (`.exe`, `.scr`) show the icon stored in their own resources instead of the generic program glyph, in every file view. |
 | `os_thumbnail_cache` | boolean | `true` | Reuse the thumbnails the system already made (Windows: Explorer's `thumbcache_*.db`; Linux: the shared freedesktop cache in `~/.cache/thumbnails`; read-only) before decoding a file ourselves. |
 | `write_os_thumbnails` | boolean | `true` | Linux / BSD: write the thumbnails Soyuz makes itself into the shared freedesktop cache (`~/.cache/thumbnails`), so file managers and file choosers reuse them. Ignored on Windows and macOS. |
@@ -497,7 +497,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `max_text_kib` | integer | `512` | Text previews read at most this much of a file (KiB). |
 | `max_image_mp` | integer | `40` | Largest image the preview decodes (megapixels). |
 | `syntax_theme` | string | `"auto"` | Syntax highlighting theme for code previews (`auto` follows the app theme). |
-| `pdf` | boolean | `true` | Needs cargo feature `pdf`. |
+| `pdf` | boolean | `true` | PDF previews in the preview pane and Quick Look: first page, document facts and text. Off = PDFs show a plain card (and their raw bytes on request). |
 | `pdf_engine` | `"hayro"` \| `"pdfium"` | `"hayro"` | Which engine renders PDFs in the preview pane, Quick Look, thumbnails and document text: `hayro` (built in) or `pdfium` (used when its library loads, see `pdfium_dir`; else hayro). The PDF viewer always uses hayro. (`hayro`: The built-in pure-Rust renderer; `pdfium`: pdfium when its library is found (`[preview] pdfium_dir`), else hayro) |
 | `thumb_cache_mib` | integer | `64` | Memory budget of decoded thumbnails (MiB of graphics memory, counting each texture's alignment and per-texture overhead). |
 | `thumb_idle_trim_secs` | integer | `60` | Free thumbnails not drawn for this many seconds, even while the app is idle (0 = keep them until the memory budget needs the room). |

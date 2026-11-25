@@ -739,8 +739,7 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
             Loaded { kind, content: Content::Media { video: kind == Kind::Video }, facts, meta: None }
         }
         Kind::Pdf => {
-            let mut l =
-                message(kind, IconId::FilePdf, tr!("services-kind-pdf"), tr!("services-preview-pdf-no-feature"));
+            let mut l = message(kind, IconId::FilePdf, tr!("services-kind-pdf"), tr!("services-preview-pdf-off"));
             let head = String::from_utf8_lossy(&head[..head.len().min(16)]).into_owned();
             if let Some(v) = head.strip_prefix("%PDF-") {
                 l.facts.push(("PDF version".into(), v.chars().take(3).collect()));

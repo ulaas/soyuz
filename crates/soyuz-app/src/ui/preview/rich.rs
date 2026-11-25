@@ -957,9 +957,16 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
                     action = Some(PreviewAction::UnlockPdf(path.clone()));
                 }
                 ui.add_space(10.0);
-            } else if let Some(why) = &v.no_render {
-                pdfium_card(ui, why, &v.dirs, p);
-                ui.add_space(10.0);
+            } else {
+                // pdfium was chosen but not found (hayro renders instead).
+                if v.pdfium_missing {
+                    pdfium_card(ui, "", &v.dirs, p);
+                    ui.add_space(10.0);
+                }
+                if let Some(why) = &v.no_render {
+                    ui.label(egui::RichText::new(why).size(crate::theme::font::px(12.0)).color(p.danger));
+                    ui.add_space(10.0);
+                }
             }
             if v.locked.is_some() {
                 // Nothing to read until it is unlocked; the card says so.

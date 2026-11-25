@@ -53,7 +53,7 @@ accent = "theme"                 # theme | system (OS accent color, live) | "#RR
 extension_badges = true          # extension labels on file icons (grid / gallery)
 folder_thumbnails = true         # 2x2 mosaic of the first images inside folders
 video_thumbnails = true          # first frame through the FFmpeg libraries ([media])
-pdf_thumbnails = true            # first page via pdfium.dll (see [preview] pdfium_dir), when present
+pdf_thumbnails = true            # first page, rendered by [preview] pdf_engine
 program_icons = true             # .exe / .scr files show their own icon (read from the program's resources)
 os_thumbnail_cache = true        # reuse the system's thumbnails (Windows thumbcache_*.db, Linux ~/.cache/thumbnails; read-only)
 write_os_thumbnails = true       # Linux: also write Soyuz-made thumbnails to ~/.cache/thumbnails for other apps (ignored elsewhere)
@@ -284,7 +284,7 @@ query = { roots = ["~"], extensions = ["mp4", "mkv"], size = [1073741824, 0] }  
 max_text_kib = 512
 max_image_mp = 40
 syntax_theme = "auto"
-pdf = true                       # needs cargo feature `pdf`; greyed out otherwise
+pdf = true                       # first page, facts and text in the preview pane / Quick Look
 pdf_engine = "hayro"             # hayro (built in) | pdfium (when pdfium.dll loads, else hayro); the viewer always uses hayro
 thumb_cache_mib = 64             # graphics memory budget for decoded thumbnails
 thumb_idle_trim_secs = 60        # free thumbnails not drawn for this long; 0 = keep until the budget is full
