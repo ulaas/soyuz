@@ -5,6 +5,24 @@ original milestones, R = rigidity, B = looks, F = features, A = AI,
 D = distribution. Generated from `git log` by `scripts/changelog.ps1` (or `git cliff`
 with `cliff.toml`); commit hashes refer to the main branch.
 
+## 0.8.8 (2026-11-26)
+
+### Other features
+
+- feat(jobs): name the program that keeps an item in use, offer to close or end it; waiting jobs cancel themselves when their item is gone (0b094a8)
+
+### Fixes and security
+
+- fix(ci): run CI on v* tags so Release's ci-gate finds a run on the tagged commit (e314386)
+
+### Documentation
+
+- docs: changelog for 0.8.7 (7782e89)
+
+### Other
+
+- release: 0.8.8 (names the program that keeps an item in use and offers to close or end it; waiting jobs cancel themselves when their item is gone) (16643c7)
+
 ## 0.8.7 (2026-11-25)
 
 ### Other features
