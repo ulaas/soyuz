@@ -140,6 +140,23 @@ dialogs-prompt-abort-tip = Tüm işlemi durdur
 dialogs-prompt-continue = Devam et
 dialogs-prompt-continue-tip = Bu ayıklama için sınırı yok say
 dialogs-prompt-error = “{ $name }” işlenemedi.
+# $name: a program's name ("Zed"), or the text of dialogs-prompt-in-use-own.
+dialogs-prompt-in-use = { $name } tarafından kullanılıyor
+dialogs-prompt-in-use-many = { $count } program tarafından kullanılıyor
+dialogs-prompt-in-use-own = Soyuz'un kendisi
+# $path: what the program has open, relative to the item; $count: how many more.
+dialogs-prompt-in-use-more = { $path } ve { $count } öğe daha
+dialogs-prompt-in-use-more-only = içinde { $count } öğe daha
+dialogs-prompt-in-use-hint = Bir program bir öğeyi veya içindeki bir şeyi açık tutarken Windows o öğeyi taşıyamaz, yeniden adlandıramaz veya silemez.
+dialogs-prompt-in-use-partial = Klasör tamamen denetlenemeyecek kadar büyük: başka programlar da açık tutuyor olabilir.
+dialogs-prompt-still-open = Hâlâ kullanımda. Program kaydetmenizi veya onaylamanızı bekliyor olabilir.
+dialogs-prompt-close-program = { $name } programını kapat
+dialogs-prompt-close-programs = Hepsini kapat
+dialogs-prompt-close-tip = Programdan, pencerelerini kapatmışsınız gibi kapanmasını iste, sonra yeniden dene. Program yine de kaydetmenizi isteyebilir.
+dialogs-prompt-end-program = { $name } programını sonlandır
+dialogs-prompt-end-programs = Hepsini sonlandır
+dialogs-prompt-end-confirm = Şimdi sonlandır, kaydedilmemiş çalışma kaybolur
+dialogs-prompt-end-tip = Programı hemen durdur, sonra yeniden dene. Programdaki kaydedilmemiş değişiklikler kaybolur.
 dialogs-prompt-skip-all = Tümünü atla
 dialogs-prompt-skip-all-tip = Bu hatayı ve sonraki tüm hataları atla
 dialogs-prompt-space = “{ $name }” için { $needed } gerekiyor, ancak yalnızca { $free } boş alan var.

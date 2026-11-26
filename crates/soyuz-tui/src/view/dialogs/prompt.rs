@@ -83,11 +83,31 @@ pub fn body(p: &PromptModel) -> Vec<String> {
             b.push(tr!("dialogs-prompt-archive-limit-hint").to_string());
             b.push(format!("  {}", path(at)));
         }
-        JobPrompt::Error { path: at, error, .. } => {
+        JobPrompt::Error { path: at, error, in_use, .. } => {
             b.push(tr!("dialogs-prompt-error", name = name(at)));
-            b.push(capitalize(error.kind.describe()));
-            if !error.message.is_empty() && error.message != error.kind.describe() {
-                b.push(safe(&error.message));
+            if let (Some(u), Some(title)) = (in_use, p.in_use_title()) {
+                // Who keeps it in use says more than the system's "access is denied".
+                b.push(safe(&title));
+                let lines = p.in_use_lines();
+                // One program is named by the headline already: only what it has open.
+                if lines.len() > 1 {
+                    b.extend(lines.iter().map(|(who, what)| safe(format!("  {who}  {what}").trim_end())));
+                } else {
+                    b.extend(
+                        lines.iter().filter(|(_, what)| !what.is_empty()).map(|(_, what)| safe(&format!("  {what}"))),
+                    );
+                }
+                if u.still_open {
+                    b.push(tr!("dialogs-prompt-still-open").to_string());
+                }
+                let hint =
+                    if u.complete { tr!("dialogs-prompt-in-use-hint") } else { tr!("dialogs-prompt-in-use-partial") };
+                b.push(hint.to_string());
+            } else {
+                b.push(capitalize(error.kind.describe()));
+                if !error.message.is_empty() && error.message != error.kind.describe() {
+                    b.push(safe(&error.message));
+                }
             }
             b.push(format!("  {}", path(at)));
         }

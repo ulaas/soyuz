@@ -77,12 +77,33 @@ pub enum JobEvent {
     Log(JobId, LogLine),
 }
 
+/// What a job does when the item its waiting prompt is about disappears (deleted or
+/// moved away by something else), so that the question can no longer be answered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GonePolicy {
+    /// Cancel the job.
+    #[default]
+    Cancel,
+    /// Skip the item and go on with the rest of the job.
+    Skip,
+    /// Keep waiting for the user.
+    Wait,
+}
+
 #[derive(Clone, Debug)]
 pub struct EngineConfig {
     /// Jobs in `Planning | Running | Finishing` at once (default 4).
     pub max_parallel: usize,
     pub default_queue: QueueMode,
     pub reset_apply_all_between_jobs: bool,
+    /// Name the programs that keep a failed item in use (default on).
+    pub find_blockers: bool,
+    /// Allow an error prompt to end such a program at once (default on).
+    pub end_blockers: bool,
+    /// A waiting prompt whose item disappeared (default: cancel the job).
+    pub item_gone: GonePolicy,
+    /// How often a waiting job looks whether its prompt's item still exists (default 2 s).
+    pub gone_poll: Duration,
     /// Speed-sample / scheduler tick (default 500 ms).
     pub sample_interval: Duration,
     pub history_limit: usize,
@@ -104,6 +125,10 @@ impl Default for EngineConfig {
             max_parallel: 4,
             default_queue: QueueMode::PerDevice,
             reset_apply_all_between_jobs: true,
+            find_blockers: true,
+            end_blockers: true,
+            item_gone: GonePolicy::Cancel,
+            gone_poll: Duration::from_secs(2),
             sample_interval: Duration::from_millis(500),
             history_limit: 500,
             history_path: None,
@@ -120,6 +145,9 @@ pub struct QueueSettings {
     pub max_parallel: usize,
     pub default_queue: QueueMode,
     pub reset_apply_all_between_jobs: bool,
+    pub find_blockers: bool,
+    pub end_blockers: bool,
+    pub item_gone: GonePolicy,
     pub history_limit: usize,
 }
 
@@ -129,6 +157,9 @@ impl From<&EngineConfig> for QueueSettings {
             max_parallel: c.max_parallel,
             default_queue: c.default_queue,
             reset_apply_all_between_jobs: c.reset_apply_all_between_jobs,
+            find_blockers: c.find_blockers,
+            end_blockers: c.end_blockers,
+            item_gone: c.item_gone,
             history_limit: c.history_limit,
         }
     }

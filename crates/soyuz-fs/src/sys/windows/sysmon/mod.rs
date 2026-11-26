@@ -22,6 +22,7 @@ use windows_sys::Win32::System::Performance::{QueryPerformanceCounter, QueryPerf
 use windows_sys::Win32::System::SystemInformation::GetTickCount64;
 
 pub use control::{affinity, process_details, set_affinity, set_priority, signal};
+pub(crate) use control::{identify, is_running};
 pub use info::system_info;
 pub use net::connections;
 pub use services::{service_control, services};

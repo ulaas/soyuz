@@ -165,6 +165,23 @@ dialogs-prompt-abort-tip = Stop the whole operation
 dialogs-prompt-continue = Continue
 dialogs-prompt-continue-tip = Ignore this limit for this extraction
 dialogs-prompt-error = Couldn't process “{ $name }”.
+# $name: a program's name ("Zed"), or the text of dialogs-prompt-in-use-own.
+dialogs-prompt-in-use = In use by { $name }
+dialogs-prompt-in-use-many = In use by { $count } programs
+dialogs-prompt-in-use-own = Soyuz itself
+# $path: what the program has open, relative to the item; $count: how many more.
+dialogs-prompt-in-use-more = { $path } and { $count } more
+dialogs-prompt-in-use-more-only = { $count } more inside
+dialogs-prompt-in-use-hint = Windows cannot move, rename or delete an item while a program has it, or something inside it, open.
+dialogs-prompt-in-use-partial = The folder is too big to check completely: other programs may have it open too.
+dialogs-prompt-still-open = Still in use. The program may be waiting for you to save or confirm.
+dialogs-prompt-close-program = Close { $name }
+dialogs-prompt-close-programs = Close them
+dialogs-prompt-close-tip = Ask the program to close, as if you closed its windows, then try again. It can still ask you to save.
+dialogs-prompt-end-program = End { $name }
+dialogs-prompt-end-programs = End them
+dialogs-prompt-end-confirm = End now, losing unsaved work
+dialogs-prompt-end-tip = Stop the program at once, then try again. Unsaved changes in it are lost.
 dialogs-prompt-skip-all = Skip all
 dialogs-prompt-skip-all-tip = Skip this and every later error
 # $needed / $free: formatted sizes.

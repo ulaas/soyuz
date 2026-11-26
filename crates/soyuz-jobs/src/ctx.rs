@@ -9,18 +9,24 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use soyuz_core::{ByteProgress, ConflictResolution, ErrorAction, FsError, FsResult, OpControl};
+use soyuz_core::{ByteProgress, ConflictResolution, ErrorAction, FsError, FsErrorKind, FsResult, OpControl};
 use soyuz_fs::FsProbe;
 
-use crate::engine::{Inner, JobRt};
+use crate::engine::{GonePolicy, Inner, JobRt};
 use crate::job::{JobId, JobOptions, JobState, JobSummary, LogLevel, LogLine, MAX_SUMMARY_ERRORS};
 use crate::policy::{self, PolicyMemory};
 use crate::progress::Progress;
-use crate::prompt::{ConflictInfo, JobPrompt, PromptResponse};
+use crate::prompt::{ConflictInfo, InUse, JobPrompt, PromptResponse};
 use crate::undo::UndoRecord;
 
 /// Automatic retries for `JobOptions::errors == Some(Retry)` before asking the user.
 const AUTO_RETRIES: u32 = 3;
+/// How long a program that was asked to close gets before the user is asked again.
+const CLOSE_WAIT: Duration = Duration::from_secs(4);
+/// How long an ended program gets to disappear.
+const END_WAIT: Duration = Duration::from_secs(3);
+/// After the last program is gone: the system closes its handles a moment later.
+const HANDLES_SETTLE: Duration = Duration::from_millis(60);
 
 /// What a job produced (summary + undo journal).
 #[derive(Debug, Default)]
@@ -227,10 +233,36 @@ impl JobCtx {
     /// Publish `p` and block until the UI answers or the job is cancelled
     /// (`PromptResponse::Cancelled`). Holds no lock while blocked.
     pub fn prompt(&self, p: JobPrompt) -> PromptResponse {
+        // The item the question is about, when it exists now: should it disappear while
+        // the job waits, nobody can answer any more (`QueueSettings::item_gone`).
+        let watched = prompt_item(&p).filter(|i| soyuz_fs::exists_nofollow(i)).map(Path::to_path_buf);
+        let skip = skip_answer(&p);
         if !self.inner.begin_prompt(self.id, p) {
             return PromptResponse::Cancelled;
         }
-        let r = self.rt.prompt_rx.recv().unwrap_or(PromptResponse::Cancelled);
+        let r = loop {
+            match self.rt.prompt_rx.recv_timeout(self.inner.cfg.gone_poll) {
+                Ok(r) => break r,
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break PromptResponse::Cancelled,
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
+            }
+            let Some(item) = watched.as_deref().filter(|i| is_gone(i)) else { continue };
+            let policy = self.inner.live.lock().item_gone;
+            let (what, answer) = match policy {
+                GonePolicy::Wait => continue,
+                GonePolicy::Skip => ("skipped", skip.clone()),
+                GonePolicy::Cancel => ("cancelled", None),
+            };
+            self.log(LogLevel::Warn, Some(item.to_path_buf()), format!("{what}: the item no longer exists"));
+            match answer {
+                Some(a) => break a,
+                None => {
+                    self.note("Cancelled: the item it was waiting for no longer exists.");
+                    self.rt.ctl.cancel();
+                    break PromptResponse::Cancelled;
+                }
+            }
+        };
         self.inner.end_prompt(self.id);
         if self.rt.ctl.is_cancelled() { PromptResponse::Cancelled } else { r }
     }
@@ -270,23 +302,85 @@ impl JobCtx {
             Some(_) => return Ok(ErrorAction::Skip),
             None => {}
         }
-        let p = JobPrompt::Error { path: path.to_path_buf(), error: err.clone(), retryable: err.is_retryable() };
-        match self.prompt(p) {
-            PromptResponse::Error { action, apply_to_all } => {
-                if (apply_to_all || action == ErrorAction::SkipAll)
-                    && let Some(m) = policy::remembered_error(action)
-                {
-                    self.memory(|mem| mem.error = Some(m));
+        let mut still_open = false;
+        loop {
+            let in_use = self.in_use(path, err).map(|u| InUse { still_open, ..u });
+            // An item in use can be tried again once its program lets go of it.
+            let retryable = err.is_retryable() || in_use.is_some();
+            let p =
+                JobPrompt::Error { path: path.to_path_buf(), error: err.clone(), retryable, in_use: in_use.clone() };
+            return match self.prompt(p) {
+                PromptResponse::Error { action, apply_to_all } => {
+                    if (apply_to_all || action == ErrorAction::SkipAll)
+                        && let Some(m) = policy::remembered_error(action)
+                    {
+                        self.memory(|mem| mem.error = Some(m));
+                    }
+                    match action {
+                        ErrorAction::Retry => Ok(ErrorAction::Retry),
+                        ErrorAction::Skip | ErrorAction::SkipAll => Ok(ErrorAction::Skip),
+                        ErrorAction::Abort => Err(err.clone()),
+                    }
                 }
-                match action {
-                    ErrorAction::Retry => Ok(ErrorAction::Retry),
-                    ErrorAction::Skip | ErrorAction::SkipAll => Ok(ErrorAction::Skip),
-                    ErrorAction::Abort => Err(err.clone()),
-                }
-            }
-            PromptResponse::Cancelled => Err(self.cancel_now()),
-            _ => Ok(ErrorAction::Skip),
+                PromptResponse::CloseBlockers { force } => match in_use {
+                    Some(u) if !self.close_blockers(&u, force)? => {
+                        // Still running: say so, with what is open now.
+                        still_open = true;
+                        continue;
+                    }
+                    _ => Ok(ErrorAction::Retry),
+                },
+                PromptResponse::Cancelled => Err(self.cancel_now()),
+                _ => Ok(ErrorAction::Skip),
+            };
         }
+    }
+
+    /// The programs that keep the failed item in use, when `err` is the kind of refusal
+    /// that causes (`[jobs] show_blocking_programs`).
+    fn in_use(&self, path: &Path, err: &FsError) -> Option<InUse> {
+        let live = *self.inner.live.lock();
+        if !live.find_blockers || !matches!(err.kind, FsErrorKind::PermissionDenied | FsErrorKind::InUse) {
+            return None;
+        }
+        // The path the error names (a destination, an item inside a folder) is the one
+        // that was refused.
+        let at = err.path.as_deref().unwrap_or(path);
+        let found = soyuz_fs::in_use::blockers(at, soyuz_fs::in_use::Limits::default());
+        (!found.list.is_empty()).then_some(InUse {
+            blockers: found.list,
+            complete: found.complete,
+            may_end: live.end_blockers,
+            still_open: false,
+        })
+    }
+
+    /// Ask the programs of `u` to close (`force`: end them, when the settings allow it)
+    /// and wait for them to go. `Ok(true)` = all are gone, the item is worth another try.
+    fn close_blockers(&self, u: &InUse, force: bool) -> FsResult<bool> {
+        let force = force && u.may_end;
+        let mut asked = Vec::new();
+        for b in u.closable() {
+            match soyuz_fs::in_use::close(b, force) {
+                Ok(()) => {
+                    let what = if force { "ended" } else { "asked to close" };
+                    self.log(LogLevel::Warn, None, format!("{what} {} (PID {})", b.name, b.pid));
+                    asked.push(b);
+                }
+                Err(e) => self.log(LogLevel::Warn, None, format!("could not close {} (PID {}): {e}", b.name, b.pid)),
+            }
+        }
+        let deadline = Instant::now() + if force { END_WAIT } else { CLOSE_WAIT };
+        while asked.iter().any(|b| soyuz_fs::in_use::is_running(b)) {
+            self.checkpoint()?;
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        std::thread::sleep(HANDLES_SETTLE);
+        // Programs that could not be asked (ours, the system's) still hold the item.
+        Ok(asked.len() == u.blockers.len())
     }
 
     /// Run `op` under the error policy. Outer `Err` = abort/cancel the job; inner `Err` =
@@ -366,6 +460,40 @@ impl JobCtx {
             _ => Err(self.cancel_now()),
         }
     }
+}
+
+/// The local item a prompt asks about (`None`: nothing that can disappear).
+fn prompt_item(p: &JobPrompt) -> Option<&Path> {
+    match p {
+        JobPrompt::Conflict(c) => Some(&c.src.path),
+        JobPrompt::Error { path, .. } | JobPrompt::TrashUnsupported { path, .. } | JobPrompt::ReadOnlyItem { path } => {
+            Some(path)
+        }
+        JobPrompt::Password { archive, .. } => Some(archive),
+        JobPrompt::NotEnoughSpace { .. } => None,
+    }
+}
+
+/// The answer that leaves a prompt's item alone and goes on (`None`: there is none).
+fn skip_answer(p: &JobPrompt) -> Option<PromptResponse> {
+    Some(match p {
+        JobPrompt::Conflict(_) => {
+            PromptResponse::Conflict { resolution: ConflictResolution::Skip, apply_to_all: false }
+        }
+        JobPrompt::Error { .. } => PromptResponse::Error { action: ErrorAction::Skip, apply_to_all: false },
+        JobPrompt::TrashUnsupported { .. } => {
+            PromptResponse::TrashUnsupported { permanent: false, apply_to_all: false }
+        }
+        JobPrompt::ReadOnlyItem { .. } => PromptResponse::ReadOnly { force: false, apply_to_all: false },
+        JobPrompt::Password { .. } => PromptResponse::Password(None),
+        JobPrompt::NotEnoughSpace { .. } => return None,
+    })
+}
+
+/// `item` is gone while the place it was in is still there: an unplugged drive or a
+/// network share that went away does not count, its items may well come back.
+fn is_gone(item: &Path) -> bool {
+    !soyuz_fs::exists_nofollow(item) && item.parent().is_some_and(soyuz_fs::exists_nofollow)
 }
 
 /// `p` or its nearest existing ancestor.

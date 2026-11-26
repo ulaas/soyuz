@@ -284,6 +284,30 @@ fn image_path_of(h: &Handle) -> Option<PathBuf> {
     (ok != 0 && len > 0).then(|| PathBuf::from(String::from_utf16_lossy(&wide[..(len as usize).min(wide.len())])))
 }
 
+/// Who a PID is right now: its key, program file and that file's description. `None` for
+/// a process that is gone or that we may not open (protected and other users' processes).
+pub(crate) fn identify(pid: u32) -> Option<(ProcKey, Option<PathBuf>, Option<String>)> {
+    // SAFETY: plain call; the result is checked by `Handle::new`.
+    let h = Handle::new(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) }).ok()?;
+    let created = procs::creation_time(h.raw())?;
+    let mut code = 0u32;
+    // SAFETY: open handle; valid out-pointer.
+    if unsafe { GetExitCodeProcess(h.raw(), &mut code) } != 0 && code != STILL_ACTIVE as u32 {
+        return None;
+    }
+    let key = ProcKey { pid, start_ms: super::ticks_to_unix_ms(created as i64), start_raw: created };
+    let exe = image_path_of(&h);
+    // Reading a file from a network path may stall: not read.
+    let local = |p: &&PathBuf| !p.as_os_str().as_encoded_bytes().starts_with(br"\\");
+    let description = exe.as_ref().filter(local).and_then(|p| procs::file_description(p));
+    Some((key, exe, description))
+}
+
+/// Whether `key`'s process still runs.
+pub(crate) fn is_running(key: ProcKey) -> bool {
+    !matches!(open_verified(key, 0), Err(ControlError::Gone))
+}
+
 /// On-demand details: the lists `want` asks for. Open files need a handle walk that can hang
 /// and the working folder and environment would mean reading the other process's memory, so
 /// those stay empty.

@@ -408,6 +408,9 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `max_parallel` | integer | `4` | Jobs that may run at the same time. |
 | `per_device_serial` | boolean | `true` | Queue jobs that touch the same drive one after another (faster on spinning disks). |
 | `reset_apply_all_between_jobs` | boolean | `true` | "Apply to all" in a conflict dialog lasts for one job only; off = it carries over to the following jobs. |
+| `show_blocking_programs` | boolean | `true` | When an item cannot be moved, renamed or deleted because a program has it (or something inside it) open, name that program and offer to close it (Windows). |
+| `end_blocking_programs` | boolean | `true` | Also offer to end such a program at once, which loses its unsaved work; off = it can only be asked to close. |
+| `when_item_gone` | `"cancel"` \| `"skip"` \| `"wait"` | `"cancel"` | A job waits for an answer about an item (a conflict, an error) and the item disappears meanwhile: `cancel` the job, `skip` the item and go on, or `wait` for an answer anyway. |
 | `verify_after_copy` | boolean | `false` | Hash-compare every copied file with its source (BLAKE3) after the copy. |
 | `copy_buffer_mib` | integer | `8` | Copy buffer size (MiB). |
 | `unbuffered_threshold_mib` | integer | `256` | Files larger than this are copied with unbuffered I/O, bypassing the OS cache (MiB). |

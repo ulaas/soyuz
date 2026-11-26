@@ -94,7 +94,7 @@ impl ExtractSink for Sink<'_> {
         if matches!(err, ArchiveError::LimitExceeded(_)) {
             // Always ask (remembered "skip all" answers don't apply): Abort stops, any
             // other answer means "Continue" and lifts the limit.
-            let p = JobPrompt::Error { path: self.archive.to_path_buf(), error: fe, retryable: false };
+            let p = JobPrompt::Error { path: self.archive.to_path_buf(), error: fe, retryable: false, in_use: None };
             return match self.ctx.prompt(p) {
                 PromptResponse::Error { action: ErrorAction::Abort, .. } | PromptResponse::Cancelled => {
                     ErrorAction::Abort

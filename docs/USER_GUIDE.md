@@ -251,6 +251,20 @@ When a destination already exists, the **conflict dialog** compares both files (
 date, which is newer / larger) and offers *Replace*, *Keep both*, *Skip* and more, with
 *Do this for all remaining conflicts*. Errors offer *Retry*, *Skip* and *Skip all*.
 
+On Windows an item cannot be moved, renamed or deleted (moved to the Recycle Bin, too)
+while a program has it, or anything inside it, open; the system only says "access is
+denied". Soyuz then names the program ("In use by Zed") with what it has open, and
+offers *Close Zed*, which asks the program to close as if you had closed its windows
+(it can still ask you to save), and *End Zed*, which stops it at once and loses its
+unsaved work, so it asks a second time. Either one then tries the item again. Settings →
+Jobs has both switches (`[jobs] show_blocking_programs`, `end_blocking_programs`).
+
+A job that waits for your answer about an item (a conflict, an error), also one you put
+off with Esc, cancels itself when that item is deleted or moved away meanwhile: there is
+nothing left to answer. *When a waiting job's item disappears* in Settings → Jobs can
+make it skip the item and go on, or keep waiting (`[jobs] when_item_gone`). An item whose
+whole folder or drive went away does not count; it may come back.
+
 `Ctrl+Z` / `Ctrl+Y` undo and redo copies, moves, renames, trashing, new items and
 attribute changes. *History* in the activity panel lists past operations with undo, redo
 and *Retry failed*; its broom button (or *Clear job history* in the palette) forgets them

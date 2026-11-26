@@ -70,15 +70,77 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Pal
                 out = respond(ErrorAction::Abort);
             }
         }
-        JobPrompt::Error { path, error, retryable } => {
+        JobPrompt::Error { path, error, retryable, in_use } => {
             ui.label(RichText::new(tr!("dialogs-prompt-error", name = name(path))).color(p.text_primary));
             ui.add_space(4.0);
-            ui.label(RichText::new(capitalize(error.kind.describe())).color(p.danger));
-            if !error.message.is_empty() && error.message != error.kind.describe() {
-                ui.label(RichText::new(&error.message).font(crate::theme::font::ui(12.0)).color(p.text_secondary));
+            if let (Some(u), Some(title)) = (in_use, d.in_use_title()) {
+                // Who keeps it in use says more than the system's "access is denied".
+                ui.label(RichText::new(title).color(p.danger));
+                let lines = d.in_use_lines();
+                // One program is named by the headline already: only what it has open.
+                let several = lines.len() > 1;
+                if several || lines.iter().any(|(_, what)| !what.is_empty()) {
+                    ui.add_space(2.0);
+                    for (who, what) in &lines {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            if several {
+                                ui.label(
+                                    RichText::new(crate::ui::widgets::shown_name(who))
+                                        .font(crate::theme::font::ui(12.0))
+                                        .color(p.text_primary),
+                                );
+                            }
+                            if !what.is_empty() {
+                                ui.label(
+                                    RichText::new(crate::ui::widgets::shown_name(what))
+                                        .font(crate::theme::font::mono(11.5))
+                                        .color(p.text_secondary),
+                                );
+                            }
+                        });
+                    }
+                }
+                if u.still_open {
+                    ui.add_space(2.0);
+                    ui.label(
+                        RichText::new(tr!("dialogs-prompt-still-open"))
+                            .font(crate::theme::font::ui(12.0))
+                            .color(p.warning),
+                    );
+                }
+                ui.add_space(2.0);
+                let hint =
+                    if u.complete { tr!("dialogs-prompt-in-use-hint") } else { tr!("dialogs-prompt-in-use-partial") };
+                ui.label(RichText::new(hint).font(crate::theme::font::ui(11.5)).color(p.text_tertiary));
+            } else {
+                ui.label(RichText::new(capitalize(error.kind.describe())).color(p.danger));
+                if !error.message.is_empty() && error.message != error.kind.describe() {
+                    ui.label(RichText::new(&error.message).font(crate::theme::font::ui(12.0)).color(p.text_secondary));
+                }
             }
             ui.add_space(8.0);
             path_box(ui, path, p);
+            if let (Some(close), end) = d.close_labels() {
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    if pill_button(ui, None, &close, Btn::Secondary)
+                        .on_hover_text(tr!("dialogs-prompt-close-tip"))
+                        .clicked()
+                    {
+                        out = Some(d.close_programs());
+                    }
+                    if let Some(end) = end
+                        && pill_button(ui, None, &end, Btn::Danger)
+                            .on_hover_text(tr!("dialogs-prompt-end-tip"))
+                            .clicked()
+                    {
+                        // The first click only asks to confirm.
+                        out = d.end_programs();
+                    }
+                });
+            }
             ui.add_space(16.0);
             ui.horizontal(|ui| {
                 if pill_button(ui, None, tr!("dialogs-prompt-abort"), Btn::Ghost)

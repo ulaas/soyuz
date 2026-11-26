@@ -654,7 +654,7 @@ fn account_name(sid: &[u8]) -> Option<String> {
 }
 
 /// `FileDescription` from an executable's version resource.
-fn file_description(exe: &Path) -> Option<String> {
+pub(super) fn file_description(exe: &Path) -> Option<String> {
     let path = wide_str(exe);
     let mut ignored = 0u32;
     // SAFETY: NUL-terminated path; valid out-pointer.

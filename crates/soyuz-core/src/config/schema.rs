@@ -892,6 +892,16 @@ pub enum TrashUnsupportedPolicy {
     Skip,
 }
 
+/// Mirrors `soyuz_jobs::GonePolicy`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemGonePolicy {
+    #[default]
+    Cancel,
+    Skip,
+    Wait,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Jobs {
@@ -901,6 +911,12 @@ pub struct Jobs {
     pub per_device_serial: bool,
     /// "Apply to all" in a conflict dialog lasts for one job only; off = it carries over to the following jobs.
     pub reset_apply_all_between_jobs: bool,
+    /// When an item cannot be moved, renamed or deleted because a program has it (or something inside it) open, name that program and offer to close it (Windows).
+    pub show_blocking_programs: bool,
+    /// Also offer to end such a program at once, which loses its unsaved work; off = it can only be asked to close.
+    pub end_blocking_programs: bool,
+    /// A job waits for an answer about an item (a conflict, an error) and the item disappears meanwhile: `cancel` the job, `skip` the item and go on, or `wait` for an answer anyway.
+    pub when_item_gone: ItemGonePolicy,
     /// Hash-compare every copied file with its source (BLAKE3) after the copy.
     pub verify_after_copy: bool,
     /// Copy buffer size (MiB).

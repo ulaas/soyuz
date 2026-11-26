@@ -1310,6 +1310,41 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-jobs-reset-apply-all"), tr!("settings-jobs-reset-apply-all-desc"), "conflict", |ui| {
             switch(ui, &mut d.jobs.reset_apply_all_between_jobs);
         });
+        r.row_kw(
+            tr!("settings-jobs-blocking-programs"),
+            tr!("settings-jobs-blocking-programs-desc"),
+            "in use locked open access denied",
+            |ui| {
+                switch(ui, &mut d.jobs.show_blocking_programs);
+            },
+        );
+        if d.jobs.show_blocking_programs {
+            r.row_kw(
+                tr!("settings-jobs-end-blocking"),
+                tr!("settings-jobs-end-blocking-desc"),
+                "kill terminate in use locked",
+                |ui| {
+                    switch(ui, &mut d.jobs.end_blocking_programs);
+                },
+            );
+        }
+        r.row_kw(
+            tr!("settings-jobs-item-gone"),
+            tr!("settings-jobs-item-gone-desc"),
+            "deferred waiting stuck prompt deleted missing auto cancel",
+            |ui| {
+                use soyuz_core::config::ItemGonePolicy;
+                segmented(
+                    ui,
+                    &mut d.jobs.when_item_gone,
+                    &[
+                        (ItemGonePolicy::Cancel, tr!("settings-jobs-item-gone-cancel")),
+                        (ItemGonePolicy::Skip, tr!("settings-jobs-item-gone-skip")),
+                        (ItemGonePolicy::Wait, tr!("settings-jobs-item-gone-wait")),
+                    ],
+                );
+            },
+        );
         r.row(tr!("settings-jobs-history"), tr!("settings-jobs-history-desc"), |ui| {
             number(ui, &mut d.jobs.history_limit, 10..=5000, "");
         });

@@ -34,6 +34,7 @@ pub mod fuzzing;
 pub mod guard;
 pub mod hash;
 pub mod health;
+pub mod in_use;
 pub mod instance;
 pub mod integration;
 pub mod launch;

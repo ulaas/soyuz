@@ -41,6 +41,10 @@ pub enum Choice {
     CommitRename,
     CancelJob,
     Error(ErrorAction),
+    /// Item in use: ask its programs to close and try again.
+    ClosePrograms,
+    /// Item in use: end its programs (the second press confirms) and try again.
+    EndPrograms,
     Space(bool),
     Trash(bool),
     ReadOnly(bool),
@@ -144,11 +148,13 @@ fn layout(p: &PromptModel, page: usize) -> Layout {
             Some(1),
         ),
         JobPrompt::Error { retryable, .. } => {
-            let mut b = vec![
-                (s(tr!("dialogs-prompt-abort")), Choice::Error(ErrorAction::Abort)),
-                (s(tr!("dialogs-prompt-skip-all")), Choice::Error(ErrorAction::SkipAll)),
-                (s(tr!("common-skip")), Choice::Error(ErrorAction::Skip)),
-            ];
+            let mut b = vec![(s(tr!("dialogs-prompt-abort")), Choice::Error(ErrorAction::Abort))];
+            // An item in use: its programs can be closed, or ended.
+            let (close, end) = p.close_labels();
+            b.extend(end.map(|l| (l, Choice::EndPrograms)));
+            b.extend(close.map(|l| (l, Choice::ClosePrograms)));
+            b.push((s(tr!("dialogs-prompt-skip-all")), Choice::Error(ErrorAction::SkipAll)));
+            b.push((s(tr!("common-skip")), Choice::Error(ErrorAction::Skip)));
             if *retryable {
                 b.push((s(tr!("common-retry")), Choice::Error(ErrorAction::Retry)));
             }
@@ -299,6 +305,22 @@ fn act(p: &mut PromptModel, ui: &mut ModelUi, c: Choice) -> Option<Outcome> {
             let a = p.error(e);
             answer(p, a)
         }
+        Choice::ClosePrograms => {
+            let a = p.close_programs();
+            answer(p, a)
+        }
+        Choice::EndPrograms => match p.end_programs() {
+            Some(a) => answer(p, a),
+            None => {
+                // The button now asks to confirm; the focus stays on it.
+                rebuild(p, ui);
+                let at = layout(p, ui.page).buttons.iter().position(|(_, c)| *c == Choice::EndPrograms);
+                if let Some(i) = at {
+                    ui.form.focus = ui.form.fields.len() + i;
+                }
+                None
+            }
+        },
         Choice::Space(go) => {
             let a = p.space(go);
             answer(p, a)
@@ -639,18 +661,64 @@ mod tests {
     #[test]
     fn errors_space_trash_read_only_password() {
         let error = FsError::new(FsErrorKind::PermissionDenied, "read", None);
-        let mut m = model(JobPrompt::Error { path: PathBuf::from("x"), error: error.clone(), retryable: true });
+        let mut m =
+            model(JobPrompt::Error { path: PathBuf::from("x"), error: error.clone(), retryable: true, in_use: None });
         let mut u = ui(&m);
         assert_eq!(
             response(on_input(&mut m, &mut u, &chord("Enter"))),
             r(PromptResponse::Error { action: ErrorAction::Retry, apply_to_all: false })
         );
-        let mut m = model(JobPrompt::Error { path: PathBuf::from("x"), error, retryable: false });
+        let mut m =
+            model(JobPrompt::Error { path: PathBuf::from("x"), error: error.clone(), retryable: false, in_use: None });
         let mut u = ui(&m);
         assert_eq!(u.form.buttons.len(), 3);
         assert_eq!(
             response(on_input(&mut m, &mut u, &chord("A"))),
             r(PromptResponse::Error { action: ErrorAction::Abort, apply_to_all: false })
+        );
+
+        // An item in use: its program can be asked to close, or ended on a second press.
+        let zed = soyuz_jobs::Blocker {
+            pid: 7,
+            key: Some(soyuz_fs::sysmon::ProcKey { pid: 7, start_ms: 1, start_raw: 1 }),
+            name: "Zed".into(),
+            exe: None,
+            own: false,
+            paths: vec![PathBuf::from("x").join("README.txt")],
+            open: 1,
+        };
+        let in_use = soyuz_jobs::InUse { blockers: vec![zed], complete: true, may_end: true, still_open: false };
+        let busy = || JobPrompt::Error {
+            path: PathBuf::from("x"),
+            error: error.clone(),
+            retryable: true,
+            in_use: Some(in_use.clone()),
+        };
+        let mut m = model(busy());
+        let mut u = ui(&m);
+        assert_eq!(u.form.buttons.len(), 6);
+        let shown = match &m {
+            DialogModel::Prompt(p) => crate::view::dialogs::prompt::body(p).join(
+                "
+",
+            ),
+            _ => unreachable!(),
+        };
+        assert!(shown.contains("In use by Zed") && shown.contains("README.txt"), "{shown}");
+        let close = u.form.buttons.iter().position(|b| b.label == "Close Zed").unwrap();
+        assert_eq!(
+            response(on_mouse(&mut m, &mut u, &left(HitTarget::DialogButton(close)))),
+            r(PromptResponse::CloseBlockers { force: false })
+        );
+        let mut m = model(busy());
+        let mut u = ui(&m);
+        let end = u.form.buttons.iter().position(|b| b.label == "End Zed").unwrap();
+        assert!(matches!(on_mouse(&mut m, &mut u, &left(HitTarget::DialogButton(end))), Outcome::Keep));
+        assert_ne!(u.form.buttons[end].label, "End Zed", "the button asks to confirm");
+        assert_eq!(u.form.focused_button(), Some(end));
+        assert_eq!(
+            response(on_input(&mut m, &mut u, &chord("Enter"))),
+            r(PromptResponse::CloseBlockers { force: true })
         );
 
         let mut m = model(JobPrompt::NotEnoughSpace { needed: 10, free: 1, dest: PathBuf::from("d") });

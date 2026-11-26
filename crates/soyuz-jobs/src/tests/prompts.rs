@@ -215,3 +215,171 @@ fn conflict_cancel_resolution_cancels_job() {
     h.engine.respond(id, conflict(ConflictResolution::Cancel, false));
     assert_eq!(h.done(id), JobState::Cancelled);
 }
+
+/// A command prompt that waits on its input, working inside `dir`.
+#[cfg(windows)]
+fn prompt_inside(dir: &std::path::Path) -> std::process::Child {
+    use std::process::{Command, Stdio};
+    Command::new("cmd.exe")
+        .arg("/k")
+        .current_dir(dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap()
+}
+
+/// Wait for an error prompt of `id` that `pred` accepts and return who keeps the item in use.
+#[cfg(windows)]
+fn in_use_prompt(h: &H, id: JobId, pred: impl Fn(&Option<crate::InUse>) -> bool) -> Option<crate::InUse> {
+    wait_for(Duration::from_secs(20), || match h.snap(id) {
+        JobSnapshot {
+            state: JobState::WaitingForUser,
+            pending_prompt: Some(JobPrompt::Error { in_use, retryable, .. }),
+            ..
+        } if pred(&in_use) => {
+            assert!(retryable || in_use.is_none());
+            Some(in_use)
+        }
+        s => {
+            assert!(!s.state.is_terminal(), "job ended: {:?}", s.state);
+            None
+        }
+    })
+}
+
+#[cfg(windows)]
+#[test]
+fn folder_in_use_names_the_program_and_ending_it_retries() {
+    let h = H::new();
+    std::fs::create_dir_all(h.p("a/inner")).unwrap();
+    let mut child = prompt_inside(&h.p("a/inner"));
+    let id = h.submit(JobKind::Rename { pairs: vec![(h.p("a"), h.p("b"))] });
+    let u = in_use_prompt(&h, id, |u| u.is_some()).unwrap();
+    assert!(u.may_end && !u.still_open && u.complete);
+    let b = u.blockers.iter().find(|b| b.pid == child.id()).expect("the program inside is named");
+    assert!(b.closable());
+    assert_eq!(b.paths[0].file_name().unwrap(), "inner");
+
+    h.engine.respond(id, PromptResponse::CloseBlockers { force: true });
+    let s = h.ok(id);
+    assert_eq!((s.items_ok, s.items_failed), (1, 0));
+    assert!(h.p("b/inner").is_dir() && !h.p("a").exists());
+    assert!(child.wait().is_ok());
+    let log = h.engine.log(id, 0);
+    assert!(log.iter().any(|l| l.msg.starts_with("ended ")), "{log:#?}");
+}
+
+#[cfg(windows)]
+#[test]
+fn ending_a_program_can_be_switched_off() {
+    let h = H::with(|c| c.end_blockers = false);
+    std::fs::create_dir_all(h.p("a/inner")).unwrap();
+    let mut child = prompt_inside(&h.p("a/inner"));
+    let id = h.submit(JobKind::Rename { pairs: vec![(h.p("a"), h.p("b"))] });
+    let u = in_use_prompt(&h, id, |u| u.is_some()).unwrap();
+    assert!(!u.may_end);
+    // A forced close is only a request to close then; a program without a window cannot
+    // take one, so it keeps running and the prompt says so.
+    h.engine.respond(id, PromptResponse::CloseBlockers { force: true });
+    let u = in_use_prompt(&h, id, |u| u.as_ref().is_some_and(|u| u.still_open)).unwrap();
+    assert!(u.blockers.iter().any(|b| b.pid == child.id()));
+    assert!(child.try_wait().unwrap().is_none(), "the program still runs");
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+    // Asked again until the system has closed the ended program's handles.
+    loop {
+        h.engine.respond(id, PromptResponse::Error { action: ErrorAction::Retry, apply_to_all: false });
+        let s = h.wait_state(id, |s| s.is_terminal() || *s == JobState::WaitingForUser);
+        if s.state.is_terminal() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(h.ok(id).items_ok, 1);
+}
+
+#[cfg(windows)]
+#[test]
+fn looking_for_blocking_programs_can_be_switched_off() {
+    let h = H::with(|c| c.find_blockers = false);
+    std::fs::create_dir_all(h.p("a/inner")).unwrap();
+    let mut child = prompt_inside(&h.p("a/inner"));
+    let id = h.submit(JobKind::Rename { pairs: vec![(h.p("a"), h.p("b"))] });
+    assert_eq!(in_use_prompt(&h, id, |_| true), None);
+    h.engine.respond(id, PromptResponse::Error { action: ErrorAction::Skip, apply_to_all: false });
+    assert_eq!(h.ok(id).items_failed, 1);
+    child.kill().unwrap();
+    child.wait().unwrap();
+}
+
+/// A job that waits with a conflict about `src/f.txt`, polling quickly for a vanished item.
+fn waiting_conflict(policy: crate::GonePolicy) -> (H, JobId, PathBuf) {
+    let h = H::with(|c| {
+        c.item_gone = policy;
+        c.gone_poll = Duration::from_millis(20);
+    });
+    write(&h.p("src/f.txt"), b"new");
+    write(&h.p("src/g.txt"), b"gee");
+    write(&h.p("dst/f.txt"), b"older-and-longer");
+    let id = h.submit(copy_kind(&[&h.p("src/f.txt"), &h.p("src/g.txt")], &h.p("dst")));
+    assert!(matches!(h.prompt(id), JobPrompt::Conflict(_)));
+    let src = h.p("src/f.txt");
+    (h, id, src)
+}
+
+#[test]
+fn a_waiting_job_cancels_itself_when_its_item_is_gone() {
+    let (h, id, src) = waiting_conflict(crate::GonePolicy::Cancel);
+    // Still there: it keeps waiting.
+    std::thread::sleep(Duration::from_millis(120));
+    assert_eq!(h.snap(id).state, JobState::WaitingForUser);
+    std::fs::remove_file(&src).unwrap();
+    assert_eq!(h.done(id), JobState::Cancelled);
+    assert!(!h.p("dst/g.txt").exists(), "nothing after the question ran");
+    assert_eq!(read(&h.p("dst/f.txt")), b"older-and-longer");
+    let log = h.engine.log(id, 0);
+    assert!(log.iter().any(|l| l.msg.contains("no longer exists")), "{log:#?}");
+}
+
+#[test]
+fn a_waiting_job_can_skip_a_gone_item_or_keep_waiting() {
+    let (h, id, src) = waiting_conflict(crate::GonePolicy::Skip);
+    std::fs::remove_file(&src).unwrap();
+    let s = h.ok(id);
+    assert_eq!((s.items_ok, s.items_skipped), (1, 1));
+    assert_eq!(read(&h.p("dst/g.txt")), b"gee");
+    assert_eq!(read(&h.p("dst/f.txt")), b"older-and-longer");
+
+    let (h, id, src) = waiting_conflict(crate::GonePolicy::Wait);
+    std::fs::remove_file(&src).unwrap();
+    std::thread::sleep(Duration::from_millis(150));
+    assert_eq!(h.snap(id).state, JobState::WaitingForUser);
+    h.engine.cancel(id);
+    assert_eq!(h.done(id), JobState::Cancelled);
+}
+
+#[test]
+fn a_question_about_a_missing_item_or_a_vanished_folder_keeps_waiting() {
+    // The item was never there: the question is about that, and waits for its answer.
+    let h = H::with(|c| c.gone_poll = Duration::from_millis(20));
+    let id = h.submit(copy_kind(&[&h.p("late.txt")], &h.p("out")));
+    assert!(matches!(h.prompt(id), JobPrompt::Error { .. }));
+    std::thread::sleep(Duration::from_millis(150));
+    assert_eq!(h.snap(id).state, JobState::WaitingForUser);
+    write(&h.p("late.txt"), b"arrived");
+    h.engine.respond(id, PromptResponse::Error { action: ErrorAction::Retry, apply_to_all: false });
+    assert_eq!(h.ok(id).items_ok, 1);
+
+    // Its whole folder went away (an unplugged drive looks like this): not "gone".
+    let (h, id, src) = waiting_conflict(crate::GonePolicy::Cancel);
+    let parked = h.p("parked");
+    std::fs::rename(src.parent().unwrap(), &parked).unwrap();
+    std::thread::sleep(Duration::from_millis(150));
+    assert_eq!(h.snap(id).state, JobState::WaitingForUser);
+    std::fs::rename(&parked, src.parent().unwrap()).unwrap();
+    h.engine.respond(id, conflict(ConflictResolution::Skip, true));
+    assert_eq!(h.ok(id).items_ok, 1);
+}

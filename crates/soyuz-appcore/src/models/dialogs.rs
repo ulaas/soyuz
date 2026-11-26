@@ -23,7 +23,7 @@ use soyuz_ai::tools::Risk;
 use soyuz_core::{ConflictResolution, ErrorAction};
 use soyuz_fs::TrashItem;
 use soyuz_jobs::kinds::extract::ARCHIVE_LIMIT_OP;
-use soyuz_jobs::{ConflictInfo, ConflictKind, DeleteMode, JobId, JobKindBrief, JobPrompt, PromptResponse};
+use soyuz_jobs::{ConflictInfo, ConflictKind, DeleteMode, InUse, JobId, JobKindBrief, JobPrompt, PromptResponse};
 use soyuz_script::PlannedJob;
 
 use crate::ai::agent::Decision;
@@ -217,6 +217,9 @@ pub struct PromptModel {
     pub password: String,
     /// Ask the frontend to focus the password field once.
     pub focus_password: bool,
+    /// Item in use: "End program" was chosen once and waits for the second, confirming
+    /// choice (ending a program loses its unsaved work).
+    pub confirm_end: bool,
     /// Validate rename-on-conflict names with the Windows rules.
     pub windows_rules: bool,
     /// `[general] size_style`: how the prompt shows sizes.
@@ -255,6 +258,7 @@ impl PromptModel {
             focus_rename: false,
             password: String::new(),
             focus_password: true,
+            confirm_end: false,
             windows_rules: cfg!(windows),
             size_style: soyuz_core::SizeStyle::Binary,
             date_format: soyuz_core::DateFormat::default(),
@@ -352,6 +356,87 @@ impl PromptModel {
     /// Error prompt: retry / skip / skip all / abort (never applied to all).
     pub fn error(&self, action: ErrorAction) -> PromptAnswer {
         PromptAnswer::Respond(PromptResponse::Error { action, apply_to_all: false })
+    }
+
+    /// Error prompt: the programs that keep the item in use, when that is why it failed.
+    pub fn in_use(&self) -> Option<&InUse> {
+        match &self.prompt {
+            JobPrompt::Error { in_use, .. } => in_use.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// One line per program that keeps the item in use: its name and what it has open
+    /// (relative to the item; empty for the item itself).
+    pub fn in_use_lines(&self) -> Vec<(String, String)> {
+        let (Some(u), JobPrompt::Error { path, error, .. }) = (self.in_use(), &self.prompt) else { return Vec::new() };
+        let root = error.path.as_deref().unwrap_or(path);
+        u.blockers
+            .iter()
+            .map(|b| {
+                let name = if b.own { tr!("dialogs-prompt-in-use-own").to_string() } else { b.name.clone() };
+                let first = b.paths.first().map(|p| {
+                    let rel = p.strip_prefix(root).unwrap_or(p);
+                    soyuz_fs::strip_verbatim(rel).display().to_string()
+                });
+                let what = match (first, b.open.saturating_sub(1)) {
+                    (None, _) => String::new(),
+                    (Some(f), 0) => f,
+                    (Some(f), more) if f.is_empty() => tr!("dialogs-prompt-in-use-more-only", count = more),
+                    (Some(f), more) => tr!("dialogs-prompt-in-use-more", path = f, count = more),
+                };
+                (name, what)
+            })
+            .collect()
+    }
+
+    /// The headline of an item in use: "In use by Zed", or by how many programs.
+    pub fn in_use_title(&self) -> Option<String> {
+        let u = self.in_use()?;
+        Some(match self.in_use_lines().as_slice() {
+            [(name, _)] => tr!("dialogs-prompt-in-use", name = name.as_str()),
+            _ => tr!("dialogs-prompt-in-use-many", count = u.blockers.len()),
+        })
+    }
+
+    /// Labels of "Close program" and "End program" (`None`: not offered). Ending needs
+    /// `[jobs] end_blocking_programs`; its label asks to confirm after the first choice.
+    pub fn close_labels(&self) -> (Option<String>, Option<String>) {
+        let Some(u) = self.in_use() else { return (None, None) };
+        let mut closable = u.closable();
+        let (Some(first), more) = (closable.next(), closable.next().is_some()) else { return (None, None) };
+        let close = if more {
+            tr!("dialogs-prompt-close-programs").to_string()
+        } else {
+            tr!("dialogs-prompt-close-program", name = first.name.as_str())
+        };
+        let end = u.may_end.then(|| {
+            if self.confirm_end {
+                tr!("dialogs-prompt-end-confirm").to_string()
+            } else if more {
+                tr!("dialogs-prompt-end-programs").to_string()
+            } else {
+                tr!("dialogs-prompt-end-program", name = first.name.as_str())
+            }
+        });
+        (Some(close), end)
+    }
+
+    /// Item in use: ask its programs to close and try again.
+    pub fn close_programs(&self) -> PromptAnswer {
+        PromptAnswer::Respond(PromptResponse::CloseBlockers { force: false })
+    }
+
+    /// Item in use: end its programs and try again. The first call only arms the
+    /// confirmation (`None`); the second one answers.
+    pub fn end_programs(&mut self) -> Option<PromptAnswer> {
+        if !self.in_use().is_some_and(|u| u.may_end && u.closable().next().is_some()) {
+            return None;
+        }
+        if !std::mem::replace(&mut self.confirm_end, true) {
+            return None;
+        }
+        Some(PromptAnswer::Respond(PromptResponse::CloseBlockers { force: true }))
     }
 
     /// Not enough space: continue anyway or cancel.
@@ -957,11 +1042,71 @@ mod tests {
         assert!(!s.alive && !s.answered);
     }
 
+    fn blocker(pid: u32, name: &str, paths: &[&str], open: usize, own: bool) -> soyuz_jobs::Blocker {
+        soyuz_jobs::Blocker {
+            pid,
+            key: (!own).then_some(soyuz_fs::sysmon::ProcKey { pid, start_ms: 1, start_raw: 1 }),
+            name: name.into(),
+            exe: None,
+            own,
+            paths: paths.iter().map(PathBuf::from).collect(),
+            open,
+        }
+    }
+
+    fn in_use_prompt(blockers: Vec<soyuz_jobs::Blocker>, may_end: bool) -> PromptModel {
+        let error = soyuz_core::FsError::new(soyuz_core::FsErrorKind::PermissionDenied, "trash", None);
+        let in_use = Some(InUse { blockers, complete: true, may_end, still_open: false });
+        let p = JobPrompt::Error { path: PathBuf::from("dl").join("Rhea"), error, retryable: true, in_use };
+        PromptModel::new(job(), p, "Trash".into(), shared())
+    }
+
+    #[test]
+    fn item_in_use_names_its_program_and_ends_it_on_the_second_choice() {
+        let inside = PathBuf::from("dl").join("Rhea").join("docs").join("README.txt");
+        let inside = inside.to_str().unwrap();
+        let mut m = in_use_prompt(vec![blocker(7, "Zed", &[inside], 3, false)], true);
+        assert_eq!(m.in_use_title().unwrap(), "In use by Zed");
+        let lines = m.in_use_lines();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].0, "Zed");
+        assert!(lines[0].1.starts_with(&format!("docs{}README.txt", std::path::MAIN_SEPARATOR)), "{lines:?}");
+        assert!(lines[0].1.contains('2'), "the two other open items are counted: {lines:?}");
+        assert_eq!(m.close_labels(), (Some("Close Zed".into()), Some("End Zed".into())));
+        assert!(matches!(m.close_programs(), PromptAnswer::Respond(PromptResponse::CloseBlockers { force: false })));
+        // Ending asks twice.
+        assert!(m.end_programs().is_none() && m.confirm_end);
+        assert_ne!(m.close_labels().1, Some("End Zed".into()));
+        assert!(matches!(m.end_programs(), Some(PromptAnswer::Respond(PromptResponse::CloseBlockers { force: true }))));
+        // Enter still retries.
+        assert!(matches!(
+            m.default_answer(),
+            Some(PromptAnswer::Respond(PromptResponse::Error { action: ErrorAction::Retry, .. }))
+        ));
+    }
+
+    #[test]
+    fn item_in_use_by_several_or_by_ourselves() {
+        let mut m = in_use_prompt(vec![blocker(7, "Zed", &[], 1, false), blocker(8, "Code", &[], 1, false)], false);
+        assert_eq!(m.in_use_title().unwrap(), "In use by 2 programs");
+        assert_eq!(m.close_labels(), (Some("Close them".into()), None));
+        assert!(m.end_programs().is_none() && !m.confirm_end, "ending is switched off");
+
+        // Our own open file: named, nothing to close.
+        let mut m = in_use_prompt(vec![blocker(1, "soyuz", &[], 1, true)], true);
+        assert_eq!(m.in_use_title().unwrap(), "In use by Soyuz itself");
+        assert_eq!(m.close_labels(), (None, None));
+        assert!(m.end_programs().is_none() && !m.confirm_end);
+    }
+
     #[test]
     fn error_prompt_answers() {
         let error = soyuz_core::FsError::new(soyuz_core::FsErrorKind::PermissionDenied, "read", None);
-        let p = JobPrompt::Error { path: PathBuf::from("x"), error, retryable: true };
+        let p = JobPrompt::Error { path: PathBuf::from("x"), error, retryable: true, in_use: None };
         let mut m = PromptModel::new(job(), p, "Copy".into(), shared());
+        assert!(m.in_use_title().is_none() && m.in_use_lines().is_empty());
+        assert_eq!(m.close_labels(), (None, None));
+        assert!(m.end_programs().is_none() && !m.confirm_end);
         m.apply_all = true;
         assert!(matches!(
             m.default_answer(),

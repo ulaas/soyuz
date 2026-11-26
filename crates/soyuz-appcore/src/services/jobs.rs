@@ -488,6 +488,13 @@ pub fn queue_settings(config: &Config) -> soyuz_jobs::QueueSettings {
         max_parallel: j.max_parallel.max(1),
         default_queue: if j.per_device_serial { QueueMode::PerDevice } else { QueueMode::Parallel },
         reset_apply_all_between_jobs: j.reset_apply_all_between_jobs,
+        find_blockers: j.show_blocking_programs,
+        end_blockers: j.end_blocking_programs,
+        item_gone: match j.when_item_gone {
+            soyuz_core::config::ItemGonePolicy::Cancel => soyuz_jobs::GonePolicy::Cancel,
+            soyuz_core::config::ItemGonePolicy::Skip => soyuz_jobs::GonePolicy::Skip,
+            soyuz_core::config::ItemGonePolicy::Wait => soyuz_jobs::GonePolicy::Wait,
+        },
         history_limit: j.history_limit.max(1),
     }
 }
@@ -499,6 +506,9 @@ pub fn engine_config(config: &Config) -> EngineConfig {
         max_parallel: q.max_parallel,
         default_queue: q.default_queue,
         reset_apply_all_between_jobs: q.reset_apply_all_between_jobs,
+        find_blockers: q.find_blockers,
+        end_blockers: q.end_blockers,
+        item_gone: q.item_gone,
         history_limit: q.history_limit,
         history_path: Some(soyuz_core::config::config_dir().join("history.jsonl")),
         journal_path: crate::services::crash::journal_path(),

@@ -22,6 +22,7 @@ pub mod undo;
 #[cfg(test)]
 mod tests;
 
+pub use engine::GonePolicy;
 pub use engine::{EngineConfig, JobEngine, JobEvent, QueueSettings};
 pub use history::{HistoryEntry, HistoryId, UndoStamp};
 pub use job::{
@@ -30,5 +31,5 @@ pub use job::{
 };
 pub use journal::{JournalJob, JournalSlot, Recovered};
 pub use progress::{Blocked, IoStats, JobSnapshot, Progress};
-pub use prompt::{ConflictInfo, ConflictKind, JobPrompt, PromptResponse};
+pub use prompt::{Blocker, ConflictInfo, ConflictKind, InUse, JobPrompt, PromptResponse};
 pub use undo::UndoRecord;
