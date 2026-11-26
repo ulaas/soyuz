@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.8.8" date="2026-11-26" type="development">
+      <description>
+        <p>On Windows, an item that cannot be moved, renamed or deleted because a program has
+          it open now names that program and offers to close it or end it. A job that waits
+          for an answer about an item that has since disappeared cancels itself (or skips
+          the item, or keeps waiting: a setting).</p>
+      </description>
+    </release>
     <release version="0.8.7" date="2026-11-25" type="development">
       <description>
         <p>A built-in PDF viewer: continuous pages that stay sharp at any zoom, thumbnails and
