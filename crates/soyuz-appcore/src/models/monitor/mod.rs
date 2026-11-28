@@ -174,6 +174,8 @@ pub struct MonitorView {
     pub filter_regex: bool,
     /// Ask the frontend to put the keyboard into the filter box.
     pub focus_filter: bool,
+    /// Ask the frontend to open the saved filters menu (the GUI's funnel; Alt+F).
+    pub open_saved_menu: bool,
     pub collapsed: HashSet<RowId>,
     pub selected: Option<RowId>,
     /// Marked rows; end / kill / suspend act on these when there are any.
@@ -208,6 +210,7 @@ impl MonitorView {
             filter_error: None,
             filter_regex: regex,
             focus_filter: false,
+            open_saved_menu: false,
             collapsed: HashSet::new(),
             selected: None,
             marked: HashSet::new(),

@@ -12,6 +12,18 @@ use crate::cmd::Cmd;
 use crate::core::Focus;
 use crate::models::monitor::{HistoryState, MonitorCmd, SignalScope};
 
+/// Alt+F while the Processes page's filter box has the keyboard: the saved filters' menu.
+pub fn filter_box_keys(app: &mut SoyuzApp, ctx: &egui::Context) {
+    if !crate::models::monitor::focused(&app.core) || egui::Popup::is_any_open(ctx) {
+        return;
+    }
+    let pane = app.core.ws.pane().id;
+    let in_box = ctx.memory(|m| m.has_focus(processes::filter_id(pane.0)));
+    if in_box && ctx.input_mut(|i| i.consume_key(Modifiers::ALT, Key::F)) {
+        app.core.cmds.push(Cmd::Monitor(pane, MonitorCmd::SavedFiltersMenu));
+    }
+}
+
 /// Consume the keys the focused monitor page uses. `true` when the page took the keyboard.
 pub fn handle(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
     // An open menu or popup has the keyboard (Esc closes it, arrows walk it).
@@ -43,6 +55,11 @@ pub fn handle(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
             MonitorPage::Services => v.services.focus_filter = true,
             _ => v.startup.focus_filter = true,
         }
+        return true;
+    }
+    // Alt+F opens the saved process filters' menu (the funnel beside the filter box).
+    if page == MonitorPage::Processes && pressed(Modifiers::ALT, Key::F) {
+        app.core.cmds.push(Cmd::Monitor(pane, MonitorCmd::SavedFiltersMenu));
         return true;
     }
     let mut took = false;

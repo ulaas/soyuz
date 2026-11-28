@@ -860,17 +860,23 @@ fn row_menu(
     }
 }
 
+/// The process filter box of a pane.
+pub fn filter_id(pane: u64) -> Id {
+    Id::unique(("soyuz.monitor.procs.filter", pane))
+}
+
 fn toolbar(ui: &mut Ui, tb: Rect, c: &mut PageCtx<'_>, pending: &mut Vec<MonitorCmd>, frame: Option<&Arc<Frame>>) {
     let p = c.p.clone();
     let cfg = c.cfg().clone();
     let pane = c.pane.0;
     let inner = Rect::from_min_max(pos2(tb.left() + 14.0, tb.top() + 6.0), pos2(tb.right() - 12.0, tb.bottom() - 6.0));
     let wide = inner.width() >= font::grow(900.0);
-    let (filter_text, filter_regex, focus_filter, filter_ok) = {
+    let (filter_text, filter_regex, focus_filter, filter_ok, open_saved) = {
         let v = c.view();
         let f = v.focus_filter;
         v.focus_filter = false;
-        (v.filter_text.clone(), v.filter_regex, f, v.filter_error.is_none())
+        let open = std::mem::take(&mut v.open_saved_menu);
+        (v.filter_text.clone(), v.filter_regex, f, v.filter_error.is_none(), open)
     };
     // Right side: toggles and tools.
     let right = Rect::from_min_max(pos2(inner.left(), inner.top()), inner.max);
@@ -970,8 +976,7 @@ fn toolbar(ui: &mut Ui, tb: Rect, c: &mut PageCtx<'_>, pending: &mut Vec<Monitor
         vec2(fw.min(if wide { 520.0 } else { 380.0 }), inner.height() - 2.0),
     );
     let hint = if filter_regex { tr!("monitor-gui-filter-regex-hint") } else { tr!("monitor-gui-filter-hint") };
-    let (changed, fresp) =
-        filter_box(ui, fr, Id::unique(("soyuz.monitor.procs.filter", pane)), &filter_text, hint, focus_filter);
+    let (changed, fresp) = filter_box(ui, fr, filter_id(pane), &filter_text, hint, focus_filter);
     if let Some(t) = changed {
         pending.push(MonitorCmd::SetFilter(t));
     }
@@ -1016,10 +1021,14 @@ fn toolbar(ui: &mut Ui, tb: Rect, c: &mut PageCtx<'_>, pending: &mut Vec<Monitor
     ui.painter().text(sr.center(), Align2::CENTER_CENTER, glyph, ticons::font(15.0), sc);
     let tip = match &active {
         Some(name) => tr!("monitor-saved-filter-active", name = name.as_str()),
-        None => tr!("monitor-saved-filters").to_string(),
+        None => tr!("monitor-saved-filters-tip").to_string(),
     };
     let sresp = sresp.on_hover_text(tip);
-    crate::ui::native::popup::Menu::menu(&sresp).show(|ui| {
+    let mut saved_menu = crate::ui::native::popup::Menu::menu(&sresp);
+    if open_saved {
+        saved_menu = saved_menu.open_memory(egui::SetOpenCommand::Bool(true));
+    }
+    saved_menu.show(|ui| {
         super::saved_filters::menu(ui, &cfg.saved_filters, (&filter_text, filter_regex, filter_ok), pending);
     });
     if count_w > 0.0 {

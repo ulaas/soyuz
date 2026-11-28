@@ -752,8 +752,8 @@ The filter box takes words and tests, all of which must hold:
 
 The `.*` button (Ctrl+R in the terminal UI) reads the whole box as one regular expression.
 
-**Saved filters.** The funnel next to the filter box lists the filters you saved. Click one to
-put it into the box, with its regex mode. The funnel turns accent-colored while a saved filter
+**Saved filters.** The funnel next to the filter box (Alt+F, from the list or the box) lists the
+filters you saved. Click one to put it into the box, with its regex mode. The funnel turns accent-colored while a saved filter
 is in force. *Save current filter…* keeps what the box holds under a name, and *Manage saved
 filters…* opens the manager. There you can rename, edit, duplicate, reorder and delete filters,
 start from examples, and see right away whether a filter parses. In the terminal UI, `f` opens

@@ -69,6 +69,8 @@ pub enum MonitorCmd {
     MoveSavedFilter(String, usize),
     /// Open the saved filters manager.
     ManageFilters,
+    /// Open the funnel menu of the saved filters (Alt+F; the GUI's toolbar menu).
+    SavedFiltersMenu,
     /// Open the manager with a new entry made from the filter box.
     SaveCurrentFilter,
     /// Collapse or expand a row of the tree or a group.
@@ -373,6 +375,7 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
             update_config(app, host, |c| c.monitor.saved_filters = list);
         }
         C::ManageFilters => app.frontend.push(FrontendCmd::MonitorFilters { pane, new: false }),
+        C::SavedFiltersMenu => app.ui.monitor.view(pane, &cfg).open_saved_menu = true,
         C::SaveCurrentFilter => app.frontend.push(FrontendCmd::MonitorFilters { pane, new: true }),
         C::ToggleCollapsed(id) => {
             let v = app.ui.monitor.view(pane, &cfg);
