@@ -3,13 +3,13 @@
 #
 #   scripts/package.sh --rpm                       # builds the tarball, then this spec
 #   rpmbuild -bb installer/linux/soyuz.spec \
-#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.8.8"
+#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.8.9"
 #
 # The org.freedesktop.FileManager1 D-Bus activation file is deliberately NOT installed:
 # Soyuz writes it to the user's ~/.local/share/dbus-1/services/ only on opt-in
 # (docs/RELEASING.md, "Linux").
 
-%{!?soyuz_version: %global soyuz_version 0.8.8}
+%{!?soyuz_version: %global soyuz_version 0.8.9}
 %{!?soyuz_arch: %global soyuz_arch %{_arch}}
 # 1 when the tarball carries the FFmpeg runtime (scripts/package.sh --ffmpeg-dir sets it):
 # lib/soyuz/lib*.so.* go to %{_libdir}/soyuz/ (private; the exe looks in
@@ -114,6 +114,10 @@ fi
 %endif
 
 %changelog
+* Sat Nov 28 2026 The Soyuz contributors - 0.8.9-1
+- Version 0.8.9: saved process filters in the system monitor (a funnel menu next to
+  the filter box, Alt+F, and a manager to edit, reorder and delete them).
+
 * Thu Nov 26 2026 The Soyuz contributors - 0.8.8-1
 - Version 0.8.8: an item that cannot be moved, renamed or deleted on Windows because a
   program has it open names that program and offers to close or end it; a job waiting

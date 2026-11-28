@@ -87,6 +87,13 @@
   </requires>
 
   <releases>
+    <release version="0.8.9" date="2026-11-28" type="development">
+      <description>
+        <p>System monitor: process filters can be saved under a name and applied again from
+          the funnel next to the filter box (Alt+F), with a manager to edit, reorder and
+          delete them; the terminal UI has them too (f / F).</p>
+      </description>
+    </release>
     <release version="0.8.8" date="2026-11-26" type="development">
       <description>
         <p>On Windows, an item that cannot be moved, renamed or deleted because a program has
