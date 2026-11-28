@@ -364,7 +364,8 @@ impl Runner {
                 // `monitor:view=<list|tree|by_name|by_user>`, `monitor:filter=<text>` and
                 // `monitor:select=<name>` drive its process table; `monitor:stress=<n>` shows `n`
                 // synthetic processes instead of the real ones; `monitor:demo` a made-up machine
-                // (the website's screenshots), `monitor:demo2` the same with a second GPU.
+                // (the website's screenshots), `monitor:demo2` the same with a second GPU;
+                // `monitor:filters` opens the saved filters, `monitor:save-filter` saves the filter box.
                 use crate::models::monitor::MonitorCmd as M;
                 use soyuz_core::config::monitor::{MonitorPage, ProcView};
                 let pane = core.ws.pane().id;
@@ -378,6 +379,8 @@ impl Runner {
                         _ => None,
                     },
                     Some(("filter", t)) => Some(M::SetFilter(t.to_string())),
+                    None if want == "filters" => Some(M::ManageFilters),
+                    None if want == "save-filter" => Some(M::SaveCurrentFilter),
                     None if want == "demo" || want == "demo2" => {
                         let gpus = if want == "demo2" { 2 } else { 1 };
                         let (frames, info) = crate::models::monitor::demo::frames_with_gpus(gpus);

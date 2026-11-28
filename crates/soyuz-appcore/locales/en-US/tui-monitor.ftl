@@ -126,6 +126,7 @@ tui-monitor-menu-copy = Copy
 tui-monitor-menu-mark = Mark
 tui-monitor-menu-details = Details panel
 tui-monitor-menu-columns = Columns…
+tui-monitor-menu-filters = Saved filters…
 tui-monitor-menu-export = Export as CSV
 tui-monitor-menu-kernel = Show or hide kernel threads
 tui-monitor-menu-other-users = Show or hide other users
@@ -136,6 +137,10 @@ tui-monitor-menu-scale = Switch the CPU scale
 
 tui-monitor-columns-title = Process table columns
 tui-monitor-columns-hints = Space show or hide · Shift+Up/Down move · r reset · Enter done
+tui-monitor-filters-hints = Enter apply · n new · e or F2 edit · Delete remove · Shift+Up/Down move · Esc close
+tui-monitor-filters-new = New saved filter
+tui-monitor-filters-edit = Edit saved filter
+tui-monitor-filters-edit-hints = Tab next field · Space regex on or off · Enter save · Esc back
 tui-monitor-affinity-title = Processors of { $name }
 tui-monitor-affinity-hints = Space tick · Enter apply · Esc cancel
 tui-monitor-snapshot-new = New snapshot
@@ -223,6 +228,7 @@ tui-monitor-help-processes =
     Space                    mark a process
     < > and I                sort column, turn the order around
     c                        choose columns
+    f and F                  saved filters, save the filter
     d, [ and ]               details panel, its tabs
     Shift+[ and Shift+]      scroll the details
     F9 or k                  end the process (asks first)

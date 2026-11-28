@@ -401,6 +401,10 @@ remember_filter = false          # keep the process filter between sessions
 filter = ""                      # words, /regex/, user:root, cpu>5, mem>100M
 filter_regex = false             # the whole filter is one regular expression
 filter_keeps_parents = true      # tree view: keep the parents of matches, dimmed
+# [[monitor.saved_filters]]       # named process filters, applied from the funnel by the filter box
+# name = "Busy"                   # unique, shown in the menu
+# query = "cpu>5"                 # the filter box's query language
+# regex = false                   # the whole query is one regular expression
 show_kernel = false              # list kernel threads and OS-internal pseudo processes
 show_other_users = true
 cpu_scale = "machine"            # machine (100 % = all CPUs) | per_core (100 % = one CPU)

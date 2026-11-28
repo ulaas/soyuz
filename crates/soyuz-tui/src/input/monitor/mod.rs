@@ -26,6 +26,7 @@
 //! | `u`, `m`, Esc | Comparison | unchanged rows, match by, close |
 
 pub mod dialogs;
+pub mod filters;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -527,6 +528,8 @@ fn process_key(app: &mut App, pane: PaneId, c: KeyChord) -> bool {
             push(app, pane, MonitorCmd::SortBy(col));
         }
         N::C if plain => push(app, pane, MonitorCmd::ChooseColumns),
+        N::F if plain => push(app, pane, MonitorCmd::ManageFilters),
+        N::F if shifted => push(app, pane, MonitorCmd::SaveCurrentFilter),
         N::D if plain => push(app, pane, MonitorCmd::ToggleDetails),
         N::OpenBracket if plain => details_step(app, pane, false),
         N::CloseBracket if plain => details_step(app, pane, true),
@@ -888,6 +891,7 @@ fn process_menu(app: &mut App, pane: PaneId) -> Vec<Entry> {
         item(tr!("tui-monitor-menu-mark"), Some("Space"), pane, MonitorCmd::ToggleMark(k)),
         item(tr!("tui-monitor-menu-details"), Some("d"), pane, MonitorCmd::ToggleDetails),
         item(tr!("tui-monitor-menu-columns"), Some("c"), pane, MonitorCmd::ChooseColumns),
+        item(tr!("tui-monitor-menu-filters"), Some("f"), pane, MonitorCmd::ManageFilters),
         item(tr!("tui-monitor-menu-export"), Some("e"), pane, MonitorCmd::ExportProcesses),
         Entry::Separator,
         item(tr!("tui-monitor-menu-kernel"), None, pane, MonitorCmd::ToggleKernel),

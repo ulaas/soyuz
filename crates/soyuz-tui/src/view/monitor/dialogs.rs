@@ -60,3 +60,36 @@ pub fn name_vm(_core: &AppCore, s: &NameState) -> DialogVm {
     };
     DialogVm { hints: tr!("tui-monitor-snapshot-hints").into(), width: 60, ..DialogVm::from_form(title, &s.form) }
 }
+
+/// What the saved filters dialog shows: the list (name, filter on the right) or the editor.
+pub fn filters_vm(core: &AppCore, s: &crate::input::monitor::filters::FiltersState) -> DialogVm {
+    if let Some(edit) = &s.edit {
+        let title = if edit.old.is_some() { tr!("tui-monitor-filters-edit") } else { tr!("tui-monitor-filters-new") };
+        return DialogVm {
+            hints: tr!("tui-monitor-filters-edit-hints").into(),
+            width: 72,
+            ..DialogVm::from_form(title, &edit.form)
+        };
+    }
+    let list: Vec<ListRow> = core
+        .config
+        .monitor
+        .saved_filters
+        .iter()
+        .map(|f| {
+            let mut row = ListRow::new(crate::view::text::truncate_end(&f.name, 28));
+            let q = if f.regex { format!(".* {}", f.query) } else { f.query.clone() };
+            row.right = crate::view::text::truncate_end(&q, 40);
+            row
+        })
+        .collect();
+    let body = if list.is_empty() { vec![tr!("monitor-saved-filter-none").to_string()] } else { Vec::new() };
+    DialogVm {
+        body,
+        list,
+        list_state: s.list.clone(),
+        hints: tr!("tui-monitor-filters-hints").into(),
+        width: 80,
+        ..DialogVm::from_form(tr!("monitor-saved-filters"), &s.form)
+    }
+}

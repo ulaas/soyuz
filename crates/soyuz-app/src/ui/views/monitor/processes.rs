@@ -866,11 +866,11 @@ fn toolbar(ui: &mut Ui, tb: Rect, c: &mut PageCtx<'_>, pending: &mut Vec<Monitor
     let pane = c.pane.0;
     let inner = Rect::from_min_max(pos2(tb.left() + 14.0, tb.top() + 6.0), pos2(tb.right() - 12.0, tb.bottom() - 6.0));
     let wide = inner.width() >= font::grow(900.0);
-    let (filter_text, filter_regex, focus_filter) = {
+    let (filter_text, filter_regex, focus_filter, filter_ok) = {
         let v = c.view();
         let f = v.focus_filter;
         v.focus_filter = false;
-        (v.filter_text.clone(), v.filter_regex, f)
+        (v.filter_text.clone(), v.filter_regex, f, v.filter_error.is_none())
     };
     // Right side: toggles and tools.
     let right = Rect::from_min_max(pos2(inner.left(), inner.top()), inner.max);
@@ -962,8 +962,9 @@ fn toolbar(ui: &mut Ui, tb: Rect, c: &mut PageCtx<'_>, pending: &mut Vec<Monitor
     let count_g = ui.painter().layout_no_wrap(count_text.clone(), font::numbers(11.5), p.text_tertiary);
     let count_w = if count_text.is_empty() { 0.0 } else { count_g.size().x + 10.0 };
     let regex_w = 30.0;
+    let saved_w = 30.0;
     let filter_right = inner.right() - right_w - 10.0;
-    let fw = (filter_right - x - regex_w - count_w - 8.0).max(80.0);
+    let fw = (filter_right - x - regex_w - saved_w - count_w - 8.0).max(80.0);
     let fr = Rect::from_min_size(
         pos2(x, inner.top() + 1.0),
         vec2(fw.min(if wide { 520.0 } else { 380.0 }), inner.height() - 2.0),
@@ -998,9 +999,32 @@ fn toolbar(ui: &mut Ui, tb: Rect, c: &mut PageCtx<'_>, pending: &mut Vec<Monitor
     if rresp.on_hover_text(tr!("monitor-gui-regex")).clicked() {
         pending.push(MonitorCmd::ToggleFilterRegex);
     }
+    // Saved filters: the funnel opens their menu; tinted while one of them is in force.
+    let sr = Rect::from_min_size(pos2(rr.right() + 4.0, fr.top()), vec2(saved_w - 4.0, fr.height()));
+    let sresp = ui.interact(sr, Id::unique(("soyuz.monitor.procs.saved", pane)), Sense::click());
+    let active = crate::models::monitor::saved_filters::active(&cfg.saved_filters, &filter_text, filter_regex)
+        .map(|f| f.name.clone());
+    let menu_open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&sresp));
+    crate::ui::a11y::name(&sresp, tr!("monitor-saved-filters"));
+    if active.is_some() || menu_open {
+        ui.painter().rect_filled(sr, cr, p.accent_subtle);
+    } else if sresp.hovered() {
+        ui.painter().rect_filled(sr, cr, p.bg_surface2);
+    }
+    let sc = if active.is_some() { p.accent } else { p.text_tertiary };
+    let glyph = if active.is_some() { ph::FUNNEL } else { ph::FUNNEL_SIMPLE };
+    ui.painter().text(sr.center(), Align2::CENTER_CENTER, glyph, ticons::font(15.0), sc);
+    let tip = match &active {
+        Some(name) => tr!("monitor-saved-filter-active", name = name.as_str()),
+        None => tr!("monitor-saved-filters").to_string(),
+    };
+    let sresp = sresp.on_hover_text(tip);
+    crate::ui::native::popup::Menu::menu(&sresp).show(|ui| {
+        super::saved_filters::menu(ui, &cfg.saved_filters, (&filter_text, filter_regex, filter_ok), pending);
+    });
     if count_w > 0.0 {
         ui.painter().galley(
-            pos2(rr.right() + 8.0, inner.center().y - count_g.size().y / 2.0),
+            pos2(sr.right() + 8.0, inner.center().y - count_g.size().y / 2.0),
             count_g,
             p.text_tertiary,
         );

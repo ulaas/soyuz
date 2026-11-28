@@ -150,11 +150,13 @@ impl Section {
     }
 
     /// User data inside [`Section::tables`] that a section reset keeps (pinned Portal
-    /// folders, saved searches, automation rules, AI profiles and MCP connections).
+    /// folders, saved searches, saved process filters, automation rules, AI profiles and MCP
+    /// connections).
     pub fn kept(self) -> &'static [&'static str] {
         match self {
             Section::Views => &["sidebar.portal"],
             Section::Preview => &["search.saved"],
+            Section::Monitor => &["monitor.saved_filters"],
             Section::Automations => &["automation.rules"],
             Section::Ai => &["ai.profiles", "ai.mcp_clients", "ai.mcp_servers"],
             _ => &[],
@@ -211,7 +213,12 @@ impl Section {
                 c.search.saved = saved;
             }
             Section::Editor => c.editor = d.editor,
-            Section::Monitor => c.monitor = d.monitor,
+            Section::Monitor => {
+                // Saved filters are the user's data: keep them.
+                let saved = std::mem::take(&mut c.monitor.saved_filters);
+                c.monitor = d.monitor;
+                c.monitor.saved_filters = saved;
+            }
             Section::Keyboard => c.keys = d.keys,
             Section::Commands => c.custom_commands = d.custom_commands,
             Section::Bookmarks => c.bookmarks = d.bookmarks,

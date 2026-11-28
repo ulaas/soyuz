@@ -7,6 +7,7 @@
 pub mod charts;
 pub mod dialogs;
 pub mod keys;
+pub mod saved_filters;
 pub mod table;
 
 mod cpu;

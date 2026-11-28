@@ -67,6 +67,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[tui]`](#tui)
 - [`[monitor]`](#monitor)
 - [`[[monitor.columns]]`](#monitorcolumns)
+- [`[[monitor.saved_filters]]`](#monitorsaved_filters)
 - [`[keys]`](#keys)
 - [`[ai]`](#ai)
 - [`[[ai.profiles]]`](#aiprofiles)
@@ -726,6 +727,18 @@ A list of tables; 11 entries by default. The default column shows the first entr
 |---|---|---|---|
 | `id` | `"name"` \| `"pid"` \| `"parent"` \| `"user"` \| `"state"` \| `"cpu"` \| `"cpu_time"` \| `"memory"` \| `"private"` \| `"shared"` \| `"virtual"` \| `"peak_memory"` \| `"memory_percent"` \| `"threads"` \| `"handles"` \| `"disk_read"` \| `"disk_write"` \| `"disk_read_total"` \| `"disk_write_total"` \| `"gpu"` \| `"gpu_memory"` \| `"page_faults"` \| `"priority"` \| `"nice"` \| `"session"` \| `"uptime"` \| `"started"` \| `"path"` \| `"command"` \| `"arch"` \| `"elevated"` \| `"cgroup"` \| `"description"` | `"name"` |  |
 | `width` | float | `0.0` | Width in points in the GUI (the terminal UI divides by 8); 0 = the default. |
+
+## `[[monitor.saved_filters]]`
+
+A `[[monitor.saved_filters]]` entry: a process filter kept under a name, applied from the filter menu of the Processes page.
+
+A list of tables; empty by default. Defaults below are for a new entry's omitted keys.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `name` | string | — | Name shown in the filter menu (unique, compared without case). |
+| `query` | string | — | The filter, in the filter box's query language (`chrome cpu>5`, `user:root`, `/regex/`). |
+| `regex` | boolean | — | Treat the whole query as one regular expression. |
 
 ## `[keys]`
 

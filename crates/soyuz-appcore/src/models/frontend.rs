@@ -47,6 +47,9 @@ pub enum FrontendCmd {
     ChooseColumns(PaneId),
     /// Choose the columns of the process table of a monitor pane.
     MonitorColumns(PaneId),
+    /// Manage the saved process filters of a monitor pane; `new` starts a new entry from the
+    /// pane's filter box.
+    MonitorFilters { pane: PaneId, new: bool },
     /// Pick the app a file opens with.
     OpenWith(PathBuf),
     /// The Properties dialog for `entries` of `pane`.

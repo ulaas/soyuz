@@ -40,6 +40,15 @@ pub fn drain(app: &mut SoyuzApp, host: &EguiHost) {
                 let shown = app.core.config.monitor.columns.iter().map(|c| c.id).collect();
                 app.gui.dialogs.push(crate::ui::views::monitor::dialogs::MonitorColumnsDialog::new(pane, shown))
             }
+            FrontendCmd::MonitorFilters { pane, new } => {
+                let current = new
+                    .then(|| app.core.ui.monitor.peek(pane).map(|v| (v.filter_text.trim().to_string(), v.filter_regex)))
+                    .flatten();
+                let list = app.core.config.monitor.saved_filters.clone();
+                app.gui
+                    .dialogs
+                    .push(crate::ui::views::monitor::saved_filters::MonitorFiltersDialog::new(pane, list, current))
+            }
             FrontendCmd::OpenWith(path) => {
                 app.gui.dialogs.push(dialogs::open_with::OpenWithDialog::new(path, app.core.config.open.clone()))
             }

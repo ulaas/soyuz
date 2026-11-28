@@ -752,6 +752,14 @@ The filter box takes words and tests, all of which must hold:
 
 The `.*` button (Ctrl+R in the terminal UI) reads the whole box as one regular expression.
 
+**Saved filters.** The funnel next to the filter box lists the filters you saved. Click one to
+put it into the box, with its regex mode. The funnel turns accent-colored while a saved filter
+is in force. *Save current filter…* keeps what the box holds under a name, and *Manage saved
+filters…* opens the manager. There you can rename, edit, duplicate, reorder and delete filters,
+start from examples, and see right away whether a filter parses. In the terminal UI, `f` opens
+the saved filters and `F` saves the filter box. They are stored as `[[monitor.saved_filters]]`
+and are also listed in *Settings → System monitor*. Resetting that section keeps them.
+
 Select a process for its details: CPU and memory over time, command line, threads, modules,
 and, where the system allows, open files, environment and sockets. From its menu you can end
 it, kill it, end its whole tree, suspend or resume it, change its priority and processors,

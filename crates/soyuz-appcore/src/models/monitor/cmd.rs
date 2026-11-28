@@ -5,7 +5,9 @@
 
 use std::sync::Arc;
 
-use soyuz_core::config::monitor::{CoreView, CpuScale, MonitorPage, ProcColumn, ProcColumnConfig, ProcView};
+use soyuz_core::config::monitor::{
+    CoreView, CpuScale, MonitorPage, ProcColumn, ProcColumnConfig, ProcView, SavedProcFilter,
+};
 use soyuz_core::config::{SnapshotCommands, default_proc_columns};
 use soyuz_core::{Location, SizeStyle};
 use soyuz_sysmon::fetch::Loader;
@@ -15,7 +17,7 @@ use soyuz_sysmon::{
 };
 
 use super::snapshots::{CompareTarget, export_dir};
-use super::{AffinityEdit, DetailsTab, data_dir, labels};
+use super::{AffinityEdit, DetailsTab, data_dir, labels, saved_filters};
 use crate::cmd::Cmd;
 use crate::core::AppCore;
 use crate::host::Host;
@@ -55,6 +57,20 @@ pub enum MonitorCmd {
     SetFilter(String),
     ToggleFilterRegex,
     FocusFilter,
+    /// Put a saved filter (by name) into the filter box, with its regex mode.
+    ApplySavedFilter(String),
+    /// Add a saved filter, or replace the one named `old`; refused with a toast when invalid.
+    SaveFilter {
+        old: Option<String>,
+        entry: SavedProcFilter,
+    },
+    DeleteSavedFilter(String),
+    /// Move a saved filter to a position in the menu.
+    MoveSavedFilter(String, usize),
+    /// Open the saved filters manager.
+    ManageFilters,
+    /// Open the manager with a new entry made from the filter box.
+    SaveCurrentFilter,
     /// Collapse or expand a row of the tree or a group.
     ToggleCollapsed(RowId),
     /// Expand every row.
@@ -322,6 +338,42 @@ pub fn apply(app: &mut AppCore, pane: PaneId, cmd: MonitorCmd, host: &dyn Host) 
             }
         }
         C::FocusFilter => app.ui.monitor.view(pane, &cfg).focus_filter = true,
+        C::ApplySavedFilter(name) => {
+            if let Some(i) = saved_filters::find(&cfg.saved_filters, &name) {
+                let entry = cfg.saved_filters[i].clone();
+                let v = app.ui.monitor.view(pane, &cfg);
+                v.filter_regex = entry.regex;
+                v.set_filter(entry.query.clone());
+                if cfg.remember_filter {
+                    update_config(app, host, |c| {
+                        c.monitor.filter = entry.query;
+                        c.monitor.filter_regex = entry.regex;
+                    });
+                }
+            }
+        }
+        C::SaveFilter { old, entry } => {
+            let mut list = cfg.saved_filters.clone();
+            match saved_filters::save(&mut list, old.as_deref(), entry) {
+                Ok(_) => update_config(app, host, |c| c.monitor.saved_filters = list),
+                Err(e) => {
+                    app.ui.toasts.push(Toast::error(e.message()));
+                }
+            }
+        }
+        C::DeleteSavedFilter(name) => {
+            let mut list = cfg.saved_filters.clone();
+            if saved_filters::remove(&mut list, &name) {
+                update_config(app, host, |c| c.monitor.saved_filters = list);
+            }
+        }
+        C::MoveSavedFilter(name, to) => {
+            let mut list = cfg.saved_filters.clone();
+            saved_filters::move_to(&mut list, &name, to);
+            update_config(app, host, |c| c.monitor.saved_filters = list);
+        }
+        C::ManageFilters => app.frontend.push(FrontendCmd::MonitorFilters { pane, new: false }),
+        C::SaveCurrentFilter => app.frontend.push(FrontendCmd::MonitorFilters { pane, new: true }),
         C::ToggleCollapsed(id) => {
             let v = app.ui.monitor.view(pane, &cfg);
             if !v.collapsed.remove(&id) {

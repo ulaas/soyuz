@@ -13,6 +13,7 @@ pub mod cmd;
 pub mod demo;
 pub mod labels;
 pub mod lists;
+pub mod saved_filters;
 pub mod snapshots;
 
 use std::collections::{HashMap, HashSet};

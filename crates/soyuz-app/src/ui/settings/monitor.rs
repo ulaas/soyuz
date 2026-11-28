@@ -209,6 +209,9 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut m.filter_keeps_parents);
             },
         );
+        r.block(tr!("settings-monitor-saved-filters"), tr!("settings-monitor-saved-filters-desc"), |ui| {
+            saved_filters(ui, &mut m.saved_filters);
+        });
     });
     any |= group(ui, q, CTX, tr!("settings-monitor-history"), |r| {
         r.row_kw(tr!("settings-monitor-record"), tr!("settings-monitor-record-desc"), "history start stop", |ui| {
@@ -286,4 +289,56 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
     });
     any
+}
+
+/// The saved process filters: name, query and regex mode of each, editable in place, with
+/// the parser's verdict; add and remove rows. Applying them is the Processes page's funnel.
+fn saved_filters(ui: &mut Ui, list: &mut Vec<soyuz_core::config::SavedProcFilter>) {
+    let p = palette(ui.ctx());
+    let mut remove = None;
+    if list.is_empty() {
+        ui.label(egui::RichText::new(tr!("monitor-saved-filter-none")).color(p.text_tertiary));
+    }
+    for (i, f) in list.iter_mut().enumerate() {
+        ui.push_id(("soyuz.settings.monitor.saved", i), |ui| {
+            ui.horizontal(|ui| {
+                text(ui, &mut f.name, tr!("monitor-saved-filter-name"), 150.0);
+                let r = text(ui, &mut f.query, tr!("monitor-gui-filter-hint"), 230.0);
+                r.on_hover_text(tr!("monitor-gui-filter-help"));
+                let r = crate::ui::widgets::icon_toggle(ui, ".*", tr!("monitor-gui-regex"), true, f.regex);
+                if r.clicked() {
+                    f.regex = !f.regex;
+                }
+                match soyuz_sysmon::Filter::parse(f.query.trim(), f.regex) {
+                    Ok(_) if !f.query.trim().is_empty() && !f.name.trim().is_empty() => {}
+                    Ok(_) => {
+                        ui.label(crate::theme::icons::icon(ph::WARNING_CIRCLE, 14.0).color(p.warning)).on_hover_text(
+                            if f.name.trim().is_empty() {
+                                tr!("monitor-saved-filter-empty-name")
+                            } else {
+                                tr!("monitor-saved-filter-empty-query")
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        ui.label(crate::theme::icons::icon(ph::WARNING_CIRCLE, 14.0).color(p.danger))
+                            .on_hover_text(tr!("monitor-gui-filter-error", message = e.message.as_str()));
+                    }
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if small_button(ui, Some(ph::TRASH), "", true).clicked() {
+                        remove = Some(i);
+                    }
+                });
+            });
+        });
+    }
+    if let Some(i) = remove {
+        list.remove(i);
+    }
+    ui.add_space(4.0);
+    if small_button(ui, Some(ph::PLUS), tr!("monitor-saved-filter-new"), false).clicked() {
+        let name = crate::models::monitor::saved_filters::suggest_name(list, "");
+        list.push(soyuz_core::config::SavedProcFilter { name, query: String::new(), regex: false });
+    }
 }

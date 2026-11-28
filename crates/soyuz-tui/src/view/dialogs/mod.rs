@@ -144,6 +144,7 @@ pub fn from_core(core: &AppCore, input: &InputState) -> Option<DialogVm> {
             TuiDialog::MonitorColumns(s) => crate::view::monitor::dialogs::columns_vm(core, s),
             TuiDialog::MonitorAffinity(s) => crate::view::monitor::dialogs::affinity_vm(core, s),
             TuiDialog::MonitorName(s) => crate::view::monitor::dialogs::name_vm(core, s),
+            TuiDialog::MonitorFilters(s) => crate::view::monitor::dialogs::filters_vm(core, s),
             TuiDialog::OpenWith(s) => open_with::vm(core, s),
             TuiDialog::Link(s) => link::vm(core, s),
             TuiDialog::BatchRename(s) => batch_rename::vm(core, s),

@@ -126,6 +126,7 @@ tui-monitor-menu-copy = Kopyala
 tui-monitor-menu-mark = İşaretle
 tui-monitor-menu-details = Ayrıntılar paneli
 tui-monitor-menu-columns = Sütunlar…
+tui-monitor-menu-filters = Kayıtlı süzgeçler…
 tui-monitor-menu-export = CSV olarak dışa aktar
 tui-monitor-menu-kernel = Çekirdek iş parçacıklarını göster veya gizle
 tui-monitor-menu-other-users = Diğer kullanıcıları göster veya gizle
@@ -136,6 +137,10 @@ tui-monitor-menu-scale = CPU ölçeğini değiştir
 
 tui-monitor-columns-title = Süreç tablosu sütunları
 tui-monitor-columns-hints = Boşluk göster veya gizle · Shift+Yukarı/Aşağı taşı · r sıfırla · Enter bitti
+tui-monitor-filters-hints = Enter uygula · n yeni · e veya F2 düzenle · Delete kaldır · Shift+Yukarı/Aşağı taşı · Esc kapat
+tui-monitor-filters-new = Yeni kayıtlı süzgeç
+tui-monitor-filters-edit = Kayıtlı süzgeci düzenle
+tui-monitor-filters-edit-hints = Tab sonraki alan · Boşluk düzenli ifadeyi aç/kapat · Enter kaydet · Esc geri
 tui-monitor-affinity-title = { $name } işlemcileri
 tui-monitor-affinity-hints = Boşluk işaretle · Enter uygula · Esc iptal
 tui-monitor-snapshot-new = Yeni anlık görüntü
@@ -223,6 +228,7 @@ tui-monitor-help-processes =
     Boşluk                   süreci işaretle
     < > ve I                 sıralama sütunu, sırayı ters çevir
     c                        sütunları seç
+    f ve F                   kayıtlı süzgeçler, süzgeci kaydet
     d, [ ve ]                ayrıntılar paneli, sekmeleri
     Shift+[ ve Shift+]       ayrıntıları kaydır
     F9 veya k                süreci sonlandır (önce sorar)

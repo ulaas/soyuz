@@ -199,6 +199,19 @@ pub struct ProcColumnConfig {
     pub width: f32,
 }
 
+/// A `[[monitor.saved_filters]]` entry: a process filter kept under a name, applied from the
+/// filter menu of the Processes page.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SavedProcFilter {
+    /// Name shown in the filter menu (unique, compared without case).
+    pub name: String,
+    /// The filter, in the filter box's query language (`chrome cpu>5`, `user:root`, `/regex/`).
+    pub query: String,
+    /// Treat the whole query as one regular expression.
+    pub regex: bool,
+}
+
 /// How the process table arranges its rows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -348,6 +361,8 @@ pub struct Monitor {
     pub filter_regex: bool,
     /// Tree view: keep the parents of matching processes on screen, dimmed.
     pub filter_keeps_parents: bool,
+    /// Named process filters, in menu order.
+    pub saved_filters: Vec<SavedProcFilter>,
     /// List kernel threads and OS-internal pseudo processes.
     pub show_kernel: bool,
     /// List other users' processes.
@@ -439,6 +454,7 @@ impl Default for Monitor {
             filter: String::new(),
             filter_regex: false,
             filter_keeps_parents: true,
+            saved_filters: Vec::new(),
             show_kernel: false,
             show_other_users: true,
             cpu_scale: CpuScale::Machine,
@@ -488,5 +504,23 @@ mod tests {
         let s = toml::to_string(&m).unwrap();
         let back: Monitor = toml::from_str(&s).unwrap();
         assert_eq!(m, back);
+    }
+
+    #[test]
+    fn saved_filters_round_trip_through_toml() {
+        let mut m = Monitor::default();
+        m.saved_filters.push(SavedProcFilter { name: "Busy".into(), query: "cpu>5".into(), regex: false });
+        m.saved_filters.push(SavedProcFilter { name: "Shells".into(), query: "^(bash|zsh)$".into(), regex: true });
+        let back: Monitor = toml::from_str(&toml::to_string(&m).unwrap()).unwrap();
+        assert_eq!(m, back);
+        // A hand-written entry may leave out `regex`.
+        let m: Monitor = toml::from_str(
+            "[[saved_filters]]
+name = \"x\"
+query = \"y\"
+",
+        )
+        .unwrap();
+        assert_eq!(m.saved_filters, [SavedProcFilter { name: "x".into(), query: "y".into(), regex: false }]);
     }
 }

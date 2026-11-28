@@ -294,6 +294,50 @@ fn the_shortcut_opens_one_tab_and_every_page_draws() {
 }
 
 #[test]
+fn a_saved_filter_is_saved_from_the_box_and_applied_again() {
+    sandboxed("a_saved_filter_is_saved_from_the_box_and_applied_again", |data| {
+        let mut r = Rig::new(config(), &data, 120, 40);
+        r.open(false);
+        r.goto(MonitorPage::Processes);
+        r.press(key(KeyCode::Char('/')));
+        r.typed("user:ann mem>100M");
+        r.press(key(KeyCode::Enter));
+        assert_eq!(r.vm().rows, 2);
+        // `F` opens the editor holding the filter box; Enter saves and closes.
+        r.press(shift(KeyCode::Char('F')));
+        assert!(dialog_title(&r.app).is_some_and(|t| t.contains("saved filter")), "{}", r.screen());
+        r.press(key(KeyCode::Enter));
+        assert!(dialog_title(&r.app).is_none(), "{}", r.screen());
+        let saved = r.app.core.config.monitor.saved_filters.clone();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].query, "user:ann mem>100M");
+        assert!(!saved[0].name.is_empty());
+        // Clear the box, then apply the saved filter from the list (`f`, Enter).
+        r.press(key(KeyCode::Esc));
+        assert_eq!(r.vm().rows, 6);
+        r.press(key(KeyCode::Char('f')));
+        assert!(r.screen().contains("user:ann mem>100M"), "{}", r.screen());
+        r.press(key(KeyCode::Enter));
+        assert!(dialog_title(&r.app).is_none());
+        assert_eq!(r.vm().rows, 2, "{}", r.screen());
+        // A second entry with a bad query is refused and the editor stays open.
+        r.press(key(KeyCode::Char('f')));
+        r.press(key(KeyCode::Char('n')));
+        r.press(key(KeyCode::Tab));
+        r.typed("cpu>abc");
+        r.press(key(KeyCode::Enter));
+        assert!(dialog_title(&r.app).is_some_and(|t| t.contains("saved filter")), "{}", r.screen());
+        assert_eq!(r.app.core.config.monitor.saved_filters.len(), 1);
+        // Back to the list, delete the entry, close.
+        r.press(key(KeyCode::Esc));
+        r.press(key(KeyCode::Delete));
+        assert!(r.app.core.config.monitor.saved_filters.is_empty());
+        r.press(key(KeyCode::Esc));
+        assert!(dialog_title(&r.app).is_none());
+    });
+}
+
+#[test]
 fn the_process_filter_is_live_with_regex_and_errors() {
     sandboxed("the_process_filter_is_live_with_regex_and_errors", |data| {
         let mut r = Rig::new(config(), &data, 120, 40);
