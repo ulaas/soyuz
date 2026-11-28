@@ -5,6 +5,21 @@ original milestones, R = rigidity, B = looks, F = features, A = AI,
 D = distribution. Generated from `git log` by `scripts/changelog.ps1` (or `git cliff`
 with `cliff.toml`); commit hashes refer to the main branch.
 
+## 0.8.9 (2026-11-28)
+
+### Other features
+
+- feat(app): saved process filters in the system monitor (07e9fd2)
+- feat(app): Alt+F opens the saved process filters menu in the system monitor (4f49244)
+
+### Documentation
+
+- docs: changelog for 0.8.8 (d8dd540)
+
+### Other
+
+- release: 0.8.9 (saved process filters in the system monitor, Alt+F opens their menu) (6f2b729)
+
 ## 0.8.8 (2026-11-26)
 
 ### Other features
